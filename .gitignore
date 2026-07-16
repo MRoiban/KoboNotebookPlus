@@ -1,0 +1,48 @@
+# Private device state and recovery material.
+/backups/
+/samples/
+/originals/
+/mods/custom-notebook-templates/backups/
+KoboReader.sqlite*
+Kobo eReader.conf
+*.nebo
+*.nebo.backup
+plugin-status*.txt
+
+# Kobo/MyScript proprietary firmware and extracted artifacts.
+/firmware/
+/extracted/
+/binary-ninja/
+*.bndb
+*.so
+*.res
+
+# Local experiments, generated packages, and large working assets.
+/diffs/
+/patches/
+/tmp/
+/output/
+/notes/private/
+/So notebook covers for Kobo sh.txt
+*.tgz
+*.tar.gz
+*.zip
+*.epub
+*.pdf
+
+# Plugin package inputs are extracted from the user's own firmware.
+/mods/custom-notebook-templates/package/
+/mods/custom-notebook-templates/KoboRoot.tgz
+/mods/custom-notebook-templates/libcustomnotebooktemplates.so
+/mods/custom-notebook-templates/src/*.o
+/mods/custom-notebook-templates/src/*.moc
+
+# Common local and credential files.
+.DS_Store
+._*
+__pycache__/
+*.py[cod]
+.env
+.env.*
+*.pem
+*.key

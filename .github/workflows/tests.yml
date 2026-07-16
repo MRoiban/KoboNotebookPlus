@@ -1,0 +1,23 @@
+name: Source checks
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Compile verification scripts
+        run: python -m py_compile scripts/*.py
+      - name: Run artifact-verifier tests
+        run: python scripts/test-verify-layer-artifacts.py

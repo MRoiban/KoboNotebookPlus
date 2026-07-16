@@ -1,0 +1,10 @@
+{
+  "templates": [
+    {
+      "id": "Custom_TestPaper",
+      "label": "Test Paper",
+      "icon": "/mnt/onboard/.kobo/custom/templates/test-paper-icon.png",
+      "background": "/mnt/onboard/.kobo/custom/templates/test-paper_condor.png"
+    }
+  ]
+}
