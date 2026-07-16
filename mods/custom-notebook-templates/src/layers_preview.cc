@@ -1,20 +1,68 @@
-#line 5469 "src/customnotebooktemplates.cc"
+#include "layers_preview.h"
+
+#include "cover_cache.h"
+#include "firmware_api.h"
+#include "layers_state.h"
+#include "notebook_widget.h"
+#include "page_io.h"
+#include "settings.h"
+
+#include <QByteArray>
+#include <QColor>
+#include <QCryptographicHash>
+#include <QDateTime>
+#include <QDir>
+#include <QElapsedTimer>
+#include <QFile>
+#include <QFileInfo>
+#include <QFont>
+#include <QHash>
+#include <QImage>
+#include <QImageReader>
+#include <QLabel>
+#include <QMenu>
+#include <QObject>
+#include <QPainter>
+#include <QPen>
+#include <QPoint>
+#include <QRect>
+#include <QPixmap>
+#include <QSize>
+#include <QTimer>
+#include <QUuid>
+
+#include <cstring>
+#include <memory>
+#include <new>
+#include <string>
+#include <vector>
+
+#include <unistd.h>
+
+namespace cnt {
+namespace layers_preview {
+namespace {
 
 struct ImagePainterDeletingDeleter {
+    ImagePainterDeletingDestructor destructor;
+
     void operator()(ImagePainterOpaque* painter) const {
-        if (painter && firmwareApi().imagePainterDeletingDestructor)
-            firmwareApi().imagePainterDeletingDestructor(painter);
+        if (painter && destructor)
+            destructor(painter);
     }
 };
 
 static bool copyLiveLayerPreviewImageLoader(
-    LayerContext const& context,
+    Dependencies const& dependencies,
+    layers::LayerContext const& context,
     SharedImageLoader* loaderResult,
     QString* error) {
+    FirmwareApi& firmware = *dependencies.firmware;
+    Pins const& pins = dependencies.pins;
     if (!loaderResult || !context.widget || !context.widgetObject
             || context.widgetObject.data()
                 != reinterpret_cast<QObject*>(context.widget)
-            || !firmwareApi().uirefEditorWidgetVtable) {
+            || !firmware.uirefEditorWidgetVtable) {
         if (error) {
             *error = QLatin1String(
                 "Layer preview unavailable: notebook UI is no longer live.");
@@ -24,7 +72,7 @@ static bool copyLiveLayerPreviewImageLoader(
 
     char* const widgetBytes = static_cast<char*>(context.widget);
     void* const editorWidgetGuard = *reinterpret_cast<void**>(
-        widgetBytes + kNotePadEditorWidgetGuardOffset);
+        widgetBytes + pins.notePadEditorWidgetGuardOffset);
     // Match IInkNotePadWidget's own QPointer check before following +0x48:
     // a non-null ExternalRefCountData whose strongref word at +4 is non-zero.
     if (!editorWidgetGuard
@@ -38,9 +86,9 @@ static bool copyLiveLayerPreviewImageLoader(
     }
 
     void* const editorWidget = *reinterpret_cast<void**>(
-        widgetBytes + kNotePadEditorWidgetObjectOffset);
+        widgetBytes + pins.notePadEditorWidgetObjectOffset);
     void* const expectedEditorWidgetVptr =
-        static_cast<char*>(firmwareApi().uirefEditorWidgetVtable) + 8;
+        static_cast<char*>(firmware.uirefEditorWidgetVtable) + 8;
     if (!editorWidget
             || *reinterpret_cast<void**>(editorWidget)
                 != expectedEditorWidgetVptr) {
@@ -53,9 +101,9 @@ static bool copyLiveLayerPreviewImageLoader(
 
     char* const editorWidgetBytes = static_cast<char*>(editorWidget);
     void* const liveEditor = *reinterpret_cast<void**>(
-        editorWidgetBytes + kEditorWidgetEditorObjectOffset);
+        editorWidgetBytes + pins.editorWidgetEditorObjectOffset);
     void* const liveEditorControl = *reinterpret_cast<void**>(
-        editorWidgetBytes + kEditorWidgetEditorControlOffset);
+        editorWidgetBytes + pins.editorWidgetEditorControlOffset);
     if (!liveEditorControl || liveEditor != context.editor
             || liveEditorControl != cnt::notebook_widget::notePadEditorControl(context.widget)) {
         if (error) {
@@ -66,9 +114,9 @@ static bool copyLiveLayerPreviewImageLoader(
     }
 
     void* const loaderObject = *reinterpret_cast<void**>(
-        editorWidgetBytes + kEditorWidgetImageLoaderObjectOffset);
+        editorWidgetBytes + pins.editorWidgetImageLoaderObjectOffset);
     void* const loaderControl = *reinterpret_cast<void**>(
-        editorWidgetBytes + kEditorWidgetImageLoaderControlOffset);
+        editorWidgetBytes + pins.editorWidgetImageLoaderControlOffset);
     if (!loaderObject || !loaderControl) {
         if (error) {
             *error = QLatin1String(
@@ -82,7 +130,7 @@ static bool copyLiveLayerPreviewImageLoader(
         // layout and never retain only its raw object pointer.
         SharedImageLoader const& liveLoader =
             *reinterpret_cast<SharedImageLoader const*>(
-                editorWidgetBytes + kEditorWidgetImageLoaderObjectOffset);
+                editorWidgetBytes + pins.editorWidgetImageLoaderObjectOffset);
         SharedImageLoader const loader = liveLoader;
         if (!loader || loader.get() != loaderObject) {
             if (error) {
@@ -105,15 +153,18 @@ static bool copyLiveLayerPreviewImageLoader(
 }
 
 static bool createLayerPreviewDrawer(
-    LayerContext const& context,
+    Dependencies const& dependencies,
+    layers::LayerContext const& context,
     SharedImagePainter* painterResult,
     SharedBackendImageDrawer* drawerResult,
     QString* error) {
-    if (!painterResult || !drawerResult || !firmwareApi().editorGetEngine
-            || !firmwareApi().editorGetConfiguration || !firmwareApi().imagePainterConstructor
-            || !firmwareApi().imagePainterDeletingDestructor
-            || !firmwareApi().imagePainterSetImageLoader
-            || !firmwareApi().backendImageDrawerMakeShared) {
+    FirmwareApi& firmware = *dependencies.firmware;
+    Pins const& pins = dependencies.pins;
+    if (!painterResult || !drawerResult || !firmware.editorGetEngine
+            || !firmware.editorGetConfiguration || !firmware.imagePainterConstructor
+            || !firmware.imagePainterDeletingDestructor
+            || !firmware.imagePainterSetImageLoader
+            || !firmware.backendImageDrawerMakeShared) {
         if (error) {
             *error = QLatin1String(
                 "Layer preview unavailable: stock image writer APIs are missing.");
@@ -121,9 +172,9 @@ static bool createLayerPreviewDrawer(
         return false;
     }
 
-    SharedEngine const engine = firmwareApi().editorGetEngine(context.editor);
+    SharedEngine const engine = firmware.editorGetEngine(context.editor);
     SharedConfiguration const configuration =
-        firmwareApi().editorGetConfiguration(context.editor);
+        firmware.editorGetConfiguration(context.editor);
     if (!engine || !configuration) {
         if (error) {
             *error = QLatin1String(
@@ -133,14 +184,16 @@ static bool createLayerPreviewDrawer(
     }
 
     SharedImageLoader imageLoader;
-    if (!copyLiveLayerPreviewImageLoader(context, &imageLoader, error))
+    if (!copyLiveLayerPreviewImageLoader(
+            dependencies, context, &imageLoader, error)) {
         return false;
+    }
 
     void* painterMemory = nullptr;
     try {
-        painterMemory = ::operator new(kImagePainterObjectBytes);
-        memset(painterMemory, 0, kImagePainterObjectBytes);
-        firmwareApi().imagePainterConstructor(painterMemory);
+        painterMemory = ::operator new(pins.imagePainterObjectBytes);
+        memset(painterMemory, 0, pins.imagePainterObjectBytes);
+        firmware.imagePainterConstructor(painterMemory);
     } catch (...) {
         if (painterMemory)
             ::operator delete(painterMemory);
@@ -159,11 +212,12 @@ static bool createLayerPreviewDrawer(
         // copies this shared owner before export starts.
         painter.reset(
             reinterpret_cast<ImagePainterOpaque*>(painterMemory),
-            ImagePainterDeletingDeleter());
-        firmwareApi().imagePainterSetImageLoader(painter.get(), imageLoader);
+            ImagePainterDeletingDeleter{
+                firmware.imagePainterDeletingDestructor});
+        firmware.imagePainterSetImageLoader(painter.get(), imageLoader);
         SharedEngine engineArgument = engine;
         SharedConfiguration configurationArgument = configuration;
-        firmwareApi().backendImageDrawerMakeShared(
+        firmware.backendImageDrawerMakeShared(
             &drawer,
             0,
             nullptr,
@@ -191,18 +245,39 @@ static bool createLayerPreviewDrawer(
 }
 
 struct StockPreviewCallbackContext {
-    alignas(4) unsigned char bytes[kStockPreviewContextBytes];
+    enum { StorageBytes = 0x28 };
+    alignas(4) unsigned char bytes[StorageBytes];
 
-    StockPreviewCallbackContext(void* drawer, void* backend) {
+    StockPreviewCallbackContext(
+            Pins const& pins,
+            void* drawer,
+            void* backend) {
         memset(bytes, 0, sizeof(bytes));
-        memcpy(bytes + kStockPreviewDrawerOffset, &drawer, sizeof(drawer));
-        memcpy(bytes + kStockPreviewBackendOffset, &backend, sizeof(backend));
+        memcpy(
+            bytes + pins.stockPreviewDrawerOffset,
+            &drawer,
+            sizeof(drawer));
+        memcpy(
+            bytes + pins.stockPreviewBackendOffset,
+            &backend,
+            sizeof(backend));
+    }
+
+    static bool supports(Pins const& pins) {
+        return pins.stockPreviewContextBytes
+                == static_cast<size_t>(StorageBytes)
+            && pins.stockPreviewDrawerOffset
+                <= static_cast<uintptr_t>(StorageBytes - sizeof(void*))
+            && pins.stockPreviewBackendOffset
+                <= static_cast<uintptr_t>(StorageBytes - sizeof(void*));
     }
 };
 
 class LayerPreviewRendererListener {
 public:
     LayerPreviewRendererListener(
+        FirmwareApi* firmware,
+        Pins const& pins,
         SharedImagePainter const& painter,
         SharedBackendImageDrawer const& drawer,
         SharedRenderer const& liveRenderer,
@@ -210,7 +285,9 @@ public:
         std::string const& layerId,
         bool* restrictionApplied,
         bool* writerInvoked)
-        : painter_(painter),
+        : firmware_(firmware),
+          pins_(pins),
+          painter_(painter),
           drawer_(drawer),
           liveRenderer_(liveRenderer),
           backend_(backend),
@@ -237,14 +314,14 @@ public:
         if (writerInvoked_)
             *writerInvoked_ = false;
         try {
-            if (renderer && firmwareApi().rendererRestrictToLayers) {
+            if (renderer && firmware_->rendererRestrictToLayers) {
                 std::vector<std::string> ids(1, layerId_);
-                if (firmwareApi().backgroundObjectLayerName
-                        && !firmwareApi().backgroundObjectLayerName->empty()
-                        && *firmwareApi().backgroundObjectLayerName != layerId_) {
-                    ids.push_back(*firmwareApi().backgroundObjectLayerName);
+                if (firmware_->backgroundObjectLayerName
+                        && !firmware_->backgroundObjectLayerName->empty()
+                        && *firmware_->backgroundObjectLayerName != layerId_) {
+                    ids.push_back(*firmware_->backgroundObjectLayerName);
                 }
-                firmwareApi().rendererRestrictToLayers(renderer.get(), ids);
+                firmware_->rendererRestrictToLayers(renderer.get(), ids);
                 if (restrictionApplied_)
                     *restrictionApplied_ = true;
             }
@@ -252,13 +329,13 @@ public:
             trace("layers: preview renderer restriction failed");
         }
 
-        if (!firmwareApi().stockBackendImageDrawerExport || !drawer_ || !backend_)
+        if (!firmware_->stockBackendImageDrawerExport || !drawer_ || !backend_)
             return;
-        StockPreviewCallbackContext callback(drawer_.get(), backend_);
+        StockPreviewCallbackContext callback(pins_, drawer_.get(), backend_);
         if (writerInvoked_)
             *writerInvoked_ = true;
         try {
-            firmwareApi().stockBackendImageDrawerExport(
+            firmware_->stockBackendImageDrawerExport(
                 callback.bytes, renderer, selection, extent, flags, path);
         } catch (...) {
             trace("layers: stock preview image writer threw");
@@ -266,6 +343,8 @@ public:
     }
 
 private:
+    FirmwareApi* firmware_;
+    Pins pins_;
     SharedImagePainter painter_;
     SharedBackendImageDrawer drawer_;
     SharedRenderer liveRenderer_;
@@ -276,22 +355,26 @@ private:
 };
 
 static bool liveNeboControllerAndBackend(
-    LayerContext const& context,
+    Dependencies const& dependencies,
+    layers::LayerContext const& context,
     SharedRenderer* rendererKeepAlive,
     void** pageController,
     void** backendResult,
     QString* error) {
+    FirmwareApi& firmware = *dependencies.firmware;
     if (!rendererKeepAlive || !pageController || !backendResult
-            || !firmwareApi().editorGetRenderer || !firmwareApi().rendererGetBackend || !firmwareApi().neboBackendVtable) {
+            || !firmware.editorGetRenderer || !firmware.rendererGetBackend
+            || !firmware.neboBackendVtable) {
         if (error)
             *error = QLatin1String("Layer preview unavailable: renderer APIs are missing.");
         return false;
     }
 
-    *rendererKeepAlive = firmwareApi().editorGetRenderer(context.editor);
+    *rendererKeepAlive = firmware.editorGetRenderer(context.editor);
     void* const backend = *rendererKeepAlive
-        ? firmwareApi().rendererGetBackend(rendererKeepAlive->get()) : nullptr;
-    void* const expectedVptr = static_cast<char*>(firmwareApi().neboBackendVtable) + 8;
+        ? firmware.rendererGetBackend(rendererKeepAlive->get()) : nullptr;
+    void* const expectedVptr =
+        static_cast<char*>(firmware.neboBackendVtable) + 8;
     if (!backend || *reinterpret_cast<void**>(backend) != expectedVptr) {
         if (error)
             *error = QLatin1String("Layer preview unavailable for this notebook backend.");
@@ -299,7 +382,8 @@ static bool liveNeboControllerAndBackend(
     }
 
     *pageController = *reinterpret_cast<void**>(
-        static_cast<char*>(backend) + kNeboBackendPageControllerOffset);
+        static_cast<char*>(backend)
+            + dependencies.pins.neboBackendPageControllerOffset);
     if (!*pageController) {
         if (error)
             *error = QLatin1String("Layer preview unavailable: page controller is missing.");
@@ -309,7 +393,10 @@ static bool liveNeboControllerAndBackend(
     return true;
 }
 
-static QString layerPreviewPath(LayerState const& state, QString const& id) {
+static QString layerPreviewPath(
+        Dependencies const& dependencies,
+        layers::LayerState const& state,
+        QString const& id) {
     QByteArray key = state.notebookPath.toUtf8();
     key.append('\n');
     key.append(state.partId.toUtf8());
@@ -317,28 +404,30 @@ static QString layerPreviewPath(LayerState const& state, QString const& id) {
     key.append(id.toUtf8());
     QByteArray const digest = QCryptographicHash::hash(
         key, QCryptographicHash::Sha256).toHex();
-    return QDir(QLatin1String(kLayerPreviewRoot)).filePath(
+    return QDir(QLatin1String(dependencies.pins.layerPreviewRoot)).filePath(
         QString::fromLatin1(digest) + QLatin1String(".png"));
 }
 
-static bool layerPreviewNeedsRefresh(
-    LayerState const& state,
+static bool layerPreviewNeedsRefreshImpl(
+    Dependencies const& dependencies,
+    layers::LayerState const& state,
     QString const& id) {
-    QFileInfo const preview(layerPreviewPath(state, id));
+    QFileInfo const preview(layerPreviewPath(dependencies, state, id));
     QFileInfo const notebook(state.notebookPath);
     return !preview.isFile()
         || preview.size() <= 0
-        || preview.size() > kMaximumLayerPreviewBytes
+        || preview.size() > dependencies.pins.maximumLayerPreviewBytes
         || (notebook.isFile() && preview.lastModified() < notebook.lastModified());
 }
 
 static bool layerPreviewCacheUsable(
-    LayerState const& state,
+    Dependencies const& dependencies,
+    layers::LayerState const& state,
     QString const& id) {
-    QFileInfo const preview(layerPreviewPath(state, id));
+    QFileInfo const preview(layerPreviewPath(dependencies, state, id));
     return preview.isFile()
         && preview.size() > 0
-        && preview.size() <= kMaximumLayerPreviewBytes;
+        && preview.size() <= dependencies.pins.maximumLayerPreviewBytes;
 }
 
 class LayerPreviewActiveGuard {
@@ -359,18 +448,24 @@ private:
 };
 
 static bool generateLayerPreview(
-    LayerContext const& context,
+    Dependencies const& dependencies,
+    layers::LayerContext const& context,
     QString const& id,
     QString* error) {
-    if (!layerState().previewApisReady || !firmwareApi().rendererRestrictToLayers
-            || !firmwareApi().pageControllerExportToPng || !firmwareApi().stockBackendImageDrawerExport) {
+    FirmwareApi& firmware = *dependencies.firmware;
+    layers::RuntimeState& runtime = *dependencies.runtime;
+    Pins const& pins = dependencies.pins;
+    if (!runtime.previewApisReady || !firmware.rendererRestrictToLayers
+            || !firmware.pageControllerExportToPng
+            || !firmware.stockBackendImageDrawerExport
+            || !StockPreviewCallbackContext::supports(pins)) {
         if (error) {
             *error = QLatin1String(
                 "Layer preview unavailable: firmware export APIs are not ready.");
         }
         return false;
     }
-    if (!QDir().mkpath(QLatin1String(kLayerPreviewRoot))) {
+    if (!QDir().mkpath(QLatin1String(pins.layerPreviewRoot))) {
         if (error)
             *error = QLatin1String("Layer preview unavailable: cache directory failed.");
         return false;
@@ -387,17 +482,23 @@ static bool generateLayerPreview(
     void* pageController = nullptr;
     void* backend = nullptr;
     if (!liveNeboControllerAndBackend(
-            context, &rendererKeepAlive, &pageController, &backend, error)) {
+            dependencies,
+            context,
+            &rendererKeepAlive,
+            &pageController,
+            &backend,
+            error)) {
         return false;
     }
     SharedImagePainter painter;
     SharedBackendImageDrawer drawer;
     if (!createLayerPreviewDrawer(
-            context, &painter, &drawer, error)) {
+            dependencies, context, &painter, &drawer, error)) {
         return false;
     }
 
-    QString const finalPath = layerPreviewPath(context.state, id);
+    QString const finalPath = layerPreviewPath(
+        dependencies, context.state, id);
     QString const uniqueSuffix = QString::number(getpid())
         + QLatin1String("-")
         + QUuid::createUuid().toString().remove('{').remove('}');
@@ -410,6 +511,8 @@ static bool generateLayerPreview(
     std::string const nativeId = id.toUtf8().constData();
     std::shared_ptr<LayerPreviewRendererListener> const proxy =
         std::make_shared<LayerPreviewRendererListener>(
+            &firmware,
+            pins,
             painter,
             drawer,
             rendererKeepAlive,
@@ -425,7 +528,7 @@ static bool generateLayerPreview(
     trace(QLatin1String("layers: isolated preview export begin id=") + id);
     try {
         std::string const output = temporaryPath.toUtf8().constData();
-        exported = firmwareApi().pageControllerExportToPng(
+        exported = firmware.pageControllerExportToPng(
             pageController, SharedBox(), output, opaqueProxy, 0);
     } catch (...) {
         exported = false;
@@ -445,7 +548,7 @@ static bool generateLayerPreview(
     if (!exported || !restrictionApplied || !writerInvoked
             || !generated.isFile()
             || generated.size() <= 0
-            || generated.size() > kMaximumLayerPreviewBytes) {
+            || generated.size() > pins.maximumLayerPreviewBytes) {
         QFile::remove(temporaryPath);
         if (error) {
             *error = QLatin1String(
@@ -478,7 +581,9 @@ static bool generateLayerPreview(
         + QLatin1String(".card-") + uniqueSuffix + QLatin1String(".png");
     QFile::remove(cardTemporaryPath);
     QImage const card = validation.scaled(
-        QSize(kLayerPreviewCardWidth - 6, kLayerPreviewCardHeight - 6),
+        QSize(
+            pins.layerPreviewCardWidth - 6,
+            pins.layerPreviewCardHeight - 6),
         Qt::KeepAspectRatio,
         Qt::SmoothTransformation);
     QString cacheCandidatePath = temporaryPath;
@@ -486,7 +591,7 @@ static bool generateLayerPreview(
         && card.save(cardTemporaryPath, "PNG");
     QFileInfo const cardFile(cardTemporaryPath);
     if (cardSaved && cardFile.isFile() && cardFile.size() > 0
-            && cardFile.size() <= kMaximumLayerPreviewBytes) {
+            && cardFile.size() <= pins.maximumLayerPreviewBytes) {
         cacheCandidatePath = cardTemporaryPath;
     } else {
         cardSaved = false;
@@ -519,31 +624,34 @@ static bool generateLayerPreview(
     // FAT timestamps are coarse and two tiny PNGs can occasionally have the
     // same byte count. Explicit eviction guarantees the just-written card is
     // decoded once instead of reusing an indistinguishable old memory entry.
-    layerState().previewCardCache.remove(finalPath);
+    runtime.previewCardCache.remove(finalPath);
     return true;
 }
 
 static bool readLayerPreviewCard(
-    LayerState const& state,
+    Dependencies const& dependencies,
+    layers::LayerState const& state,
     QString const& id,
     QImage* result) {
-    if (!result || !layerPreviewCacheUsable(state, id))
+    layers::RuntimeState& runtime = *dependencies.runtime;
+    Pins const& pins = dependencies.pins;
+    if (!result || !layerPreviewCacheUsable(dependencies, state, id))
         return false;
-    QString const path = layerPreviewPath(state, id);
+    QString const path = layerPreviewPath(dependencies, state, id);
     QFileInfo const cached(path);
     qint64 const modifiedMs = cached.lastModified().toMSecsSinceEpoch();
     QHash<QString, LayerPreviewCardCacheEntry>::iterator found =
-        layerState().previewCardCache.find(path);
-    if (found != layerState().previewCardCache.end()
+        runtime.previewCardCache.find(path);
+    if (found != runtime.previewCardCache.end()
             && found->modifiedMs == modifiedMs
             && found->size == cached.size()
             && !found->image.isNull()) {
-        found->sequence = ++layerState().previewCardCacheSequence;
+        found->sequence = ++runtime.previewCardCacheSequence;
         *result = found->image;
         return true;
     }
-    if (found != layerState().previewCardCache.end())
-        layerState().previewCardCache.erase(found);
+    if (found != runtime.previewCardCache.end())
+        runtime.previewCardCache.erase(found);
 
     QImageReader reader(path);
     QSize const decodedSize = reader.size();
@@ -552,60 +660,68 @@ static bool readLayerPreviewCard(
         return false;
     }
     QSize const target = decodedSize.scaled(
-        QSize(kLayerPreviewCardWidth - 6, kLayerPreviewCardHeight - 6),
+        QSize(
+            pins.layerPreviewCardWidth - 6,
+            pins.layerPreviewCardHeight - 6),
         Qt::KeepAspectRatio);
     if (target.isValid() && target != decodedSize)
         reader.setScaledSize(target);
     QImage image = reader.read();
     if (image.isNull())
         return false;
-    if (image.width() > kLayerPreviewCardWidth - 6
-            || image.height() > kLayerPreviewCardHeight - 6) {
+    if (image.width() > pins.layerPreviewCardWidth - 6
+            || image.height() > pins.layerPreviewCardHeight - 6) {
         image = image.scaled(
-            QSize(kLayerPreviewCardWidth - 6, kLayerPreviewCardHeight - 6),
+            QSize(
+                pins.layerPreviewCardWidth - 6,
+                pins.layerPreviewCardHeight - 6),
             Qt::KeepAspectRatio,
             Qt::SmoothTransformation);
     }
     if (image.isNull())
         return false;
 
-    if (layerState().previewCardCache.size()
-            >= kMaximumLayerPreviewCardCacheEntries) {
+    if (runtime.previewCardCache.size()
+            >= pins.maximumCardCacheEntries) {
         QHash<QString, LayerPreviewCardCacheEntry>::iterator oldest =
-            layerState().previewCardCache.begin();
+            runtime.previewCardCache.begin();
         for (QHash<QString, LayerPreviewCardCacheEntry>::iterator it =
-                 layerState().previewCardCache.begin();
-                it != layerState().previewCardCache.end(); ++it) {
+                 runtime.previewCardCache.begin();
+                it != runtime.previewCardCache.end(); ++it) {
             if (it->sequence < oldest->sequence)
                 oldest = it;
         }
-        if (oldest != layerState().previewCardCache.end())
-            layerState().previewCardCache.erase(oldest);
+        if (oldest != runtime.previewCardCache.end())
+            runtime.previewCardCache.erase(oldest);
     }
     LayerPreviewCardCacheEntry entry;
     entry.image = image;
     entry.modifiedMs = modifiedMs;
     entry.size = cached.size();
-    entry.sequence = ++layerState().previewCardCacheSequence;
-    layerState().previewCardCache.insert(path, entry);
+    entry.sequence = ++runtime.previewCardCacheSequence;
+    runtime.previewCardCache.insert(path, entry);
     *result = image;
     return true;
 }
 
-static QPixmap layerPreview(
-    LayerState const& state,
+static QPixmap layerPreviewImpl(
+    Dependencies const& dependencies,
+    layers::LayerState const& state,
     QString const& id,
     QString const& name,
     bool active,
-    bool* cacheDrawnResult = nullptr) {
-    QPixmap preview(kLayerPreviewCardWidth, kLayerPreviewCardHeight);
+    bool* cacheDrawnResult) {
+    Pins const& pins = dependencies.pins;
+    QPixmap preview(
+        pins.layerPreviewCardWidth,
+        pins.layerPreviewCardHeight);
     preview.fill(Qt::white);
     QPainter painter(&preview);
     bool cacheDrawn = false;
     // A stale but valid cache is still a better first frame than a text
     // placeholder. The popup queues its replacement only after it is visible.
     QImage image;
-    if (readLayerPreviewCard(state, id, &image)) {
+    if (readLayerPreviewCard(dependencies, state, id, &image)) {
         QPoint const origin(
             (preview.width() - image.width()) / 2,
             (preview.height() - image.height()) / 2);
@@ -628,51 +744,60 @@ static QPixmap layerPreview(
     return preview;
 }
 
-static void showLayerError(void* widget, QString const& error) {
+static void showLayerErrorImpl(
+        Dependencies const& dependencies,
+        void* widget,
+        QString const& error) {
     trace("layers: operation failed safely");
-    if (firmwareApi().showErrorPopup)
-        firmwareApi().showErrorPopup(widget, error);
+    if (dependencies.firmware->showErrorPopup)
+        dependencies.firmware->showErrorPopup(widget, error);
 }
 
-static bool addNotebookLayer(LayerContext* context, QString* error) {
-    if (!context || context->state.customLayers.size() + 1 >= kMaximumNotebookLayers) {
+static bool addNotebookLayer(
+        Dependencies const& dependencies,
+        layers::LayerContext* context,
+        QString* error) {
+    FirmwareApi& firmware = *dependencies.firmware;
+    Pins const& pins = dependencies.pins;
+    if (!context || context->state.customLayers.size() + 1
+            >= pins.maximumNotebookLayers) {
         if (error)
             *error = QLatin1String("Layer not added: this notebook reached the layer limit.");
         return false;
     }
 
-    firmwareApi().widgetSave(context->widget);
+    firmware.widgetSave(context->widget);
     QString backupPath;
     if (!cnt::page_io::backupNotebookPath(
             context->state.notebookPath,
-            QLatin1String(kLayerBackupRoot),
+            QLatin1String(pins.layerBackupRoot),
             QLatin1String("Add layer"),
             &backupPath,
             error)) {
         return false;
     }
 
-    cnt::layers_state::LayoutStorage layout(firmwareApi());
+    cnt::layers_state::LayoutStorage layout(firmware);
     if (!cnt::layers_state::loadLayoutForPart(
-            firmwareApi(), context->part, &layout, error))
+            firmware, context->part, &layout, error))
         return false;
-    LayerRecord record;
+    layers::LayerRecord record;
     record.id = QLatin1String("cnt.layer.")
         + QUuid::createUuid().toString().remove('{').remove('}');
     record.name = QLatin1String("Layer ")
         + QString::number(context->state.customLayers.size() + 2);
     std::string const nativeId = record.id.toUtf8().constData();
-    if (!firmwareApi().layoutAppendLayer(layout.bytes, nativeId)) {
+    if (!firmware.layoutAppendLayer(layout.bytes, nativeId)) {
         if (error)
             *error = QLatin1String("Layer not added: document rejected the new layer.");
         return false;
     }
     bool addedExists = false;
     if (!cnt::layers_state::nativeLayerExists(
-            firmwareApi(), layout, record.id, &addedExists, error)
+            firmware, layout, record.id, &addedExists, error)
             || !addedExists) {
         try {
-            firmwareApi().layoutRemoveLayer(layout.bytes, nativeId);
+            firmware.layoutRemoveLayer(layout.bytes, nativeId);
         } catch (...) {
             trace("layers: failed add could not be rolled back in memory");
         }
@@ -684,24 +809,24 @@ static bool addNotebookLayer(LayerContext* context, QString* error) {
         return false;
     }
 
-    LayerState const previous = context->state;
+    layers::LayerState const previous = context->state;
     context->state.customLayers.append(record);
     context->state.activeId = record.id;
     if (!cnt::layers_service::applyActiveLayer(
-            firmwareApi(),
-            kNeboBackendPageControllerOffset,
-            kLayerToolRoutingOperations,
+            firmware,
+            pins.neboBackendPageControllerOffset,
+            dependencies.toolRoutingOperations,
             *context,
             record.id,
             error)
             || !cnt::layers_state::saveLayerState(context->state, error)) {
-        firmwareApi().layoutRemoveLayer(layout.bytes, nativeId);
+        firmware.layoutRemoveLayer(layout.bytes, nativeId);
         context->state = previous;
         cnt::layers_state::saveLayerState(previous, nullptr);
         cnt::layers_service::applyActiveLayer(
-            firmwareApi(),
-            kNeboBackendPageControllerOffset,
-            kLayerToolRoutingOperations,
+            firmware,
+            pins.neboBackendPageControllerOffset,
+            dependencies.toolRoutingOperations,
             *context,
             previous.activeId,
             nullptr);
@@ -709,25 +834,31 @@ static bool addNotebookLayer(LayerContext* context, QString* error) {
     }
 
     trace("layers: package save begin after native add");
-    firmwareApi().packageSave(context->package.get());
+    firmware.packageSave(context->package.get());
     trace("layers: package save complete after native add");
-    firmwareApi().widgetSave(context->widget);
+    firmware.widgetSave(context->widget);
     trace("layers: widget save complete after native add");
     cnt::layers_state::traceSerializedLayerProbe(
-        coverState(), context->state, record.id, "after-add-save");
-    firmwareApi().widgetRefresh(context->widget);
+        *dependencies.coverCache,
+        context->state,
+        record.id,
+        "after-add-save");
+    firmware.widgetRefresh(context->widget);
     trace("layers: native layer added and selected");
     return true;
 }
 
 static bool activateNotebookLayer(
-    LayerContext* context,
+    Dependencies const& dependencies,
+    layers::LayerContext* context,
     QString const& id,
     QString* error) {
+    FirmwareApi& firmware = *dependencies.firmware;
+    Pins const& pins = dependencies.pins;
     if (!context)
         return false;
     bool known = id
-        == cnt::layers_state::nativeDocumentLayerId(firmwareApi());
+        == cnt::layers_state::nativeDocumentLayerId(firmware);
     for (int i = 0; !known && i < context->state.customLayers.size(); ++i)
         known = context->state.customLayers.at(i).id == id;
     if (!known) {
@@ -738,9 +869,9 @@ static bool activateNotebookLayer(
 
     QString const previous = context->state.activeId;
     if (!cnt::layers_service::applyActiveLayer(
-            firmwareApi(),
-            kNeboBackendPageControllerOffset,
-            kLayerToolRoutingOperations,
+            firmware,
+            pins.neboBackendPageControllerOffset,
+            dependencies.toolRoutingOperations,
             *context,
             id,
             error))
@@ -749,9 +880,9 @@ static bool activateNotebookLayer(
     if (!cnt::layers_state::saveLayerState(context->state, error)) {
         context->state.activeId = previous;
         cnt::layers_service::applyActiveLayer(
-            firmwareApi(),
-            kNeboBackendPageControllerOffset,
-            kLayerToolRoutingOperations,
+            firmware,
+            pins.neboBackendPageControllerOffset,
+            dependencies.toolRoutingOperations,
             *context,
             previous,
             nullptr);
@@ -761,14 +892,19 @@ static bool activateNotebookLayer(
     // only on isolated export/thumbnail renderers; mutating the live
     // RenderPad vector from this menu callback races its render lifecycle.
     // The active ToolDispatcher still routes all future strokes natively.
-    firmwareApi().widgetRefresh(context->widget);
+    firmware.widgetRefresh(context->widget);
     trace("layers: active layer changed");
     return true;
 }
 
-static bool deleteActiveNotebookLayer(LayerContext* context, QString* error) {
+static bool deleteActiveNotebookLayer(
+        Dependencies const& dependencies,
+        layers::LayerContext* context,
+        QString* error) {
+    FirmwareApi& firmware = *dependencies.firmware;
+    Pins const& pins = dependencies.pins;
     if (!context || context->state.activeId
-            == cnt::layers_state::nativeDocumentLayerId(firmwareApi())) {
+            == cnt::layers_state::nativeDocumentLayerId(firmware)) {
         if (error)
             *error = QLatin1String("Layer not deleted: the base layer is protected.");
         return false;
@@ -787,29 +923,29 @@ static bool deleteActiveNotebookLayer(LayerContext* context, QString* error) {
         return false;
     }
 
-    firmwareApi().widgetSave(context->widget);
+    firmware.widgetSave(context->widget);
     QString backupPath;
     if (!cnt::page_io::backupNotebookPath(
             context->state.notebookPath,
-            QLatin1String(kLayerBackupRoot),
+            QLatin1String(pins.layerBackupRoot),
             QLatin1String("Delete layer"),
             &backupPath,
             error)) {
         return false;
     }
 
-    cnt::layers_state::LayoutStorage layout(firmwareApi());
+    cnt::layers_state::LayoutStorage layout(firmware);
     if (!cnt::layers_state::loadLayoutForPart(
-            firmwareApi(), context->part, &layout, error))
+            firmware, context->part, &layout, error))
         return false;
     QString const deletedId = context->state.activeId;
     std::string const nativeId = deletedId.toUtf8().constData();
     QString const previewPath = layerPreviewPath(
-        context->state, context->state.activeId);
-    firmwareApi().layoutRemoveLayer(layout.bytes, nativeId);
+        dependencies, context->state, context->state.activeId);
+    firmware.layoutRemoveLayer(layout.bytes, nativeId);
     bool stillExists = true;
     if (!cnt::layers_state::nativeLayerExists(
-            firmwareApi(),
+            firmware,
             layout,
             context->state.activeId,
             &stillExists,
@@ -831,11 +967,11 @@ static bool deleteActiveNotebookLayer(LayerContext* context, QString* error) {
     }
     context->state.customLayers.remove(index);
     context->state.activeId =
-        cnt::layers_state::nativeDocumentLayerId(firmwareApi());
+        cnt::layers_state::nativeDocumentLayerId(firmware);
     if (!cnt::layers_service::applyActiveLayer(
-            firmwareApi(),
-            kNeboBackendPageControllerOffset,
-            kLayerToolRoutingOperations,
+            firmware,
+            pins.neboBackendPageControllerOffset,
+            dependencies.toolRoutingOperations,
             *context,
             context->state.activeId,
             error)
@@ -848,26 +984,33 @@ static bool deleteActiveNotebookLayer(LayerContext* context, QString* error) {
         return false;
     }
     trace("layers: package save begin after native delete");
-    firmwareApi().packageSave(context->package.get());
+    firmware.packageSave(context->package.get());
     trace("layers: package save complete after native delete");
-    firmwareApi().widgetSave(context->widget);
+    firmware.widgetSave(context->widget);
     trace("layers: widget save complete after native delete");
     cnt::layers_state::traceSerializedLayerProbe(
-        coverState(), context->state, deletedId, "after-delete-save");
+        *dependencies.coverCache,
+        context->state,
+        deletedId,
+        "after-delete-save");
     QFile::remove(previewPath);
-    layerState().previewCardCache.remove(previewPath);
-    firmwareApi().widgetRefresh(context->widget);
+    dependencies.runtime->previewCardCache.remove(previewPath);
+    firmware.widgetRefresh(context->widget);
     trace("layers: active native layer deleted");
     return true;
 }
 
-static bool refreshLayerPreviews(LayerContext* context, QString* error) {
+static bool refreshLayerPreviews(
+        Dependencies const& dependencies,
+        layers::LayerContext* context,
+        QString* error) {
     if (!context)
         return false;
-    firmwareApi().widgetSave(context->widget);
+    FirmwareApi& firmware = *dependencies.firmware;
+    firmware.widgetSave(context->widget);
 
     QVector<QString> ids;
-    ids.append(cnt::layers_state::nativeDocumentLayerId(firmwareApi()));
+    ids.append(cnt::layers_state::nativeDocumentLayerId(firmware));
     for (int i = 0; i < context->state.customLayers.size(); ++i)
         ids.append(context->state.customLayers.at(i).id);
 
@@ -875,10 +1018,12 @@ static bool refreshLayerPreviews(LayerContext* context, QString* error) {
     QString firstError;
     for (int i = 0; i < ids.size(); ++i) {
         QString itemError;
-        if (generateLayerPreview(*context, ids.at(i), &itemError))
+        if (generateLayerPreview(
+                dependencies, *context, ids.at(i), &itemError)) {
             ++generated;
-        else if (firstError.isEmpty())
+        } else if (firstError.isEmpty()) {
             firstError = itemError;
+        }
     }
     if (generated != ids.size()) {
         if (error) {
@@ -893,7 +1038,22 @@ static bool refreshLayerPreviews(LayerContext* context, QString* error) {
     return true;
 }
 
-static QString layerPopupRowLabel(
+static bool performLayerOperationImpl(
+        Dependencies const& dependencies,
+        layers::LayerContext* context,
+        layers::LayerOperation operation,
+        QString const& id,
+        QString* error) {
+    if (operation == layers::AddLayerOperation)
+        return addNotebookLayer(dependencies, context, error);
+    if (operation == layers::DeleteActiveLayerOperation)
+        return deleteActiveNotebookLayer(dependencies, context, error);
+    if (operation == layers::RefreshLayerPreviewsOperation)
+        return refreshLayerPreviews(dependencies, context, error);
+    return activateNotebookLayer(dependencies, context, id, error);
+}
+
+static QString layerPopupRowLabelImpl(
     QString const& name,
     bool active,
     bool previewPending) {
@@ -905,17 +1065,10 @@ static QString layerPopupRowLabel(
     return label;
 }
 
-struct DeferredLayerPreviewRow {
-    QString id;
-    QString name;
-    bool active;
-    QPointer<QLabel> previewLabel;
-    QPointer<QLabel> textLabel;
-};
-
 struct DeferredLayerPreviewRefresh {
+    Dependencies dependencies;
     QPointer<QObject> controller;
-    LayerState expectedState;
+    layers::LayerState expectedState;
     QVector<DeferredLayerPreviewRow> rows;
     QPointer<QTimer> timer;
     int next;
@@ -923,8 +1076,11 @@ struct DeferredLayerPreviewRefresh {
     int generated;
     QElapsedTimer elapsed;
 
-    DeferredLayerPreviewRefresh()
-        : next(0), attempted(0), generated(0) {}
+    explicit DeferredLayerPreviewRefresh(Dependencies dependencies_)
+        : dependencies(dependencies_),
+          next(0),
+          attempted(0),
+          generated(0) {}
 };
 
 // MyScript renderers are GUI-thread-affine, so this deliberately does not use
@@ -935,8 +1091,12 @@ static void continueDeferredLayerPreviewRefresh(
     std::shared_ptr<DeferredLayerPreviewRefresh> const& state) {
     if (!state || !state->timer || !state->controller)
         return;
+    Dependencies const& dependencies = state->dependencies;
+    FirmwareApi& firmware = *dependencies.firmware;
+    layers::RuntimeState& runtime = *dependencies.runtime;
+    Pins const& pins = dependencies.pins;
     if (state->next >= state->rows.size()
-            || state->attempted >= kLayerPreviewDeferredBudget) {
+            || state->attempted >= pins.deferredBudget) {
         trace(QLatin1String("layers: deferred popup preview refresh complete attempted=")
             + QString::number(state->attempted)
             + QLatin1String(" generated=") + QString::number(state->generated)
@@ -954,13 +1114,13 @@ static void continueDeferredLayerPreviewRefresh(
     // Do not retain raw Editor/PageController pointers across event-loop
     // turns. Reload the live notebook context and prove that it is still the
     // exact page for which this work was queued before touching MyScript.
-    LayerContext context;
+    layers::LayerContext context;
     QString contextError;
     if (!cnt::layers_state::loadLayerContext(
-            firmwareApi(),
-            layerState(),
+            firmware,
+            runtime,
             state->controller,
-            kMaximumNotebookLayers,
+            pins.maximumNotebookLayers,
             &context,
             &contextError)
             || context.state.notebookPath != state->expectedState.notebookPath
@@ -972,11 +1132,11 @@ static void continueDeferredLayerPreviewRefresh(
     if (context.widgetObject->property("_cnt_layer_operation_active").toBool()) {
         --state->next;
         --state->attempted;
-        state->timer->start(kLayerPreviewDeferredNextMs);
+        state->timer->start(pins.deferredNextMs);
         return;
     }
     bool knownLayer = row.id
-        == cnt::layers_state::nativeDocumentLayerId(firmwareApi());
+        == cnt::layers_state::nativeDocumentLayerId(firmware);
     for (int i = 0; !knownLayer && i < context.state.customLayers.size(); ++i)
         knownLayer = context.state.customLayers.at(i).id == row.id;
     if (!knownLayer) {
@@ -986,19 +1146,27 @@ static void continueDeferredLayerPreviewRefresh(
     }
 
     QString itemError;
-    bool const wasStale = layerPreviewNeedsRefresh(context.state, row.id);
+    bool const wasStale = layerPreviewNeedsRefreshImpl(
+        dependencies, context.state, row.id);
     bool refreshed = !wasStale;
     if (wasStale)
-        refreshed = generateLayerPreview(context, row.id, &itemError);
+        refreshed = generateLayerPreview(
+            dependencies, context, row.id, &itemError);
     if (refreshed) {
         if (wasStale)
             ++state->generated;
         if (row.previewLabel) {
-            row.previewLabel->setPixmap(layerPreview(
-                context.state, row.id, row.name, row.active));
+            row.previewLabel->setPixmap(layerPreviewImpl(
+                dependencies,
+                context.state,
+                row.id,
+                row.name,
+                row.active,
+                nullptr));
         }
         if (row.textLabel)
-            row.textLabel->setText(layerPopupRowLabel(row.name, row.active, false));
+            row.textLabel->setText(
+                layerPopupRowLabelImpl(row.name, row.active, false));
     } else {
         trace(QLatin1String("layers: deferred popup preview retained cache id=")
             + row.id + QLatin1String(" error=") + itemError);
@@ -1009,8 +1177,8 @@ static void continueDeferredLayerPreviewRefresh(
         + QLatin1String(" ms=") + QString::number(itemTimer.elapsed()));
 
     if (state->next < state->rows.size()
-            && state->attempted < kLayerPreviewDeferredBudget) {
-        state->timer->start(kLayerPreviewDeferredNextMs);
+            && state->attempted < pins.deferredBudget) {
+        state->timer->start(pins.deferredNextMs);
     } else {
         trace(QLatin1String("layers: deferred popup preview refresh complete attempted=")
             + QString::number(state->attempted)
@@ -1021,18 +1189,19 @@ static void continueDeferredLayerPreviewRefresh(
     }
 }
 
-static void startDeferredLayerPreviewRefresh(
+static void startDeferredLayerPreviewRefreshImpl(
+    Dependencies dependencies,
     QObject* controller,
-    LayerContext const& context,
+    layers::LayerContext const& context,
     QMenu* popup,
     QVector<DeferredLayerPreviewRow> const& rows) {
-    if (!popup || rows.isEmpty() || !layerState().previewApisReady) {
+    if (!popup || rows.isEmpty() || !dependencies.runtime->previewApisReady) {
         trace(QLatin1String("layers: deferred popup preview refresh queued=0"));
         return;
     }
 
     std::shared_ptr<DeferredLayerPreviewRefresh> const state(
-        new DeferredLayerPreviewRefresh);
+        new DeferredLayerPreviewRefresh(dependencies));
     state->controller = controller;
     state->expectedState = context.state;
     state->rows = rows;
@@ -1043,7 +1212,69 @@ static void startDeferredLayerPreviewRefresh(
     QObject::connect(timer, &QTimer::timeout, [state]() {
         continueDeferredLayerPreviewRefresh(state);
     });
-    timer->start(kLayerPreviewDeferredStartMs);
+    timer->start(dependencies.pins.deferredStartMs);
     trace(QLatin1String("layers: deferred popup preview refresh queued=")
         + QString::number(rows.size()));
 }
+
+} // namespace
+
+void showLayerError(
+        Dependencies dependencies,
+        void* widget,
+        QString const& error) {
+    showLayerErrorImpl(dependencies, widget, error);
+}
+
+bool performLayerOperation(
+        Dependencies dependencies,
+        layers::LayerContext* context,
+        layers::LayerOperation operation,
+        QString const& id,
+        QString* error) {
+    return performLayerOperationImpl(
+        dependencies, context, operation, id, error);
+}
+
+bool layerPreviewNeedsRefresh(
+        Dependencies dependencies,
+        layers::LayerState const& state,
+        QString const& id) {
+    return layerPreviewNeedsRefreshImpl(dependencies, state, id);
+}
+
+QPixmap layerPreview(
+        Dependencies dependencies,
+        layers::LayerState const& state,
+        QString const& id,
+        QString const& name,
+        bool active,
+        bool* cacheDrawnResult) {
+    return layerPreviewImpl(
+        dependencies,
+        state,
+        id,
+        name,
+        active,
+        cacheDrawnResult);
+}
+
+QString layerPopupRowLabel(
+        QString const& name,
+        bool active,
+        bool previewPending) {
+    return layerPopupRowLabelImpl(name, active, previewPending);
+}
+
+void startDeferredLayerPreviewRefresh(
+        Dependencies dependencies,
+        QObject* controller,
+        layers::LayerContext const& context,
+        QMenu* popup,
+        QVector<DeferredLayerPreviewRow> const& rows) {
+    startDeferredLayerPreviewRefreshImpl(
+        dependencies, controller, context, popup, rows);
+}
+
+} // namespace layers_preview
+} // namespace cnt

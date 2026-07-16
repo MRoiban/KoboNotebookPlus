@@ -7,7 +7,7 @@ override SOURCES  += src/customnotebooktemplates.cc src/fs_util.cc src/settings.
 	src/templates.cc src/covers.cc src/cover_cache.cc src/cover_editor.cc src/page_io.cc \
 	src/notebook_widget.cc src/notebook_hook_services.cc src/notebook_menu.cc src/pages.cc \
 	src/page_actions.cc src/visibility.cc src/eraser_menu.cc src/layers_state.cc \
-	src/layers_service.cc
+	src/layers_service.cc src/layers_preview.cc
 override MOCS     += src/covermenureceiver.h
 override PKGCONF  += Qt5Widgets
 override CXXFLAGS += -Wall -Wextra -Werror -Wno-missing-field-initializers \

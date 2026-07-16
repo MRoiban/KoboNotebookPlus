@@ -1,5 +1,16 @@
 #line 6460 "src/customnotebooktemplates.cc"
 
+static cnt::layers_preview::Dependencies layerPreviewDependencies() {
+    cnt::layers_preview::Dependencies dependencies = {
+        &firmwareApi(),
+        &layerState(),
+        &coverState(),
+        kLayerToolRoutingOperations,
+        kLayerPreviewPins
+    };
+    return dependencies;
+}
+
 class LayerOperationActiveGuard {
 public:
     explicit LayerOperationActiveGuard(QObject* widgetObject)
@@ -23,6 +34,8 @@ static void runLayerOperation(
     QString const& id = QString()) {
     if (!controller)
         return;
+    cnt::layers_preview::Dependencies const previewDependencies =
+        layerPreviewDependencies();
     QObject* const widgetObject =
         cnt::notebook_widget::findNotebookWidget(controller);
     if (!widgetObject
@@ -52,7 +65,8 @@ static void runLayerOperation(
             &error)) {
         QObject* const widgetObject =
             cnt::notebook_widget::findNotebookWidget(controller);
-        showLayerError(widgetObject, error);
+        cnt::layers_preview::showLayerError(
+            previewDependencies, widgetObject, error);
         return;
     }
 
@@ -72,21 +86,20 @@ static void runLayerOperation(
 
     bool succeeded = false;
     try {
-        if (operation == AddLayerOperation)
-            succeeded = addNotebookLayer(&context, &error);
-        else if (operation == DeleteActiveLayerOperation)
-            succeeded = deleteActiveNotebookLayer(&context, &error);
-        else if (operation == RefreshLayerPreviewsOperation)
-            succeeded = refreshLayerPreviews(&context, &error);
-        else
-            succeeded = activateNotebookLayer(&context, id, &error);
+        succeeded = cnt::layers_preview::performLayerOperation(
+            previewDependencies,
+            &context,
+            operation,
+            id,
+            &error);
     } catch (std::exception const&) {
         error = QLatin1String("Layer operation failed: notebook engine rejected it.");
     } catch (...) {
         error = QLatin1String("Layer operation failed: unexpected notebook error.");
     }
     if (!succeeded)
-        showLayerError(context.widget, error);
+        cnt::layers_preview::showLayerError(
+            previewDependencies, context.widget, error);
 }
 
 static QMenu* createNativeLayerPopup(QWidget* anchor, QString* error) {
@@ -232,6 +245,8 @@ private:
 };
 
 static void showLayerPopup(QObject* controller) {
+    cnt::layers_preview::Dependencies const previewDependencies =
+        layerPreviewDependencies();
     QElapsedTimer popupOpenTimer;
     popupOpenTimer.start();
     LayerContext context;
@@ -245,7 +260,8 @@ static void showLayerPopup(QObject* controller) {
             &error)) {
         QObject* const widgetObject =
             cnt::notebook_widget::findNotebookWidget(controller);
-        showLayerError(widgetObject, error);
+        cnt::layers_preview::showLayerError(
+            previewDependencies, widgetObject, error);
         return;
     }
     // A reopened notebook can restore the sidecar before any tool-theme
@@ -258,14 +274,16 @@ static void showLayerPopup(QObject* controller) {
             context,
             "popup-open",
             &error)) {
-        showLayerError(context.widget, error);
+        cnt::layers_preview::showLayerError(
+            previewDependencies, context.widget, error);
         return;
     }
     QWidget* const parent = qobject_cast<QWidget*>(context.widgetObject.data());
     if (!parent || !firmwareApi().createIInkMenuItem || !firmwareApi().addWidgetActionOriginal
             || !firmwareApi().abstractNickelMenuControllerPopupFromWidget
             || !firmwareApi().nickelTouchMenuPopupPosition) {
-        showLayerError(
+        cnt::layers_preview::showLayerError(
+            previewDependencies,
             context.widget,
             QLatin1String("Layers unavailable: native menu actions are missing."));
         return;
@@ -277,7 +295,8 @@ static void showLayerPopup(QObject* controller) {
     QWidget* const anchor = firmwareApi().abstractNickelMenuControllerPopupFromWidget(
         controller);
     if (!anchor) {
-        showLayerError(
+        cnt::layers_preview::showLayerError(
+            previewDependencies,
             context.widget,
             QLatin1String("Layers unavailable: toolbar anchor was not found."));
         return;
@@ -285,22 +304,31 @@ static void showLayerPopup(QObject* controller) {
 
     QMenu* const popup = createNativeLayerPopup(anchor, &error);
     if (!popup) {
-        showLayerError(context.widget, error);
+        cnt::layers_preview::showLayerError(
+            previewDependencies, context.widget, error);
         return;
     }
 
     bool menuComplete = true;
-    QVector<DeferredLayerPreviewRow> deferredPreviewRows;
+    QVector<cnt::layers_preview::DeferredLayerPreviewRow>
+        deferredPreviewRows;
     auto addLayerRow = [&](QString const& id,
                            QString const& name,
                            bool active,
                            bool separatorAfter) {
         bool cacheDrawn = false;
-        QPixmap const preview = layerPreview(
-            context.state, id, name, active, &cacheDrawn);
+        QPixmap const preview = cnt::layers_preview::layerPreview(
+            previewDependencies,
+            context.state,
+            id,
+            name,
+            active,
+            &cacheDrawn);
         bool const previewPending = !cacheDrawn
-            || layerPreviewNeedsRefresh(context.state, id);
-        QString const label = layerPopupRowLabel(name, active, previewPending);
+            || cnt::layers_preview::layerPreviewNeedsRefresh(
+                previewDependencies, context.state, id);
+        QString const label = cnt::layers_preview::layerPopupRowLabel(
+            name, active, previewPending);
         LayerMenuReceiver* const receiver = new LayerMenuReceiver(
             controller, id, popup);
         QObject::connect(
@@ -322,7 +350,7 @@ static void showLayerPopup(QObject* controller) {
             return;
         }
         if (previewPending) {
-            DeferredLayerPreviewRow row;
+            cnt::layers_preview::DeferredLayerPreviewRow row;
             row.id = id;
             row.name = name;
             row.active = active;
@@ -417,7 +445,8 @@ static void showLayerPopup(QObject* controller) {
 
     if (!menuComplete) {
         delete popup;
-        showLayerError(
+        cnt::layers_preview::showLayerError(
+            previewDependencies,
             context.widget,
             QLatin1String("Layers unavailable: native menu row creation failed."));
         return;
@@ -438,8 +467,12 @@ static void showLayerPopup(QObject* controller) {
     // Geometry and the triangular decoration are nevertheless computed by
     // the same NickelTouchMenu::popupPosition(anchor) path as pen/eraser.
     // WA_DeleteOnClose (55), matching the stock popup, owns teardown.
-    startDeferredLayerPreviewRefresh(
-        controller, context, popup, deferredPreviewRows);
+    cnt::layers_preview::startDeferredLayerPreviewRefresh(
+        previewDependencies,
+        controller,
+        context,
+        popup,
+        deferredPreviewRows);
     popup->exec(position);
 }
 

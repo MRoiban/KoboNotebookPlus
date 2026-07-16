@@ -67,32 +67,12 @@ static char const kCoverBackupRoot[] = "/mnt/onboard/.kobo/custom/covers/backups
 static char const kPageManagerRoot[] = "/mnt/onboard/.kobo/custom/page-manager/";
 static char const kPageBackupRoot[] = "/mnt/onboard/.kobo/custom/page-manager/backups/";
 static char const kPageTransactionRoot[] = "/mnt/onboard/.kobo/custom/page-manager/transactions/";
-static char const kLayerBackupRoot[] = "/mnt/onboard/.kobo/custom/layers/backups/";
-static char const kLayerPreviewRoot[] = "/mnt/onboard/.kobo/custom/layers/previews/";
 static int const kMaximumNotebookPages = 4096;
 static int const kMaximumDestinationNotebooks = 512;
 static int const kMaximumNotebookLayers = 16;
-static qint64 const kMaximumLayerPreviewBytes = qint64(8) * 1024 * 1024;
-// Match the physical notebook page/background ratio (1404 x 1872 = 3:4)
-// while preserving the 72-pixel height already proven inside Kobo's native
-// tool-menu row. A taller card would risk clipping the stock row QSS.
-static int const kLayerPreviewCardWidth = 54;
-static int const kLayerPreviewCardHeight = 72;
-// Let Nickel paint the popup before the first thread-affine MyScript export.
-// Further rows are yielded back to the nested menu event loop one at a time.
-static int const kLayerPreviewDeferredStartMs = 350;
-static int const kLayerPreviewDeferredNextMs = 50;
-// A renderer export is synchronous and cannot be preempted safely. Keep the
-// automatic budget deliberately small so opening the menu never turns into an
-// unbounded sequence of full-page renders. Further stale rows are refreshed
-// on later opens or by the explicit "Refresh layer previews" command.
-static int const kLayerPreviewDeferredBudget = 1;
-static int const kMaximumLayerPreviewCardCacheEntries = 64;
 // Blocked until the clonePart resource-independence runtime matrix passes on
 // a disposable device test.
 static bool const kEnableCrossNotebookMove = false;
-// Rendered previews are normally card-sized, but keep a hard byte bound in
-// case this firmware callback supplies full-resolution images.
 
 // Binary Ninja image addresses minus its 0x10000 analysis base.
 static uintptr_t const kBackgroundOptionsVma = 0x78c9c;
@@ -364,21 +344,44 @@ static uintptr_t const kDocumentLayerNameVma = 0x21cb994;
 static uintptr_t const kBackgroundObjectLayerNameVma = 0x21cb998;
 static uintptr_t const kNeboBackendVtableVma = 0xd871a0;
 static uintptr_t const kNeboBackendPageControllerOffset = 0x14;
-static uintptr_t const kStockPreviewDrawerOffset = 0x4;
-static uintptr_t const kStockPreviewBackendOffset = 0x24;
-static size_t const kStockPreviewContextBytes = 0x28;
-static size_t const kImagePainterObjectBytes = 64;
 // IInkNotePadWidget owns a guarded uireference EditorWidget. That live
 // EditorWidget owns the configured ImageLoader used by every stock canvas.
 // These offsets are pinned against both libraries before the preview feature
 // gate is enabled; the guarded object and its live editor identity are checked
 // again before copying the shared loader owner.
-static uintptr_t const kNotePadEditorWidgetGuardOffset = 0x44;
-static uintptr_t const kNotePadEditorWidgetObjectOffset = 0x48;
-static uintptr_t const kEditorWidgetEditorObjectOffset = 0x18;
-static uintptr_t const kEditorWidgetEditorControlOffset = 0x1c;
-static uintptr_t const kEditorWidgetImageLoaderObjectOffset = 0x20;
-static uintptr_t const kEditorWidgetImageLoaderControlOffset = 0x24;
+// Match the physical notebook page/background ratio (1404 x 1872 = 3:4)
+// while preserving the 72-pixel height proven inside Kobo's native tool row.
+// Rendered previews are normally card-sized, but retain the 8 MiB hard bound
+// in case the firmware callback supplies a full-resolution image.
+// The automatic renderer budget remains one synchronous export per popup;
+// later rows are carried over to subsequent opens or the explicit refresh.
+// This aggregate is constant-initialized and copied into deferred work, so it
+// introduces neither a global constructor nor a borrowed stack reference.
+static cnt::layers_preview::Pins const kLayerPreviewPins = {
+    /* layerBackupRoot */
+    "/mnt/onboard/.kobo/custom/layers/backups/",
+    /* layerPreviewRoot */
+    "/mnt/onboard/.kobo/custom/layers/previews/",
+    /* maximumNotebookLayers */ kMaximumNotebookLayers,
+    /* maximumLayerPreviewBytes */ qint64(8) * 1024 * 1024,
+    /* layerPreviewCardWidth */ 54,
+    /* layerPreviewCardHeight */ 72,
+    /* deferredStartMs */ 350,
+    /* deferredNextMs */ 50,
+    /* deferredBudget */ 1,
+    /* maximumCardCacheEntries */ 64,
+    /* neboBackendPageControllerOffset */ kNeboBackendPageControllerOffset,
+    /* stockPreviewDrawerOffset */ 0x4,
+    /* stockPreviewBackendOffset */ 0x24,
+    /* stockPreviewContextBytes */ 0x28,
+    /* imagePainterObjectBytes */ 64,
+    /* notePadEditorWidgetGuardOffset */ 0x44,
+    /* notePadEditorWidgetObjectOffset */ 0x48,
+    /* editorWidgetEditorObjectOffset */ 0x18,
+    /* editorWidgetEditorControlOffset */ 0x1c,
+    /* editorWidgetImageLoaderObjectOffset */ 0x20,
+    /* editorWidgetImageLoaderControlOffset */ 0x24
+};
 static uintptr_t const kPageControllerLayoutGridOffset = 0xe4;
 // Five native BrushButton swatches, mapped onto firmware's own eraser-width
 // buckets. Index 2 deliberately preserves the common 3px radius at a 12px
