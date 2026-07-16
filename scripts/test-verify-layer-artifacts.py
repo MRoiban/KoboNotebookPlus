@@ -102,6 +102,15 @@ class ArtifactVerifierTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("CRC", result.stderr)
 
+    def test_appledouble_preview_metadata_is_ignored(self) -> None:
+        self.write_state()
+        preview = self.write_preview()
+        preview.with_name("._" + preview.name).write_bytes(b"AppleDouble metadata")
+        result = self.run_verifier()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("macOS metadata ignored", result.stdout)
+        self.assertIn("1 preview(s)", result.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

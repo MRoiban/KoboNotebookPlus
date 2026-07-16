@@ -177,6 +177,12 @@ def main() -> int:
     fresh_count = 0
     if preview_root.is_dir():
         for path in sorted(preview_root.glob("*.png")):
+            # Finder may leave AppleDouble metadata next to a preview on the
+            # FAT volume. It is not image data and must never be parsed as the
+            # plugin's digest-named PNG; the real sibling remains validated.
+            if path.name.startswith("._"):
+                warnings.append(f"{path.name}: macOS metadata ignored")
+                continue
             preview_count += 1
             size = path.stat().st_size
             if size <= 0 or size > MAX_PREVIEW_BYTES:
