@@ -41,7 +41,7 @@ static std::string restrictedToolLayer(void* tool) {
 static bool layerGuardedDiagramPenDown(
     void* pen,
     void const* pointerInfo) {
-    if (!diagramPenPenDownOriginal)
+    if (!firmwareApi().diagramPenPenDownOriginal)
         return false;
 
     std::string desired;
@@ -78,18 +78,18 @@ static bool layerGuardedDiagramPenDown(
             + QLatin1String(" corrected=")
             + (corrected ? QLatin1String("yes") : QLatin1String("no")));
     }
-    return diagramPenPenDownOriginal(pen, pointerInfo);
+    return firmwareApi().diagramPenPenDownOriginal(pen, pointerInfo);
 }
 
 static bool initializeLayerGuardedDiagramPenVtable() {
     if (layerGuardedDiagramPenVtableReady)
         return true;
-    if (!diagramPenVtable)
+    if (!firmwareApi().diagramPenVtable)
         return false;
 
     memcpy(
         layerGuardedDiagramPenVtable,
-        diagramPenVtable,
+        firmwareApi().diagramPenVtable,
         kDiagramPenVtableWords * sizeof(void*));
     size_t const slot = 2
         + kDiagramPenPenDownVtableSlot / sizeof(void*);
@@ -105,7 +105,7 @@ static bool initializeLayerGuardedDiagramPenVtable() {
         trace("layers: diagram pen vtable clone rejected unexpected penDown slot");
         return false;
     }
-    diagramPenPenDownOriginal = original.function;
+    firmwareApi().diagramPenPenDownOriginal = original.function;
 
     union {
         void* pointer;
@@ -119,10 +119,10 @@ static bool initializeLayerGuardedDiagramPenVtable() {
 }
 
 static bool isExactOrLayerGuardedDiagramPen(void* tool) {
-    if (!tool || !diagramPenVtable)
+    if (!tool || !firmwareApi().diagramPenVtable)
         return false;
     void* const vptr = *reinterpret_cast<void**>(tool);
-    return vptr == static_cast<char*>(diagramPenVtable) + 8
+    return vptr == static_cast<char*>(firmwareApi().diagramPenVtable) + 8
         || (layerGuardedDiagramPenVtableReady
             && vptr == static_cast<void*>(
                 layerGuardedDiagramPenVtable + 2));
@@ -135,7 +135,7 @@ static bool armLayerGuardedDiagramPen(
             || !initializeLayerGuardedDiagramPenVtable()) {
         return false;
     }
-    void* const stockVptr = static_cast<char*>(diagramPenVtable) + 8;
+    void* const stockVptr = static_cast<char*>(firmwareApi().diagramPenVtable) + 8;
     if (*reinterpret_cast<void**>(pen) == stockVptr) {
         *reinterpret_cast<void**>(pen) = static_cast<void*>(
             layerGuardedDiagramPenVtable + 2);
@@ -149,10 +149,10 @@ static bool armLayerGuardedDiagramPen(
 }
 
 static void clearLayerAwareEraserSelection(void* selection) {
-    if (!selection || !selectionSelectNone)
+    if (!selection || !firmwareApi().selectionSelectNone)
         return;
     try {
-        selectionSelectNone(selection);
+        firmwareApi().selectionSelectNone(selection);
     } catch (...) {
         // The original firmware selection remains valid. Avoid allowing an
         // exception to cross the virtual callback boundary during pen input.
@@ -167,7 +167,7 @@ static void filterLayerAwareEraserSelection(
     void* eraser,
     char const* implementation) {
     try {
-        if (!eraser || !result || !selectionSelectLayer || !selectionIsEmpty) {
+        if (!eraser || !result || !firmwareApi().selectionSelectLayer || !firmwareApi().selectionIsEmpty) {
             clearLayerAwareEraserSelection(result);
             return;
         }
@@ -189,9 +189,9 @@ static void filterLayerAwareEraserSelection(
             clearLayerAwareEraserSelection(result);
             return;
         }
-        bool const emptyBefore = selectionIsEmpty(result);
-        selectionSelectLayer(result, activeLayer, kSelectionModeIntersect);
-        bool const emptyAfter = selectionIsEmpty(result);
+        bool const emptyBefore = firmwareApi().selectionIsEmpty(result);
+        firmwareApi().selectionSelectLayer(result, activeLayer, kSelectionModeIntersect);
+        bool const emptyAfter = firmwareApi().selectionIsEmpty(result);
         if (layerAwareEraserTraceBudget > 0) {
             --layerAwareEraserTraceBudget;
             trace(QLatin1String(
@@ -225,9 +225,9 @@ static void* layerAwareDrawingEraserSelectionFromPoints(
     void* result,
     void* eraser,
     void const* points) {
-    if (!drawingEraserSelectionFromPointsOriginal)
+    if (!firmwareApi().drawingEraserSelectionFromPointsOriginal)
         return result;
-    drawingEraserSelectionFromPointsOriginal(result, eraser, points);
+    firmwareApi().drawingEraserSelectionFromPointsOriginal(result, eraser, points);
     filterLayerAwareEraserSelection(result, eraser, "snt");
     return result;
 }
@@ -236,9 +236,9 @@ static void* layerAwarePlainDrawingEraserSelectionFromPoints(
     void* result,
     void* eraser,
     void const* points) {
-    if (!plainDrawingEraserSelectionFromPointsOriginal)
+    if (!firmwareApi().plainDrawingEraserSelectionFromPointsOriginal)
         return result;
-    plainDrawingEraserSelectionFromPointsOriginal(result, eraser, points);
+    firmwareApi().plainDrawingEraserSelectionFromPointsOriginal(result, eraser, points);
     filterLayerAwareEraserSelection(result, eraser, "global");
     return result;
 }
@@ -258,14 +258,14 @@ static void* layerAwareDiagramEraserSelectionFromPoints(
     void* result,
     void* eraser,
     void const* points) {
-    if (!diagramEraserSelectionFromPointsOriginal)
+    if (!firmwareApi().diagramEraserSelectionFromPointsOriginal)
         return result;
-    diagramEraserSelectionFromPointsOriginal(result, eraser, points);
+    firmwareApi().diagramEraserSelectionFromPointsOriginal(result, eraser, points);
     try {
-        if (!result || !eraser || !points || !selectionSelectLayer
-                || !selectionSelectPolygon || !selectionSelectNone
-                || !selectionIsEmpty || !selectionAdjustToStrokeBoundaries
-                || !eraserPolicy || !eraserStrokerPolygon) {
+        if (!result || !eraser || !points || !firmwareApi().selectionSelectLayer
+                || !firmwareApi().selectionSelectPolygon || !firmwareApi().selectionSelectNone
+                || !firmwareApi().selectionIsEmpty || !firmwareApi().selectionAdjustToStrokeBoundaries
+                || !firmwareApi().eraserPolicy || !firmwareApi().eraserStrokerPolygon) {
             clearLayerAwareEraserSelection(result);
             return result;
         }
@@ -288,9 +288,9 @@ static void* layerAwareDiagramEraserSelectionFromPoints(
             return result;
         }
 
-        bool const stockEmpty = selectionIsEmpty(result);
-        selectionSelectLayer(result, activeLayer, kSelectionModeReplace);
-        bool const layerEmpty = selectionIsEmpty(result);
+        bool const stockEmpty = firmwareApi().selectionIsEmpty(result);
+        firmwareApi().selectionSelectLayer(result, activeLayer, kSelectionModeReplace);
+        bool const layerEmpty = firmwareApi().selectionIsEmpty(result);
 
         float const width = *reinterpret_cast<float const*>(
             static_cast<char const*>(eraser) + kEraserWidthOffset)
@@ -303,30 +303,30 @@ static void* layerAwareDiagramEraserSelectionFromPoints(
         PointerInfoVectorOpaque const& pointVector =
             *static_cast<PointerInfoVectorOpaque const*>(points);
         std::vector<SelectionPointOpaque> const polygon =
-            eraserStrokerPolygon(width, pointVector);
+            firmwareApi().eraserStrokerPolygon(width, pointVector);
         if (polygon.empty()) {
             clearLayerAwareEraserSelection(result);
             return result;
         }
-        selectionSelectPolygon(
+        firmwareApi().selectionSelectPolygon(
             result,
             &polygon[0],
             static_cast<int>(polygon.size()),
             kSelectionModeIntersect);
-        bool geometryEmpty = selectionIsEmpty(result);
+        bool geometryEmpty = firmwareApi().selectionIsEmpty(result);
 
         size_t const customPrefixLength = sizeof(kCustomLayerIdPrefix) - 1;
         bool const customLayer = activeLayer.compare(
             0, customPrefixLength, kCustomLayerIdPrefix) == 0;
-        int const policy = eraserPolicy(eraser);
+        int const policy = firmwareApi().eraserPolicy(eraser);
         bool boundaryAdjusted = false;
         if (customLayer && policy == kEraserPolicyStroke && !geometryEmpty) {
             // Stock DrawingEraser and DiagramEraser use exactly 0.0f for this
             // first whole-stroke expansion. It expands the already layer-
             // scoped Selection; it does not perform a fresh page hit-test.
-            selectionAdjustToStrokeBoundaries(result, 0.0f);
+            firmwareApi().selectionAdjustToStrokeBoundaries(result, 0.0f);
             boundaryAdjusted = true;
-            geometryEmpty = selectionIsEmpty(result);
+            geometryEmpty = firmwareApi().selectionIsEmpty(result);
         }
 
         if (layerAwareEraserTraceBudget > 0) {
@@ -385,7 +385,7 @@ static uint32_t layerAwareDiagramEraserUpdateSelection(
     void* eraser,
     void const* selection,
     void const* points) {
-    if (!diagramEraserUpdateSelectionOriginal)
+    if (!firmwareApi().diagramEraserUpdateSelectionOriginal)
         return 0;
 
     int incomingEmpty = -1;
@@ -394,8 +394,8 @@ static uint32_t layerAwareDiagramEraserUpdateSelection(
     bool haveRestrict = false;
     std::string activeLayer;
     try {
-        if (selectionIsEmpty && selection)
-            incomingEmpty = selectionIsEmpty(selection) ? 1 : 0;
+        if (firmwareApi().selectionIsEmpty && selection)
+            incomingEmpty = firmwareApi().selectionIsEmpty(selection) ? 1 : 0;
         void* const vptr = *reinterpret_cast<void**>(eraser);
         if (vptr) {
             typedef std::string const& (*ToolRestrictedLayerFn)(void const*);
@@ -413,7 +413,7 @@ static uint32_t layerAwareDiagramEraserUpdateSelection(
             trace(QLatin1String(
                 "layers: diagram eraser routing inspection failed; stock update preserved"));
         }
-        return diagramEraserUpdateSelectionOriginal(
+        return firmwareApi().diagramEraserUpdateSelectionOriginal(
             eraser, selection, points);
     }
 
@@ -421,14 +421,14 @@ static uint32_t layerAwareDiagramEraserUpdateSelection(
     bool const customLayer = haveRestrict
         && activeLayer.compare(
             0, customPrefixLength, kCustomLayerIdPrefix) == 0;
-    if (!customLayer || !coreEraserUpdateSelection) {
-        return diagramEraserUpdateSelectionOriginal(
+    if (!customLayer || !firmwareApi().coreEraserUpdateSelection) {
+        return firmwareApi().diagramEraserUpdateSelectionOriginal(
             eraser, selection, points);
     }
 
-    if (selectionIsEmpty && eraser) {
+    if (firmwareApi().selectionIsEmpty && eraser) {
         try {
-            committedBeforeEmpty = selectionIsEmpty(
+            committedBeforeEmpty = firmwareApi().selectionIsEmpty(
                 static_cast<char*>(eraser)
                     + kEraserFinalSelectionOffset) ? 1 : 0;
         } catch (...) {
@@ -448,9 +448,9 @@ static uint32_t layerAwareDiagramEraserUpdateSelection(
 
     uint32_t result = 0;
     try {
-        result = coreEraserUpdateSelection(eraser, selection, points);
-        if (selectionIsEmpty && eraser) {
-            committedAfterEmpty = selectionIsEmpty(
+        result = firmwareApi().coreEraserUpdateSelection(eraser, selection, points);
+        if (firmwareApi().selectionIsEmpty && eraser) {
+            committedAfterEmpty = firmwareApi().selectionIsEmpty(
                 static_cast<char*>(eraser)
                     + kEraserFinalSelectionOffset) ? 1 : 0;
         }
@@ -481,14 +481,14 @@ static uint32_t layerAwareDiagramEraserUpdateSelection(
 // while preserving the stock function's single call, return value, and
 // exception behavior.
 static int32_t layerAwareDiagramEraserEraseSelection(void* eraser) {
-    if (!diagramEraserEraseSelectionOriginal)
+    if (!firmwareApi().diagramEraserEraseSelectionOriginal)
         return 0;
 
     int committedBeforeEmpty = -1;
     std::string activeLayer;
     try {
-        if (selectionIsEmpty && eraser) {
-            committedBeforeEmpty = selectionIsEmpty(
+        if (firmwareApi().selectionIsEmpty && eraser) {
+            committedBeforeEmpty = firmwareApi().selectionIsEmpty(
                 static_cast<char*>(eraser)
                     + kEraserFinalSelectionOffset) ? 1 : 0;
         }
@@ -504,12 +504,12 @@ static int32_t layerAwareDiagramEraserEraseSelection(void* eraser) {
             + emptinessLabel(committedBeforeEmpty));
     }
 
-    int32_t const result = diagramEraserEraseSelectionOriginal(eraser);
+    int32_t const result = firmwareApi().diagramEraserEraseSelectionOriginal(eraser);
 
     int committedAfterEmpty = -1;
     try {
-        if (selectionIsEmpty && eraser) {
-            committedAfterEmpty = selectionIsEmpty(
+        if (firmwareApi().selectionIsEmpty && eraser) {
+            committedAfterEmpty = firmwareApi().selectionIsEmpty(
                 static_cast<char*>(eraser)
                     + kEraserFinalSelectionOffset) ? 1 : 0;
         }
@@ -534,7 +534,7 @@ static int32_t layerAwareDiagramEraserEraseSelection(void* eraser) {
 static bool installLayerAwareDiagramEraserUpdateHook() {
     if (layerAwareDiagramEraserObserversReady)
         return true;
-    if (!layerAwareDiagramEraserVtableReady || !coreEraserUpdateSelection)
+    if (!layerAwareDiagramEraserVtableReady || !firmwareApi().coreEraserUpdateSelection)
         return false;
 
     size_t const updateSlot = 2
@@ -580,8 +580,8 @@ static bool installLayerAwareDiagramEraserUpdateHook() {
     } replacementErase;
     replacementErase.function = layerAwareDiagramEraserEraseSelection;
 
-    diagramEraserUpdateSelectionOriginal = originalUpdate.function;
-    diagramEraserEraseSelectionOriginal = originalErase.function;
+    firmwareApi().diagramEraserUpdateSelectionOriginal = originalUpdate.function;
+    firmwareApi().diagramEraserEraseSelectionOriginal = originalErase.function;
     layerAwareDiagramEraserVtable[updateSlot] = replacementUpdate.pointer;
     layerAwareDiagramEraserVtable[eraseSlot] = replacementErase.pointer;
     layerAwareDiagramEraserObserversReady = true;
@@ -600,7 +600,7 @@ static bool initializeLayerAwareEraserVtable(
     char const* implementation) {
     if (*ready)
         return true;
-    if (!stockVtable || !selectionSelectLayer || !selectionSelectNone)
+    if (!stockVtable || !firmwareApi().selectionSelectLayer || !firmwareApi().selectionSelectNone)
         return false;
 
     memcpy(
@@ -649,22 +649,22 @@ static ConcreteDrawingEraserKind concreteDrawingEraserKind(void* tool) {
     if (!tool)
         return kNotDrawingEraser;
     void* const vptr = *reinterpret_cast<void**>(tool);
-    if (drawingEraserVtable
-            && (vptr == static_cast<char*>(drawingEraserVtable) + 8
+    if (firmwareApi().drawingEraserVtable
+            && (vptr == static_cast<char*>(firmwareApi().drawingEraserVtable) + 8
                 || (layerAwareDrawingEraserVtableReady
                     && vptr == static_cast<void*>(
                         layerAwareDrawingEraserVtable + 2)))) {
         return kSntDrawingEraser;
     }
-    if (plainDrawingEraserVtable
-            && (vptr == static_cast<char*>(plainDrawingEraserVtable) + 8
+    if (firmwareApi().plainDrawingEraserVtable
+            && (vptr == static_cast<char*>(firmwareApi().plainDrawingEraserVtable) + 8
                 || (layerAwarePlainDrawingEraserVtableReady
                     && vptr == static_cast<void*>(
                         layerAwarePlainDrawingEraserVtable + 2)))) {
         return kPlainDrawingEraser;
     }
-    if (diagramEraserVtable
-            && (vptr == static_cast<char*>(diagramEraserVtable) + 8
+    if (firmwareApi().diagramEraserVtable
+            && (vptr == static_cast<char*>(firmwareApi().diagramEraserVtable) + 8
                 || (layerAwareDiagramEraserVtableReady
                     && vptr == static_cast<void*>(
                         layerAwareDiagramEraserVtable + 2)))) {
@@ -690,20 +690,20 @@ static char const* exactEraserSizeClass(void* tool) {
         return "diagram";
 
     void* const vptr = *reinterpret_cast<void**>(tool);
-    if (coreEraserVtable
-            && vptr == static_cast<char*>(coreEraserVtable) + 8) {
+    if (firmwareApi().coreEraserVtable
+            && vptr == static_cast<char*>(firmwareApi().coreEraserVtable) + 8) {
         return "core";
     }
-    if (textEraserSntVtable
-            && vptr == static_cast<char*>(textEraserSntVtable) + 8) {
+    if (firmwareApi().textEraserSntVtable
+            && vptr == static_cast<char*>(firmwareApi().textEraserSntVtable) + 8) {
         return "snt-text";
     }
-    if (mathEraserVtable
-            && vptr == static_cast<char*>(mathEraserVtable) + 8) {
+    if (firmwareApi().mathEraserVtable
+            && vptr == static_cast<char*>(firmwareApi().mathEraserVtable) + 8) {
         return "math";
     }
-    if (textEraserVtable
-            && vptr == static_cast<char*>(textEraserVtable) + 8) {
+    if (firmwareApi().textEraserVtable
+            && vptr == static_cast<char*>(firmwareApi().textEraserVtable) + 8) {
         return "text";
     }
     return nullptr;
@@ -715,16 +715,16 @@ static bool applyRadiusToExactEraser(
     char const* reason,
     char const* source) {
     char const* const eraserClass = exactEraserSizeClass(tool);
-    if (!eraserClass || !eraserSetRadius || !eraserRadius)
+    if (!eraserClass || !firmwareApi().eraserSetRadius || !firmwareApi().eraserRadius)
         return false;
 
     try {
-        float const beforeRadius = eraserRadius(tool);
-        int const beforePolicy = eraserPolicy ? eraserPolicy(tool) : -1;
+        float const beforeRadius = firmwareApi().eraserRadius(tool);
+        int const beforePolicy = firmwareApi().eraserPolicy ? firmwareApi().eraserPolicy(tool) : -1;
         std::string const beforeLayer = restrictedToolLayer(tool);
-        eraserSetRadius(tool, desiredRadius);
-        float const afterRadius = eraserRadius(tool);
-        int const afterPolicy = eraserPolicy ? eraserPolicy(tool) : -1;
+        firmwareApi().eraserSetRadius(tool, desiredRadius);
+        float const afterRadius = firmwareApi().eraserRadius(tool);
+        int const afterPolicy = firmwareApi().eraserPolicy ? firmwareApi().eraserPolicy(tool) : -1;
         std::string const afterLayer = restrictedToolLayer(tool);
         float difference = afterRadius - desiredRadius;
         if (difference < 0.0f)
@@ -774,15 +774,15 @@ static bool applyConfiguredEraserSizeForWidget(
     if (!validEraserSizeIndex(index))
         return false;
     void* const editor = notePadEditor(widgetObject);
-    if (!editor || !editorGetRenderer || !rendererGetBackend)
+    if (!editor || !firmwareApi().editorGetRenderer || !firmwareApi().rendererGetBackend)
         return false;
 
     try {
-        SharedRenderer const renderer = editorGetRenderer(editor);
+        SharedRenderer const renderer = firmwareApi().editorGetRenderer(editor);
         void* const backend = renderer
-            ? rendererGetBackend(renderer.get()) : nullptr;
-        void* const expectedNeboVptr = neboBackendVtable
-            ? static_cast<char*>(neboBackendVtable) + 8 : nullptr;
+            ? firmwareApi().rendererGetBackend(renderer.get()) : nullptr;
+        void* const expectedNeboVptr = firmwareApi().neboBackendVtable
+            ? static_cast<char*>(firmwareApi().neboBackendVtable) + 8 : nullptr;
         if (!backend || *reinterpret_cast<void**>(backend) != expectedNeboVptr) {
             trace(QLatin1String("eraser-size: unsupported backend reason=")
                 + QLatin1String(reason));
@@ -795,19 +795,19 @@ static bool applyConfiguredEraserSizeForWidget(
             ? *reinterpret_cast<void**>(static_cast<char*>(pageController)
                 + kPageControllerLayoutGridOffset)
             : nullptr;
-        if (!pageController || !layoutGrid || !layoutGridLineGap
-                || !eraserWidthFromThicknessRatio) {
+        if (!pageController || !layoutGrid || !firmwareApi().layoutGridLineGap
+                || !firmwareApi().eraserWidthFromThicknessRatio) {
             trace(QLatin1String("eraser-size: page grid unavailable reason=")
                 + QLatin1String(reason));
             return false;
         }
-        float const lineGap = layoutGridLineGap(layoutGrid);
+        float const lineGap = firmwareApi().layoutGridLineGap(layoutGrid);
         if (!(lineGap > 0.0f) || lineGap > 10000.0f) {
             trace(QLatin1String("eraser-size: invalid line gap reason=")
                 + QLatin1String(reason));
             return false;
         }
-        float const width = eraserWidthFromThicknessRatio(
+        float const width = firmwareApi().eraserWidthFromThicknessRatio(
             kEraserSizeRatios[index], lineGap);
         float const radius = width * 0.5f;
         if (!(radius > 0.0f) || radius > 10000.0f) {
@@ -817,11 +817,11 @@ static bool applyConfiguredEraserSizeForWidget(
         }
 
         SharedPlatformInputDispatcher const inputDispatcher =
-            pageControllerInputDispatcher(pageController);
+            firmwareApi().pageControllerInputDispatcher(pageController);
         if (!inputDispatcher)
             return false;
         SharedTool const currentTool =
-            platformInputDispatcherGetCurrentTool(inputDispatcher.get());
+            firmwareApi().platformInputDispatcherGetCurrentTool(inputDispatcher.get());
         std::vector<void*> seen;
         int exactCount = 0;
         int appliedCount = 0;
@@ -839,9 +839,9 @@ static bool applyConfiguredEraserSizeForWidget(
         void* const boxFactory = *reinterpret_cast<void**>(
             reinterpret_cast<char*>(inputDispatcher.get())
                 + kPidBoxFactoryOffset);
-        if (boxFactory && compositeBoxFactoryBackends) {
+        if (boxFactory && firmwareApi().compositeBoxFactoryBackends) {
             ActiveBackendMap const backends =
-                compositeBoxFactoryBackends(boxFactory);
+                firmwareApi().compositeBoxFactoryBackends(boxFactory);
             std::string const emptyId;
             for (ActiveBackendMap::const_iterator it = backends.begin();
                     it != backends.end(); ++it) {
@@ -880,13 +880,13 @@ static bool applyConfiguredEraserSizeForWidget(
 
         // DrawingBackend keeps the kind-4 shared_ptr at +0x4c. This fallback
         // covers a transient main backend not yet represented in backends().
-        if (boxFactory && compositeBoxFactoryMainBackend
-                && drawingBackendVtable) {
+        if (boxFactory && firmwareApi().compositeBoxFactoryMainBackend
+                && firmwareApi().drawingBackendVtable) {
             SharedActiveBackend const mainBackend =
-                compositeBoxFactoryMainBackend(boxFactory);
+                firmwareApi().compositeBoxFactoryMainBackend(boxFactory);
             void* const rawBackend = mainBackend.get();
             void* const expectedDrawingVptr =
-                static_cast<char*>(drawingBackendVtable) + 8;
+                static_cast<char*>(firmwareApi().drawingBackendVtable) + 8;
             if (rawBackend
                     && *reinterpret_cast<void**>(rawBackend)
                         == expectedDrawingVptr) {
@@ -940,28 +940,28 @@ static bool armLayerAwareDrawingEraser(
     uintptr_t expectedSelectionVma = 0;
     char const* implementation = nullptr;
     if (kind == kSntDrawingEraser) {
-        stockVtable = drawingEraserVtable;
+        stockVtable = firmwareApi().drawingEraserVtable;
         layerVtable = layerAwareDrawingEraserVtable;
         ready = &layerAwareDrawingEraserVtableReady;
-        original = &drawingEraserSelectionFromPointsOriginal;
+        original = &firmwareApi().drawingEraserSelectionFromPointsOriginal;
         replacement = layerAwareDrawingEraserSelectionFromPoints;
         expectedSelectionVma = kDrawingEraserSelectionFromPointsVma;
         implementation = "snt";
     } else if (kind == kPlainDrawingEraser) {
-        stockVtable = plainDrawingEraserVtable;
+        stockVtable = firmwareApi().plainDrawingEraserVtable;
         layerVtable = layerAwarePlainDrawingEraserVtable;
         ready = &layerAwarePlainDrawingEraserVtableReady;
-        original = &plainDrawingEraserSelectionFromPointsOriginal;
+        original = &firmwareApi().plainDrawingEraserSelectionFromPointsOriginal;
         replacement = layerAwarePlainDrawingEraserSelectionFromPoints;
         expectedSelectionVma = kPlainDrawingEraserSelectionFromPointsVma;
         implementation = "global";
     } else if (kind == kDiagramEraser) {
-        if (!selectionSelectPolygon || !eraserStrokerPolygon)
+        if (!firmwareApi().selectionSelectPolygon || !firmwareApi().eraserStrokerPolygon)
             return false;
-        stockVtable = diagramEraserVtable;
+        stockVtable = firmwareApi().diagramEraserVtable;
         layerVtable = layerAwareDiagramEraserVtable;
         ready = &layerAwareDiagramEraserVtableReady;
-        original = &diagramEraserSelectionFromPointsOriginal;
+        original = &firmwareApi().diagramEraserSelectionFromPointsOriginal;
         replacement = layerAwareDiagramEraserSelectionFromPoints;
         expectedSelectionVma = kCoreEraserSelectionFromPointsVma;
         implementation = "diagram-layer-first";
@@ -1038,7 +1038,7 @@ static bool armLayerAwareDrawingErasers(
             ++armedCount;
     }
 
-    if (!inputDispatcher || !compositeBoxFactoryBackends) {
+    if (!inputDispatcher || !firmwareApi().compositeBoxFactoryBackends) {
         trace("layers: eraser adapter backend enumeration unavailable");
         return armedCount > 0 && diagramEraserCount == 0;
     }
@@ -1051,7 +1051,7 @@ static bool armLayerAwareDrawingErasers(
 
     try {
         ActiveBackendMap const backends =
-            compositeBoxFactoryBackends(boxFactory);
+            firmwareApi().compositeBoxFactoryBackends(boxFactory);
         std::string const emptyId;
         for (ActiveBackendMap::const_iterator it = backends.begin();
                 it != backends.end(); ++it) {
@@ -1169,8 +1169,8 @@ static bool restrictBackendWritingToolsToLayer(
     void* inputDispatcher,
     void* currentTool,
     std::string const& layerId) {
-    if (!inputDispatcher || !compositeBoxFactoryMainBackend
-            || !drawingBackendVtable) {
+    if (!inputDispatcher || !firmwareApi().compositeBoxFactoryMainBackend
+            || !firmwareApi().drawingBackendVtable) {
         trace("layers: cached writing-tool routing APIs unavailable");
         return false;
     }
@@ -1181,13 +1181,13 @@ static bool restrictBackendWritingToolsToLayer(
         return false;
     }
     SharedActiveBackend const backend =
-        compositeBoxFactoryMainBackend(boxFactory);
+        firmwareApi().compositeBoxFactoryMainBackend(boxFactory);
     void* const raw = backend.get();
     if (!raw) {
         trace("layers: cached writing-tool routing main backend missing");
         return false;
     }
-    void* const expectedVptr = static_cast<char*>(drawingBackendVtable) + 8;
+    void* const expectedVptr = static_cast<char*>(firmwareApi().drawingBackendVtable) + 8;
     if (*reinterpret_cast<void**>(raw) != expectedVptr) {
         trace("layers: cached writing-tool routing backend is not DrawingBackend");
         return false;

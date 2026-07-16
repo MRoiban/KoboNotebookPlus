@@ -32,7 +32,7 @@ static void loadAutomaticCovers() {
         uint32_t const hash = stableFilenameHash(info.fileName().toUtf8());
         QString const id = QString::fromLatin1("Custom_Cover_%1")
             .arg(hash, 8, 16, QLatin1Char('0'));
-        if (rendererMap->contains(id)) {
+        if (firmwareApi().rendererMap->contains(id)) {
             trace("covers: identifier collision skipped");
             continue;
         }
@@ -51,7 +51,7 @@ static void loadAutomaticCovers() {
             continue;
         }
 
-        rendererMap->insert(id, sourcePath);
+        firmwareApi().rendererMap->insert(id, sourcePath);
         customCovers.append(CustomTemplate{id, label, iconPath, sourcePath});
         trace("covers: PNG cover loaded");
         nh_log("automatically loaded notebook cover '%s' as '%s'",

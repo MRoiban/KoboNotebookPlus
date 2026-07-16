@@ -22,10 +22,10 @@ static bool installEraserSizeMenuHooks(void* handle) {
         trace("eraser-size: native menu symbols did not resolve; popup unchanged");
         return false;
     }
-    toolMenuConstructorOriginal = resolvedConstructor;
-    createBrushSizeRowOriginal = resolvedRow;
-    setBrushSizeIndexOriginal = resolvedSetter;
-    setActiveToolOriginal = resolvedActiveTool;
+    firmwareApi().toolMenuConstructorOriginal = resolvedConstructor;
+    firmwareApi().createBrushSizeRowOriginal = resolvedRow;
+    firmwareApi().setBrushSizeIndexOriginal = resolvedSetter;
+    firmwareApi().setActiveToolOriginal = resolvedActiveTool;
 
     SetBrushSizeIndexAddress setterReplacement;
     setterReplacement.function = _cnt_set_brush_size_index_hook;
@@ -35,7 +35,7 @@ static bool installEraserSizeMenuHooks(void* handle) {
         trace("eraser-size: native size callback hook mismatch; popup unchanged");
         return false;
     }
-    setBrushSizeIndexOriginal =
+    firmwareApi().setBrushSizeIndexOriginal =
         reinterpret_cast<SetBrushSizeIndex>(originalSetter);
 
     CreateBrushSizeRowAddress rowReplacement;
@@ -46,7 +46,7 @@ static bool installEraserSizeMenuHooks(void* handle) {
         trace("eraser-size: native size-row hook mismatch; popup unchanged");
         return false;
     }
-    createBrushSizeRowOriginal =
+    firmwareApi().createBrushSizeRowOriginal =
         reinterpret_cast<CreateBrushSizeRow>(originalRow);
 
     // Hardware stylus inversion reaches setActiveTool through a unique PLT
@@ -60,7 +60,7 @@ static bool installEraserSizeMenuHooks(void* handle) {
         trace("eraser-size: hardware UI synchronization hook mismatch; popup unchanged");
         return false;
     }
-    setActiveToolOriginal = reinterpret_cast<SetActiveTool>(originalActiveTool);
+    firmwareApi().setActiveToolOriginal = reinterpret_cast<SetActiveTool>(originalActiveTool);
 
     // Install the constructor last. Until this exact hook succeeds no menu is
     // marked, so the earlier wrappers are strict stock pass-throughs.
@@ -72,7 +72,7 @@ static bool installEraserSizeMenuHooks(void* handle) {
         trace("eraser-size: native controller hook mismatch; popup unchanged");
         return false;
     }
-    toolMenuConstructorOriginal =
+    firmwareApi().toolMenuConstructorOriginal =
         reinterpret_cast<ToolMenuConstructor>(originalConstructor);
     eraserSizeMenuHooksReady = true;
     trace("eraser-size: stock five-button eraser row hooks installed");

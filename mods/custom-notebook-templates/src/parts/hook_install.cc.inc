@@ -18,7 +18,7 @@ static void installHookAfterNaturalLoad() {
         return;
     }
 
-    backgroundOptionsOriginal = reinterpret_cast<BackgroundOptions>(original);
+    firmwareApi().backgroundOptionsOriginal = reinterpret_cast<BackgroundOptions>(original);
     trace("delayed backgroundOptions hook installed");
 
     if (!locateRendererMap()) {
@@ -40,7 +40,7 @@ static void installHookAfterNaturalLoad() {
             handle,
             kAddWidgetActionSymbol,
             replacement.pointer);
-        addWidgetActionOriginal = reinterpret_cast<AddWidgetAction>(original);
+        firmwareApi().addWidgetActionOriginal = reinterpret_cast<AddWidgetAction>(original);
         if (pointerMatchesVma(original, kAddWidgetActionVma)) {
             pageManagerHooksReady = true;
             trace("pages: guarded notebook-menu hook installed");
@@ -58,8 +58,8 @@ static void installHookAfterNaturalLoad() {
                     kSetToolThemeVma, &resolvedTheme)
                 && resolvePinned(handle, kRenderVolumeSymbol,
                     kRenderVolumeVma, &resolvedRender);
-            setToolThemeOriginal = resolvedTheme;
-            renderVolumeOriginal = resolvedRender;
+            firmwareApi().setToolThemeOriginal = resolvedTheme;
+            firmwareApi().renderVolumeOriginal = resolvedRender;
 
             bool themeHookValid = false;
             bool renderHookValid = false;
@@ -71,7 +71,7 @@ static void installHookAfterNaturalLoad() {
                     kSetToolThemeSymbol,
                     themeReplacement.pointer);
                 if (pointerMatchesVma(originalTheme, kSetToolThemeVma)) {
-                    setToolThemeOriginal =
+                    firmwareApi().setToolThemeOriginal =
                         reinterpret_cast<SetToolTheme>(originalTheme);
                     themeHookValid = true;
                 }
@@ -83,7 +83,7 @@ static void installHookAfterNaturalLoad() {
                     kRenderVolumeSymbol,
                     renderReplacement.pointer);
                 if (pointerMatchesVma(originalRender, kRenderVolumeVma)) {
-                    renderVolumeOriginal =
+                    firmwareApi().renderVolumeOriginal =
                         reinterpret_cast<RenderVolume>(originalRender);
                     renderHookValid = true;
                 }
@@ -121,7 +121,7 @@ static void installHookAfterNaturalLoad() {
             handle,
             kSetDialogTitleSymbol,
             titleReplacement.pointer);
-        setDialogTitleOriginal = reinterpret_cast<SetDialogTitle>(originalTitle);
+        firmwareApi().setDialogTitleOriginal = reinterpret_cast<SetDialogTitle>(originalTitle);
 
         ParserImageParsedAddress imageReplacement;
         imageReplacement.function = _cnt_parser_image_parsed_hook;
@@ -129,7 +129,7 @@ static void installHookAfterNaturalLoad() {
             handle,
             kParserImageParsedSymbol,
             imageReplacement.pointer);
-        parserImageParsedOriginal = reinterpret_cast<ParserImageParsed>(
+        firmwareApi().parserImageParsedOriginal = reinterpret_cast<ParserImageParsed>(
             originalImageParsed);
 
         void* const nickelHandle = dlopen(
@@ -138,11 +138,11 @@ static void installHookAfterNaturalLoad() {
         if (nickelHandle) {
             bool const gridSymbols =
                 resolvePinned(nickelHandle, kContentGetIdSymbol,
-                    kContentGetIdVma, &contentGetId)
+                    kContentGetIdVma, &firmwareApi().contentGetId)
                 && resolvePinned(nickelHandle, kContentGetImageIdSymbol,
-                    kContentGetImageIdVma, &contentGetImageId)
+                    kContentGetImageIdVma, &firmwareApi().contentGetImageId)
                 && resolvePinned(nickelHandle, kPixmapSetImageSymbol,
-                    kPixmapSetImageVma, &pixmapSetImage);
+                    kPixmapSetImageVma, &firmwareApi().pixmapSetImage);
             if (gridSymbols) {
                 VolumeLoadCoverAddress loadCoverReplacement;
                 loadCoverReplacement.function = _cnt_volume_load_cover_hook;
@@ -150,7 +150,7 @@ static void installHookAfterNaturalLoad() {
                     nickelHandle,
                     kVolumeLoadCoverSymbol,
                     loadCoverReplacement.pointer);
-                volumeLoadCoverOriginal = reinterpret_cast<VolumeLoadCover>(
+                firmwareApi().volumeLoadCoverOriginal = reinterpret_cast<VolumeLoadCover>(
                     originalLoadCover);
                 if (pointerMatchesVma(
                         originalLoadCover, kVolumeLoadCoverVma)) {
@@ -192,6 +192,8 @@ static void installHookAfterNaturalLoad() {
 }
 
 static int initialize() {
+    if (!gPluginState)
+        gPluginState = new PluginState();
     trace("NickelHook init entered");
     installCustomAssetVisibilityHooks();
     hideLegacyNotebookBackups();

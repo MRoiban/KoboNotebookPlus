@@ -77,7 +77,7 @@ static bool backupNotebookPath(
 
 static bool backupNotebook(void* widget, QString* backupPath, QString* error) {
     return backupNotebookPath(
-        widgetFilePath(widget),
+        firmwareApi().widgetFilePath(widget),
         QLatin1String(kCoverBackupRoot),
         QLatin1String("Cover not changed"),
         backupPath,
@@ -94,7 +94,7 @@ struct PageStorage {
 
     ~PageStorage() {
         if (constructed)
-            pageDestructor(bytes);
+            firmwareApi().pageDestructor(bytes);
     }
 };
 
@@ -103,7 +103,7 @@ struct ScopedIInkString {
 
     explicit ScopedIInkString(char const* utf8) {
         value.impl = nullptr;
-        iinkStringCtor(&value, utf8);
+        firmwareApi().iinkStringCtor(&value, utf8);
     }
 
     ~ScopedIInkString() {
@@ -125,7 +125,7 @@ struct LayoutStorage {
 
     ~LayoutStorage() {
         if (constructed)
-            layoutDestructor(bytes);
+            firmwareApi().layoutDestructor(bytes);
     }
 };
 
@@ -140,8 +140,8 @@ struct ManagedObjectStorage {
     }
 
     ~ManagedObjectStorage() {
-        if (constructed && managedObjectDestructor)
-            managedObjectDestructor(bytes);
+        if (constructed && firmwareApi().managedObjectDestructor)
+            firmwareApi().managedObjectDestructor(bytes);
     }
 
     bool hasObject() const {
@@ -154,18 +154,18 @@ static_assert(sizeof(void*) == 4,
     "MyScript managed-object ABI requires the 32-bit Kobo target");
 
 static QString iinkStringValue(IInkStringStorage* value) {
-    if (!value || !value->impl || !iinkStringToStdString)
+    if (!value || !value->impl || !firmwareApi().iinkStringToStdString)
         return QString();
     std::string utf8;
-    iinkStringToStdString(&utf8, value);
+    firmwareApi().iinkStringToStdString(&utf8, value);
     return QString::fromUtf8(utf8.data(), static_cast<int>(utf8.size()));
 }
 
 static QString partStableId(SharedPart const& part) {
-    if (!part || !partGetId)
+    if (!part || !firmwareApi().partGetId)
         return QString();
     IInkStringStorage value = {nullptr};
-    partGetId(&value, part.get());
+    firmwareApi().partGetId(&value, part.get());
     QString const id = iinkStringValue(&value);
     delete value.impl;
     return id;
@@ -175,25 +175,25 @@ static bool layoutForPart(
     SharedPart const& part,
     LayoutStorage* layout,
     QString* error) {
-    if (!part || !layout || !partGetPage || !pageLayout || !layoutDestructor) {
+    if (!part || !layout || !firmwareApi().partGetPage || !firmwareApi().pageLayout || !firmwareApi().layoutDestructor) {
         if (error)
             *error = QLatin1String("Layers unavailable: page layout API is not ready.");
         return false;
     }
 
     PageStorage page;
-    partGetPage(page.bytes, part.get());
+    firmwareApi().partGetPage(page.bytes, part.get());
     page.constructed = true;
-    pageLayout(layout->bytes, page.bytes);
+    firmwareApi().pageLayout(layout->bytes, page.bytes);
     layout->constructed = true;
     return true;
 }
 
 static SharedDocument documentForPart(SharedPart const& part) {
     PageStorage page;
-    partGetPage(page.bytes, part.get());
+    firmwareApi().partGetPage(page.bytes, part.get());
     page.constructed = true;
-    return pageDocument(page.bytes);
+    return firmwareApi().pageDocument(page.bytes);
 }
 
 // Verified IInkNotePadWidget offsets on firmware 4.38.23697: the guarded
@@ -223,85 +223,85 @@ static bool applyNotebookCover(void* widget, QString const& type, QString* error
         return false;
     }
 
-    widgetSave(widget);
-    SharedPart const originalPart = editorGetPart(editor);
+    firmwareApi().widgetSave(widget);
+    SharedPart const originalPart = firmwareApi().editorGetPart(editor);
     if (!originalPart) {
         *error = QLatin1String("Cover not changed: current page was not found.");
         return false;
     }
 
-    SharedPackage const package = partGetPackage(originalPart.get());
+    SharedPackage const package = firmwareApi().partGetPackage(originalPart.get());
     if (!package) {
         *error = QLatin1String("Cover not changed: notebook package was not found.");
         return false;
     }
 
-    int const oldCount = packagePartCount(package.get());
+    int const oldCount = firmwareApi().packagePartCount(package.get());
     if (oldCount < 1 || oldCount > 4096) {
         *error = QLatin1String("Cover not changed: notebook page count is invalid.");
         return false;
     }
 
-    SharedPart const firstPart = packageGetPart(package.get(), 0);
+    SharedPart const firstPart = firmwareApi().packageGetPart(package.get(), 0);
     if (!firstPart) {
         *error = QLatin1String("Cover not changed: first page was not found.");
         return false;
     }
 
-    editorSetPart(editor, firstPart);
+    firmwareApi().editorSetPart(editor, firstPart);
     void* const backgroundWidget = notePadBackgroundWidget(widget);
     if (!backgroundWidget) {
-        editorSetPart(editor, originalPart);
+        firmwareApi().editorSetPart(editor, originalPart);
         *error = QLatin1String("Cover not changed: page background is not ready.");
         return false;
     }
 
-    QString const firstBackground = backgroundType(backgroundWidget);
+    QString const firstBackground = firmwareApi().backgroundType(backgroundWidget);
     bool const alreadyHasCover = firstBackground.startsWith(
         QLatin1String("Custom_Cover_"));
 
     QString backupPath;
     if (!backupNotebook(widget, &backupPath, error)) {
-        editorSetPart(editor, originalPart);
+        firmwareApi().editorSetPart(editor, originalPart);
         return false;
     }
 
     if (alreadyHasCover) {
-        setBackgroundTypeOriginal(widget, type);
-        widgetSave(widget);
-        packageSave(package.get());
-        widgetRefresh(widget);
-        invalidateNotebookScanEntry(widgetFilePath(widget));
+        firmwareApi().setBackgroundTypeOriginal(widget, type);
+        firmwareApi().widgetSave(widget);
+        firmwareApi().packageSave(package.get());
+        firmwareApi().widgetRefresh(widget);
+        invalidateNotebookScanEntry(firmwareApi().widgetFilePath(widget));
         trace("covers: existing cover background changed");
         return true;
     }
 
     ScopedIInkString rawContent("Raw Content");
     if (!rawContent.value.impl) {
-        editorSetPart(editor, originalPart);
+        firmwareApi().editorSetPart(editor, originalPart);
         *error = QLatin1String("Cover not changed: page type could not be created.");
         return false;
     }
 
-    SharedPart const coverPart = packageCreatePart(package.get(), rawContent.value);
-    if (!coverPart || packagePartCount(package.get()) != oldCount + 1) {
-        editorSetPart(editor, originalPart);
+    SharedPart const coverPart = firmwareApi().packageCreatePart(package.get(), rawContent.value);
+    if (!coverPart || firmwareApi().packagePartCount(package.get()) != oldCount + 1) {
+        firmwareApi().editorSetPart(editor, originalPart);
         *error = QLatin1String("Cover not changed: a new page could not be created.");
         return false;
     }
 
-    editorSetPart(editor, coverPart);
-    setBackgroundTypeOriginal(widget, type);
-    widgetSave(widget);
-    packageSave(package.get());
+    firmwareApi().editorSetPart(editor, coverPart);
+    firmwareApi().setBackgroundTypeOriginal(widget, type);
+    firmwareApi().widgetSave(widget);
+    firmwareApi().packageSave(package.get());
     // The archive is mutated from here on; drop any cached verdict even if a
     // later validation step fails.
-    invalidateNotebookScanEntry(widgetFilePath(widget));
+    invalidateNotebookScanEntry(firmwareApi().widgetFilePath(widget));
 
     SharedDocument const document = documentForPart(coverPart);
-    int const appendedIndex = packageIndexOfPart(package.get(), coverPart);
+    int const appendedIndex = firmwareApi().packageIndexOfPart(package.get(), coverPart);
     if (!document
-            || documentPageCount(document.get()) != oldCount + 1
+            || firmwareApi().documentPageCount(document.get()) != oldCount + 1
             || appendedIndex != oldCount) {
         *error = QLatin1String(
             "Cover page was added at the end, but could not be moved safely. "
@@ -310,10 +310,10 @@ static bool applyNotebookCover(void* widget, QString const& type, QString* error
         return false;
     }
 
-    documentMovePage(document.get(), appendedIndex, 0);
-    packageSave(package.get());
-    if (packageIndexOfPart(package.get(), coverPart) != 0
-            || packagePartCount(package.get()) != oldCount + 1) {
+    firmwareApi().documentMovePage(document.get(), appendedIndex, 0);
+    firmwareApi().packageSave(package.get());
+    if (firmwareApi().packageIndexOfPart(package.get(), coverPart) != 0
+            || firmwareApi().packagePartCount(package.get()) != oldCount + 1) {
         *error = QLatin1String(
             "Cover move could not be verified. The original notebook backup "
             "is in the covers/backups folder.");
@@ -321,9 +321,9 @@ static bool applyNotebookCover(void* widget, QString const& type, QString* error
         return false;
     }
 
-    editorSetPart(editor, coverPart);
-    widgetRefresh(widget);
-    invalidateNotebookScanEntry(widgetFilePath(widget));
+    firmwareApi().editorSetPart(editor, coverPart);
+    firmwareApi().widgetRefresh(widget);
+    invalidateNotebookScanEntry(firmwareApi().widgetFilePath(widget));
     trace("covers: new writable cover inserted as page zero");
     return true;
 }
@@ -354,10 +354,10 @@ static bool loadPageContext(void* widget, PageContext* context, QString* error) 
         return false;
     }
 
-    SharedPart const part = editorGetPart(editor);
-    SharedPackage const package = part ? partGetPackage(part.get()) : SharedPackage();
-    int const count = package ? packagePartCount(package.get()) : 0;
-    int const index = package ? packageIndexOfPart(package.get(), part) : -1;
+    SharedPart const part = firmwareApi().editorGetPart(editor);
+    SharedPackage const package = part ? firmwareApi().partGetPackage(part.get()) : SharedPackage();
+    int const count = package ? firmwareApi().packagePartCount(package.get()) : 0;
+    int const index = package ? firmwareApi().packageIndexOfPart(package.get(), part) : -1;
     SharedDocument const document = part ? documentForPart(part) : SharedDocument();
     if (!part
             || !package
@@ -366,7 +366,7 @@ static bool loadPageContext(void* widget, PageContext* context, QString* error) 
             || count > kMaximumNotebookPages
             || index < 0
             || index >= count
-            || documentPageCount(document.get()) != count) {
+            || firmwareApi().documentPageCount(document.get()) != count) {
         *error = QLatin1String("Page operation failed: current page could not be verified.");
         return false;
     }
@@ -413,7 +413,7 @@ static bool writePageTransaction(
 
 static bool reorderCurrentPage(void* widget, int target, QString* error) {
     try {
-        widgetSave(widget);
+        firmwareApi().widgetSave(widget);
         PageContext context;
         if (!loadPageContext(widget, &context, error))
             return false;
@@ -437,7 +437,7 @@ static bool reorderCurrentPage(void* widget, int target, QString* error) {
 
         QString backupPath;
         if (!backupNotebookPath(
-                widgetFilePath(widget),
+                firmwareApi().widgetFilePath(widget),
                 QLatin1String(kPageBackupRoot),
                 QLatin1String("Page not reordered"),
                 &backupPath,
@@ -445,16 +445,16 @@ static bool reorderCurrentPage(void* widget, int target, QString* error) {
             return false;
         }
 
-        documentMovePage(context.document.get(), context.index, target);
-        packageSave(context.package.get());
-        if (packagePartCount(context.package.get()) != context.count
-                || packageIndexOfPart(context.package.get(), context.part) != target) {
+        firmwareApi().documentMovePage(context.document.get(), context.index, target);
+        firmwareApi().packageSave(context.package.get());
+        if (firmwareApi().packagePartCount(context.package.get()) != context.count
+                || firmwareApi().packageIndexOfPart(context.package.get(), context.part) != target) {
             // Best-effort in-memory rollback. The hidden archive backup is the
             // authoritative recovery copy if this validation itself failed.
-            int const actual = packageIndexOfPart(context.package.get(), context.part);
+            int const actual = firmwareApi().packageIndexOfPart(context.package.get(), context.part);
             if (actual >= 0 && actual < context.count) {
-                documentMovePage(context.document.get(), actual, context.index);
-                packageSave(context.package.get());
+                firmwareApi().documentMovePage(context.document.get(), actual, context.index);
+                firmwareApi().packageSave(context.package.get());
             }
             *error = QLatin1String(
                 "Page reorder could not be verified. The original notebook "
@@ -462,10 +462,10 @@ static bool reorderCurrentPage(void* widget, int target, QString* error) {
             return false;
         }
 
-        widgetSave(widget);
-        invalidateNotebookScanEntry(widgetFilePath(widget));
-        editorSetPart(context.editor, context.part);
-        widgetRefresh(widget);
+        firmwareApi().widgetSave(widget);
+        invalidateNotebookScanEntry(firmwareApi().widgetFilePath(widget));
+        firmwareApi().editorSetPart(context.editor, context.part);
+        firmwareApi().widgetRefresh(widget);
         trace("pages: current page reordered");
         return true;
     } catch (std::exception const&) {
@@ -484,7 +484,7 @@ static bool duplicateCurrentPage(void* widget, QString* error) {
     int oldCount = 0;
     bool cloneAttached = false;
     try {
-        widgetSave(widget);
+        firmwareApi().widgetSave(widget);
         PageContext context;
         if (!loadPageContext(widget, &context, error))
             return false;
@@ -506,7 +506,7 @@ static bool duplicateCurrentPage(void* widget, QString* error) {
 
         QString backupPath;
         if (!backupNotebookPath(
-                widgetFilePath(widget),
+                firmwareApi().widgetFilePath(widget),
                 QLatin1String(kPageBackupRoot),
                 QLatin1String("Page not duplicated"),
                 &backupPath,
@@ -516,45 +516,45 @@ static bool duplicateCurrentPage(void* widget, QString* error) {
 
         package = context.package;
         oldCount = context.count;
-        clone = packageClonePart(package.get(), context.part);
+        clone = firmwareApi().packageClonePart(package.get(), context.part);
         cloneAttached = bool(clone);
         if (!clone
-                || packagePartCount(package.get()) != oldCount + 1
-                || packageIndexOfPart(package.get(), clone) != oldCount) {
+                || firmwareApi().packagePartCount(package.get()) != oldCount + 1
+                || firmwareApi().packageIndexOfPart(package.get(), clone) != oldCount) {
             *error = QLatin1String("Page not duplicated: cloned page could not be verified.");
             throw std::runtime_error("clone validation failed");
         }
 
         SharedDocument const document = documentForPart(clone);
         int const target = context.index + 1;
-        if (!document || documentPageCount(document.get()) != oldCount + 1) {
+        if (!document || firmwareApi().documentPageCount(document.get()) != oldCount + 1) {
             *error = QLatin1String("Page not duplicated: cloned document could not be verified.");
             throw std::runtime_error("clone document validation failed");
         }
         if (target != oldCount)
-            documentMovePage(document.get(), oldCount, target);
-        packageSave(package.get());
+            firmwareApi().documentMovePage(document.get(), oldCount, target);
+        firmwareApi().packageSave(package.get());
 
-        if (packagePartCount(package.get()) != oldCount + 1
-                || packageIndexOfPart(package.get(), clone) != target) {
+        if (firmwareApi().packagePartCount(package.get()) != oldCount + 1
+                || firmwareApi().packageIndexOfPart(package.get(), clone) != target) {
             *error = QLatin1String(
                 "Duplicate could not be verified. The original notebook is "
                 "preserved in the page-manager backup folder.");
             throw std::runtime_error("clone commit validation failed");
         }
 
-        widgetSave(widget);
-        invalidateNotebookScanEntry(widgetFilePath(widget));
-        editorSetPart(context.editor, clone);
-        widgetRefresh(widget);
+        firmwareApi().widgetSave(widget);
+        invalidateNotebookScanEntry(firmwareApi().widgetFilePath(widget));
+        firmwareApi().editorSetPart(context.editor, clone);
+        firmwareApi().widgetRefresh(widget);
         trace("pages: current page duplicated");
         return true;
     } catch (...) {
         if (package && clone && cloneAttached) {
             try {
-                packageRemovePart(package.get(), clone);
-                packageSave(package.get());
-                if (packagePartCount(package.get()) == oldCount) {
+                firmwareApi().packageRemovePart(package.get(), clone);
+                firmwareApi().packageSave(package.get());
+                if (firmwareApi().packagePartCount(package.get()) == oldCount) {
                     trace("pages: failed duplicate rolled back");
                 } else {
                     trace("pages: failed duplicate rollback also failed; backup retained");
@@ -617,7 +617,7 @@ static bool moveCurrentPageToNotebook(
     bool sourceRemoved = false;
     PageContext source;
     try {
-        widgetSave(widget);
+        firmwareApi().widgetSave(widget);
         if (!loadPageContext(widget, &source, error))
             return false;
         if (source.count <= 1) {
@@ -626,7 +626,7 @@ static bool moveCurrentPageToNotebook(
             return false;
         }
 
-        QString const sourcePath = QDir::cleanPath(widgetFilePath(widget));
+        QString const sourcePath = QDir::cleanPath(firmwareApi().widgetFilePath(widget));
         QString const destination = QDir::cleanPath(destinationPath);
         QFileInfo const destinationInfo(destination);
         if (destination == sourcePath
@@ -677,7 +677,7 @@ static bool moveCurrentPageToNotebook(
             return false;
         }
 
-        SharedEngine const engine = editorGetEngine(source.editor);
+        SharedEngine const engine = firmwareApi().editorGetEngine(source.editor);
         if (!engine) {
             *error = QLatin1String("Page not moved: notebook engine is unavailable.");
             return false;
@@ -691,10 +691,10 @@ static bool moveCurrentPageToNotebook(
 
         // Binary Ninja verified that option zero is EXISTING. It cannot create
         // or truncate a package if the destination path is wrong.
-        SharedPackage destinationPackage = engineOpenPackage(
+        SharedPackage destinationPackage = firmwareApi().engineOpenPackage(
             engine.get(), destinationString.value, 0);
         int const destinationCount = destinationPackage
-            ? packagePartCount(destinationPackage.get()) : 0;
+            ? firmwareApi().packagePartCount(destinationPackage.get()) : 0;
         if (!destinationPackage
                 || destinationCount < 1
                 || destinationCount >= kMaximumNotebookPages) {
@@ -702,16 +702,16 @@ static bool moveCurrentPageToNotebook(
             return false;
         }
 
-        SharedPart destinationPart = packageClonePart(
+        SharedPart destinationPart = firmwareApi().packageClonePart(
             destinationPackage.get(), source.part);
         if (!destinationPart
-                || packagePartCount(destinationPackage.get()) != destinationCount + 1
-                || packageIndexOfPart(destinationPackage.get(), destinationPart)
+                || firmwareApi().packagePartCount(destinationPackage.get()) != destinationCount + 1
+                || firmwareApi().packageIndexOfPart(destinationPackage.get(), destinationPart)
                     != destinationCount) {
             *error = QLatin1String("Page not moved: destination copy could not be verified.");
             return false;
         }
-        packageSave(destinationPackage.get());
+        firmwareApi().packageSave(destinationPackage.get());
         invalidateNotebookScanEntry(destination);
         destinationPart.reset();
         destinationPackage.reset();
@@ -741,9 +741,9 @@ static bool moveCurrentPageToNotebook(
 
         int const oldIndex = source.index;
         int const oldCount = source.count;
-        packageRemovePart(source.package.get(), source.part);
+        firmwareApi().packageRemovePart(source.package.get(), source.part);
         sourceRemoved = true;
-        if (packagePartCount(source.package.get()) != oldCount - 1) {
+        if (firmwareApi().packagePartCount(source.package.get()) != oldCount - 1) {
             *error = QLatin1String(
                 "The page was copied, but removal from the source could not be "
                 "verified. Both backups were retained.");
@@ -752,7 +752,7 @@ static bool moveCurrentPageToNotebook(
 
         int const replacementIndex = oldIndex == oldCount - 1
             ? oldIndex - 1 : oldIndex;
-        SharedPart const replacement = packageGetPart(
+        SharedPart const replacement = firmwareApi().packageGetPart(
             source.package.get(), replacementIndex);
         if (!replacement) {
             *error = QLatin1String(
@@ -761,10 +761,10 @@ static bool moveCurrentPageToNotebook(
             return false;
         }
 
-        editorSetPart(source.editor, replacement);
-        packageSave(source.package.get());
+        firmwareApi().editorSetPart(source.editor, replacement);
+        firmwareApi().packageSave(source.package.get());
         invalidateNotebookScanEntry(sourcePath);
-        if (packagePartCount(source.package.get()) != oldCount - 1
+        if (firmwareApi().packagePartCount(source.package.get()) != oldCount - 1
                 || countNotebookPageEntries(sourcePath) != oldCount - 1) {
             *error = QLatin1String(
                 "The page was copied, but removal from the source could not be "
@@ -772,7 +772,7 @@ static bool moveCurrentPageToNotebook(
             return false;
         }
 
-        widgetSave(widget);
+        firmwareApi().widgetSave(widget);
         invalidateNotebookScanEntry(sourcePath);
         writePageTransaction(
             transactionPath,
@@ -781,7 +781,7 @@ static bool moveCurrentPageToNotebook(
             destination,
             sourceBackup,
             destinationBackup);
-        widgetRefresh(widget);
+        firmwareApi().widgetRefresh(widget);
         trace("pages: current page moved between notebooks");
         return true;
     } catch (std::exception const&) {
@@ -801,13 +801,13 @@ static bool moveCurrentPageToNotebook(
 
     if (!sourceRemoved && source.editor && source.part) {
         try {
-            if (packageIndexOfPart(source.package.get(), source.part) >= 0)
-                editorSetPart(source.editor, source.part);
+            if (firmwareApi().packageIndexOfPart(source.package.get(), source.part) >= 0)
+                firmwareApi().editorSetPart(source.editor, source.part);
         } catch (...) {
             trace("pages: source editor could not be restored after failed move");
         }
     }
-    widgetRefresh(widget);
+    firmwareApi().widgetRefresh(widget);
     trace("pages: cross-notebook move stopped safely");
     return false;
 }

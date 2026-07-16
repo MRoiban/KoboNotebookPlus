@@ -58,6 +58,8 @@
 namespace {
 
 #include "abi_types.h"
+#include "firmware_api.h"
+#include "plugin_state.h"
 #include "parts/resolve.cc.inc"
 #include "parts/settings.cc.inc"
 #include "parts/fs_util.cc.inc"

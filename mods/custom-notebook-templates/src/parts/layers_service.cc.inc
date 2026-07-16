@@ -4,17 +4,17 @@ static bool applyActiveLayer(
     LayerContext const& context,
     QString const& layerId,
     QString* error) {
-    if (!editorGetRenderer || !rendererGetBackend
-            || !neboBackendVtable || !pageControllerInputDispatcher
-            || !platformInputDispatcherGetCurrentTool) {
+    if (!firmwareApi().editorGetRenderer || !firmwareApi().rendererGetBackend
+            || !firmwareApi().neboBackendVtable || !firmwareApi().pageControllerInputDispatcher
+            || !firmwareApi().platformInputDispatcherGetCurrentTool) {
         if (error)
             *error = QLatin1String("Layer not selected: routing API is unavailable.");
         return false;
     }
 
-    SharedRenderer const renderer = editorGetRenderer(context.editor);
-    void* const backend = renderer ? rendererGetBackend(renderer.get()) : nullptr;
-    void* const expectedVptr = static_cast<char*>(neboBackendVtable) + 8;
+    SharedRenderer const renderer = firmwareApi().editorGetRenderer(context.editor);
+    void* const backend = renderer ? firmwareApi().rendererGetBackend(renderer.get()) : nullptr;
+    void* const expectedVptr = static_cast<char*>(firmwareApi().neboBackendVtable) + 8;
     if (!backend || *reinterpret_cast<void**>(backend) != expectedVptr) {
         if (error) {
             *error = QLatin1String(
@@ -36,7 +36,7 @@ static bool applyActiveLayer(
 
     trace("layers: routing input dispatcher query");
     SharedPlatformInputDispatcher const inputDispatcher =
-        pageControllerInputDispatcher(pageController);
+        firmwareApi().pageControllerInputDispatcher(pageController);
     if (!inputDispatcher) {
         if (error)
             *error = QLatin1String(
@@ -46,7 +46,7 @@ static bool applyActiveLayer(
     trace("layers: routing input dispatcher acquired");
 
     SharedTool const currentTool =
-        platformInputDispatcherGetCurrentTool(inputDispatcher.get());
+        firmwareApi().platformInputDispatcherGetCurrentTool(inputDispatcher.get());
     void* const tool = currentTool.get();
     if (!tool) {
         if (error)
@@ -152,7 +152,7 @@ static bool synchronizeSavedActiveLayer(
 
 struct ImagePainterDeletingDeleter {
     void operator()(ImagePainterOpaque* painter) const {
-        if (painter && imagePainterDeletingDestructor)
-            imagePainterDeletingDestructor(painter);
+        if (painter && firmwareApi().imagePainterDeletingDestructor)
+            firmwareApi().imagePainterDeletingDestructor(painter);
     }
 };

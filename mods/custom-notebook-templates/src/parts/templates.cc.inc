@@ -75,7 +75,7 @@ static bool automaticSource(QFileInfo const& info) {
 }
 
 static bool locateRendererMap() {
-    void* const original = nh_symptr(backgroundOptionsOriginal);
+    void* const original = nh_symptr(firmwareApi().backgroundOptionsOriginal);
     Dl_info image = {};
 
     if (!original || !dladdr(original, &image) || !image.dli_fbase) {
@@ -94,15 +94,15 @@ static bool locateRendererMap() {
         return false;
     }
 
-    rendererMap = reinterpret_cast<QMap<QString, QString>*>(base + kRendererMapVma);
-    if (rendererMap->size() != kExpectedBuiltinMapSize) {
+    firmwareApi().rendererMap = reinterpret_cast<QMap<QString, QString>*>(base + kRendererMapVma);
+    if (firmwareApi().rendererMap->size() != kExpectedBuiltinMapSize) {
         trace("renderer map: built-in count mismatch");
         nh_log("unsupported libiinknote: renderer map has %d entries, expected %d",
-            rendererMap->size(), kExpectedBuiltinMapSize);
-        rendererMap = nullptr;
+            firmwareApi().rendererMap->size(), kExpectedBuiltinMapSize);
+        firmwareApi().rendererMap = nullptr;
         return false;
     }
-    iinknoteBase = base;
+    firmwareApi().iinknoteBase = base;
     trace("renderer map: verified");
     return true;
 }
@@ -154,7 +154,7 @@ static bool loadManifest() {
             nh_log("manifest entry %d has an invalid id or label", i);
             return false;
         }
-        if (seen.contains(id) || rendererMap->contains(id)) {
+        if (seen.contains(id) || firmwareApi().rendererMap->contains(id)) {
             trace("manifest: identifier collision");
             nh_log("manifest entry %d collides with template id '%s'", i, qPrintable(id));
             return false;
@@ -181,7 +181,7 @@ static bool loadManifest() {
 
     for (int i = 0; i < parsed.size(); ++i) {
         CustomTemplate const& value = parsed.at(i);
-        rendererMap->insert(value.id, value.backgroundBase);
+        firmwareApi().rendererMap->insert(value.id, value.backgroundBase);
         customTemplates.append(value);
         nh_log("loaded custom notebook template '%s' as '%s'",
             qPrintable(value.id), qPrintable(value.label));
@@ -224,7 +224,7 @@ static void loadAutomaticTemplates() {
         uint32_t const hash = stableFilenameHash(info.fileName().toUtf8());
         QString const id = QString::fromLatin1("Custom_Auto_%1")
             .arg(hash, 8, 16, QLatin1Char('0'));
-        if (rendererMap->contains(id)) {
+        if (firmwareApi().rendererMap->contains(id)) {
             trace("automatic: identifier collision skipped");
             continue;
         }
@@ -244,7 +244,7 @@ static void loadAutomaticTemplates() {
             continue;
         }
 
-        rendererMap->insert(id, sourcePath);
+        firmwareApi().rendererMap->insert(id, sourcePath);
         customTemplates.append(CustomTemplate{id, label, iconPath, sourcePath});
         trace("automatic: PNG template loaded");
         nh_log("automatically loaded notebook template '%s' as '%s'",

@@ -277,7 +277,7 @@ static bool openNotebookHasPluginCover(void* widget, bool* hasCover) {
         return false;
     }
 
-    QString const notebookPath = QDir::cleanPath(widgetFilePath(widget));
+    QString const notebookPath = QDir::cleanPath(firmwareApi().widgetFilePath(widget));
     QString coverType;
     bool determinate = false;
     ScanTiming timing;
@@ -657,7 +657,7 @@ static QImage cachedRenderedCoverImage(
 }
 
 static QString notebookPathFromVolume(void const* volume) {
-    QString path = contentGetId(volume);
+    QString path = firmwareApi().contentGetId(volume);
     if (path.startsWith(QLatin1String("file:")))
         path = QUrl(path).toLocalFile();
     if (!path.endsWith(QLatin1String(".nebo"), Qt::CaseInsensitive))
@@ -752,218 +752,218 @@ static bool resolveCoverApis(void* iinknoteHandle) {
 
     bool const noteSymbols =
         resolvePinned(iinknoteHandle, kCreateIInkMenuItemSymbol,
-            kCreateIInkMenuItemVma, &createIInkMenuItem)
+            kCreateIInkMenuItemVma, &firmwareApi().createIInkMenuItem)
         && resolvePinned(iinknoteHandle, kToolMenuTapGestureSymbol,
-            kToolMenuTapGestureVma, &toolMenuTapGesture)
+            kToolMenuTapGestureVma, &firmwareApi().toolMenuTapGesture)
         && resolvePinned(iinknoteHandle, kMenuSelectBackgroundSymbol,
-            kMenuSelectBackgroundVma, &menuSelectBackground)
+            kMenuSelectBackgroundVma, &firmwareApi().menuSelectBackground)
         && resolvePinned(iinknoteHandle, kSetBackgroundTypeSymbol,
-            kSetBackgroundTypeVma, &setBackgroundTypeOriginal)
+            kSetBackgroundTypeVma, &firmwareApi().setBackgroundTypeOriginal)
         && resolvePinned(iinknoteHandle, kWidgetSaveSymbol,
-            kWidgetSaveVma, &widgetSave)
+            kWidgetSaveVma, &firmwareApi().widgetSave)
         && resolvePinned(iinknoteHandle, kWidgetFilePathSymbol,
-            kWidgetFilePathVma, &widgetFilePath)
+            kWidgetFilePathVma, &firmwareApi().widgetFilePath)
         && resolvePinned(iinknoteHandle, kWidgetRefreshSymbol,
-            kWidgetRefreshVma, &widgetRefresh)
+            kWidgetRefreshVma, &firmwareApi().widgetRefresh)
         && resolvePinned(iinknoteHandle, kShowErrorPopupSymbol,
-            kShowErrorPopupVma, &showErrorPopup)
+            kShowErrorPopupVma, &firmwareApi().showErrorPopup)
         && resolvePinned(iinknoteHandle, kBackgroundTypeSymbol,
-            kBackgroundTypeVma, &backgroundType)
+            kBackgroundTypeVma, &firmwareApi().backgroundType)
         && resolvePinned(iinknoteHandle, kContentGetIdSymbol,
-            kContentGetIdVma, &contentGetId);
+            kContentGetIdVma, &firmwareApi().contentGetId);
 
     bool const iinkSymbols =
         resolvePinned(iinkHandle, kEditorGetPartSymbol,
-            kEditorGetPartVma, &editorGetPart)
+            kEditorGetPartVma, &firmwareApi().editorGetPart)
         && resolvePinned(iinkHandle, kEditorGetEngineSymbol,
-            kEditorGetEngineVma, &editorGetEngine)
+            kEditorGetEngineVma, &firmwareApi().editorGetEngine)
         && resolvePinned(iinkHandle, kEditorSetPartSymbol,
-            kEditorSetPartVma, &editorSetPart)
+            kEditorSetPartVma, &firmwareApi().editorSetPart)
         && resolvePinned(iinkHandle, kPartGetPackageSymbol,
-            kPartGetPackageVma, &partGetPackage)
+            kPartGetPackageVma, &firmwareApi().partGetPackage)
         && resolvePinned(iinkHandle, kPartGetPageSymbol,
-            kPartGetPageVma, &partGetPage)
+            kPartGetPageVma, &firmwareApi().partGetPage)
         && resolvePinned(iinkHandle, kPageDocumentSymbol,
-            kPageDocumentVma, &pageDocument)
+            kPageDocumentVma, &firmwareApi().pageDocument)
         && resolvePinned(iinkHandle, kPageDestructorSymbol,
-            kPageDestructorVma, &pageDestructor)
+            kPageDestructorVma, &firmwareApi().pageDestructor)
         && resolvePinned(iinkHandle, kPackagePartCountSymbol,
-            kPackagePartCountVma, &packagePartCount)
+            kPackagePartCountVma, &firmwareApi().packagePartCount)
         && resolvePinned(iinkHandle, kPackageGetPartSymbol,
-            kPackageGetPartVma, &packageGetPart)
+            kPackageGetPartVma, &firmwareApi().packageGetPart)
         && resolvePinned(iinkHandle, kPackageIndexOfPartSymbol,
-            kPackageIndexOfPartVma, &packageIndexOfPart)
+            kPackageIndexOfPartVma, &firmwareApi().packageIndexOfPart)
         && resolvePinned(iinkHandle, kPackageCreatePartSymbol,
-            kPackageCreatePartVma, &packageCreatePart)
+            kPackageCreatePartVma, &firmwareApi().packageCreatePart)
         && resolvePinned(iinkHandle, kPackageClonePartSymbol,
-            kPackageClonePartVma, &packageClonePart)
+            kPackageClonePartVma, &firmwareApi().packageClonePart)
         && resolvePinned(iinkHandle, kPackageRemovePartSymbol,
-            kPackageRemovePartVma, &packageRemovePart)
+            kPackageRemovePartVma, &firmwareApi().packageRemovePart)
         && resolvePinned(iinkHandle, kPackageSaveSymbol,
-            kPackageSaveVma, &packageSave)
+            kPackageSaveVma, &firmwareApi().packageSave)
         && resolvePinned(iinkHandle, kEngineOpenPackageSymbol,
-            kEngineOpenPackageVma, &engineOpenPackage)
+            kEngineOpenPackageVma, &firmwareApi().engineOpenPackage)
         && resolvePinned(iinkHandle, kDocumentPageCountSymbol,
-            kDocumentPageCountVma, &documentPageCount)
+            kDocumentPageCountVma, &firmwareApi().documentPageCount)
         && resolvePinned(iinkHandle, kDocumentMovePageSymbol,
-            kDocumentMovePageVma, &documentMovePage)
+            kDocumentMovePageVma, &firmwareApi().documentMovePage)
         && resolvePinned(iinkHandle, kIInkStringCtorSymbol,
-            kIInkStringCtorVma, &iinkStringCtor);
+            kIInkStringCtorVma, &firmwareApi().iinkStringCtor);
 
     bool const layerSymbols =
         resolvePinned(iinkHandle, kEditorGetRendererSymbol,
-            kEditorGetRendererVma, &editorGetRenderer)
+            kEditorGetRendererVma, &firmwareApi().editorGetRenderer)
         && resolvePinned(iinkHandle, kPartGetIdSymbol,
-            kPartGetIdVma, &partGetId)
+            kPartGetIdVma, &firmwareApi().partGetId)
         && resolvePinned(iinkHandle, kPageLayoutSymbol,
-            kPageLayoutVma, &pageLayout)
+            kPageLayoutVma, &firmwareApi().pageLayout)
         && resolvePinned(iinkHandle, kLayoutDestructorSymbol,
-            kLayoutDestructorVma, &layoutDestructor)
+            kLayoutDestructorVma, &firmwareApi().layoutDestructor)
         && resolvePinned(iinkHandle, kLayoutAppendLayerSymbol,
-            kLayoutAppendLayerVma, &layoutAppendLayer)
+            kLayoutAppendLayerVma, &firmwareApi().layoutAppendLayer)
         && resolvePinned(iinkHandle, kLayoutRemoveLayerSymbol,
-            kLayoutRemoveLayerVma, &layoutRemoveLayer)
+            kLayoutRemoveLayerVma, &firmwareApi().layoutRemoveLayer)
         && resolvePinned(iinkHandle, kAtkLayoutRawLayoutSymbol,
-            kAtkLayoutRawLayoutVma, &atkLayoutRawLayout)
+            kAtkLayoutRawLayoutVma, &firmwareApi().atkLayoutRawLayout)
         && resolvePinned(iinkHandle, kDocumentLayoutGetLayerSymbol,
-            kDocumentLayoutGetLayerVma, &documentLayoutGetLayer)
+            kDocumentLayoutGetLayerVma, &firmwareApi().documentLayoutGetLayer)
         && resolvePinned(iinkHandle, kLayerIteratorIsAtEndSymbol,
-            kLayerIteratorIsAtEndVma, &layerIteratorIsAtEnd)
+            kLayerIteratorIsAtEndVma, &firmwareApi().layerIteratorIsAtEnd)
         && resolvePinned(iinkHandle, kManagedObjectDestructorSymbol,
-            kManagedObjectDestructorVma, &managedObjectDestructor)
+            kManagedObjectDestructorVma, &firmwareApi().managedObjectDestructor)
         && resolvePinned(iinkHandle, kRendererGetBackendSymbol,
-            kRendererGetBackendVma, &rendererGetBackend)
+            kRendererGetBackendVma, &firmwareApi().rendererGetBackend)
         && resolvePinned(iinkHandle, kRendererRestrictToLayersSymbol,
-            kRendererRestrictToLayersVma, &rendererRestrictToLayers)
+            kRendererRestrictToLayersVma, &firmwareApi().rendererRestrictToLayers)
         && resolvePinned(iinkHandle, kPageControllerInputDispatcherSymbol,
-            kPageControllerInputDispatcherVma, &pageControllerInputDispatcher)
+            kPageControllerInputDispatcherVma, &firmwareApi().pageControllerInputDispatcher)
         && resolvePinned(iinkHandle,
             kPlatformInputDispatcherGetCurrentToolSymbol,
             kPlatformInputDispatcherGetCurrentToolVma,
-            &platformInputDispatcherGetCurrentTool)
+            &firmwareApi().platformInputDispatcherGetCurrentTool)
         && resolvePinned(iinkHandle, kDynamicToolDispatcherCastSymbol,
-            kDynamicToolDispatcherCastVma, &dynamicToolDispatcherCast)
+            kDynamicToolDispatcherCastVma, &firmwareApi().dynamicToolDispatcherCast)
         && resolvePinned(iinkHandle, kToolDispatcherRestrictToLayerSymbol,
             kToolDispatcherRestrictToLayerVma,
-            &toolDispatcherRestrictToLayer)
+            &firmwareApi().toolDispatcherRestrictToLayer)
         && resolvePinned(iinkHandle, kIInkStringToStdStringSymbol,
-            kIInkStringToStdStringVma, &iinkStringToStdString)
+            kIInkStringToStdStringVma, &firmwareApi().iinkStringToStdString)
         && resolvePinned(iinkHandle, kDocumentLayerNameSymbol,
-            kDocumentLayerNameVma, &documentLayerName)
+            kDocumentLayerNameVma, &firmwareApi().documentLayerName)
         && resolvePinned(iinkHandle, kBackgroundObjectLayerNameSymbol,
-            kBackgroundObjectLayerNameVma, &backgroundObjectLayerName)
+            kBackgroundObjectLayerNameVma, &firmwareApi().backgroundObjectLayerName)
         && resolvePinned(iinkHandle, kNeboBackendVtableSymbol,
-            kNeboBackendVtableVma, &neboBackendVtable)
+            kNeboBackendVtableVma, &firmwareApi().neboBackendVtable)
         && resolvePinned(iinkHandle, kCompositeBoxFactoryMainBackendSymbol,
-            kCompositeBoxFactoryMainBackendVma, &compositeBoxFactoryMainBackend)
+            kCompositeBoxFactoryMainBackendVma, &firmwareApi().compositeBoxFactoryMainBackend)
         && resolvePinned(iinkHandle, kCompositeBoxFactoryBackendsSymbol,
-            kCompositeBoxFactoryBackendsVma, &compositeBoxFactoryBackends)
+            kCompositeBoxFactoryBackendsVma, &firmwareApi().compositeBoxFactoryBackends)
         && resolvePinned(iinkHandle, kSelectionSelectLayerSymbol,
-            kSelectionSelectLayerVma, &selectionSelectLayer)
+            kSelectionSelectLayerVma, &firmwareApi().selectionSelectLayer)
         && resolvePinned(iinkHandle, kSelectionSelectPolygonSymbol,
-            kSelectionSelectPolygonVma, &selectionSelectPolygon)
+            kSelectionSelectPolygonVma, &firmwareApi().selectionSelectPolygon)
         && resolvePinned(iinkHandle, kSelectionSelectNoneSymbol,
-            kSelectionSelectNoneVma, &selectionSelectNone)
+            kSelectionSelectNoneVma, &firmwareApi().selectionSelectNone)
         && resolvePinned(iinkHandle, kSelectionIsEmptySymbol,
-            kSelectionIsEmptyVma, &selectionIsEmpty)
+            kSelectionIsEmptyVma, &firmwareApi().selectionIsEmpty)
         && resolvePinned(iinkHandle, kSelectionAdjustToStrokeBoundariesSymbol,
             kSelectionAdjustToStrokeBoundariesVma,
-            &selectionAdjustToStrokeBoundaries)
+            &firmwareApi().selectionAdjustToStrokeBoundaries)
         && resolvePinned(iinkHandle, kEraserPolicySymbol,
-            kEraserPolicyVma, &eraserPolicy)
+            kEraserPolicyVma, &firmwareApi().eraserPolicy)
         && resolvePinned(iinkHandle, kEraserStrokerPolygonSymbol,
-            kEraserStrokerPolygonVma, &eraserStrokerPolygon)
+            kEraserStrokerPolygonVma, &firmwareApi().eraserStrokerPolygon)
         && resolvePinned(iinkHandle, kDrawingBackendVtableSymbol,
-            kDrawingBackendVtableVma, &drawingBackendVtable)
+            kDrawingBackendVtableVma, &firmwareApi().drawingBackendVtable)
         && resolvePinned(iinkHandle, kDrawingEraserVtableSymbol,
-            kDrawingEraserVtableVma, &drawingEraserVtable)
+            kDrawingEraserVtableVma, &firmwareApi().drawingEraserVtable)
         && resolvePinned(iinkHandle, kPlainDrawingEraserVtableSymbol,
-            kPlainDrawingEraserVtableVma, &plainDrawingEraserVtable)
+            kPlainDrawingEraserVtableVma, &firmwareApi().plainDrawingEraserVtable)
         && resolvePinned(iinkHandle, kDiagramEraserVtableSymbol,
-            kDiagramEraserVtableVma, &diagramEraserVtable)
+            kDiagramEraserVtableVma, &firmwareApi().diagramEraserVtable)
         && resolvePinned(iinkHandle, kDiagramPenVtableSymbol,
-            kDiagramPenVtableVma, &diagramPenVtable);
+            kDiagramPenVtableVma, &firmwareApi().diagramPenVtable);
 
     // Eraser size uses the same live editor/backend path as layer routing, but
     // it remains a separate feature gate. The exact vtables prevent a radius
     // setter from ever being called on an arbitrary kind-4 Tool.
     bool const eraserSizeSymbols = layerSymbols
         && resolvePinned(iinkHandle, kEraserSetRadiusSymbol,
-            kEraserSetRadiusVma, &eraserSetRadius)
+            kEraserSetRadiusVma, &firmwareApi().eraserSetRadius)
         && resolvePinned(iinkHandle, kEraserRadiusSymbol,
-            kEraserRadiusVma, &eraserRadius)
+            kEraserRadiusVma, &firmwareApi().eraserRadius)
         && resolvePinned(iinkHandle, kEraserWidthFromThicknessRatioSymbol,
             kEraserWidthFromThicknessRatioVma,
-            &eraserWidthFromThicknessRatio)
+            &firmwareApi().eraserWidthFromThicknessRatio)
         && resolvePinned(iinkHandle, kLayoutGridLineGapSymbol,
-            kLayoutGridLineGapVma, &layoutGridLineGap)
+            kLayoutGridLineGapVma, &firmwareApi().layoutGridLineGap)
         && resolvePinned(iinkHandle, kCoreEraserVtableSymbol,
-            kCoreEraserVtableVma, &coreEraserVtable)
+            kCoreEraserVtableVma, &firmwareApi().coreEraserVtable)
         && resolvePinned(iinkHandle, kTextEraserSntVtableSymbol,
-            kTextEraserSntVtableVma, &textEraserSntVtable)
+            kTextEraserSntVtableVma, &firmwareApi().textEraserSntVtable)
         && resolvePinned(iinkHandle, kMathEraserVtableSymbol,
-            kMathEraserVtableVma, &mathEraserVtable)
+            kMathEraserVtableVma, &firmwareApi().mathEraserVtable)
         && resolvePinned(iinkHandle, kTextEraserVtableSymbol,
-            kTextEraserVtableVma, &textEraserVtable);
+            kTextEraserVtableVma, &firmwareApi().textEraserVtable);
     eraserSizeApisReady = eraserSizeSymbols;
 
     bool const layerPreviewSymbols = iinkUiRefHandle
         && resolvePinned(iinkHandle, kEditorGetConfigurationSymbol,
-            kEditorGetConfigurationVma, &editorGetConfiguration)
+            kEditorGetConfigurationVma, &firmwareApi().editorGetConfiguration)
         && resolvePinned(iinkHandle, kPageControllerExportToPngSymbol,
-            kPageControllerExportToPngVma, &pageControllerExportToPng)
+            kPageControllerExportToPngVma, &firmwareApi().pageControllerExportToPng)
         && resolvePinned(iinkHandle, kBackendImageDrawerMakeSharedSymbol,
-            kBackendImageDrawerMakeSharedVma, &backendImageDrawerMakeShared)
+            kBackendImageDrawerMakeSharedVma, &firmwareApi().backendImageDrawerMakeShared)
         && resolvePinnedThumbVma(
             iinkHandle,
             kPageControllerExportToPngSymbol,
             kStockBackendImageDrawerExportVma,
-            &stockBackendImageDrawerExport)
+            &firmwareApi().stockBackendImageDrawerExport)
         && resolvePinned(iinkUiRefHandle, kImagePainterConstructorSymbol,
-            kImagePainterConstructorVma, &imagePainterConstructor)
+            kImagePainterConstructorVma, &firmwareApi().imagePainterConstructor)
         && resolvePinned(
             iinkUiRefHandle,
             kImagePainterDeletingDestructorSymbol,
             kImagePainterDeletingDestructorVma,
-            &imagePainterDeletingDestructor)
+            &firmwareApi().imagePainterDeletingDestructor)
         && resolvePinned(
             iinkUiRefHandle,
             kImagePainterSetImageLoaderSymbol,
             kImagePainterSetImageLoaderVma,
-            &imagePainterSetImageLoader)
+            &firmwareApi().imagePainterSetImageLoader)
         && resolvePinned(
             iinkUiRefHandle,
             kUirefEditorWidgetVtableSymbol,
             kUirefEditorWidgetVtableVma,
-            &uirefEditorWidgetVtable);
+            &firmwareApi().uirefEditorWidgetVtable);
     layerPreviewApisReady = iinkSymbols && layerSymbols && layerPreviewSymbols;
 
     // Best-effort: the base Eraser::updateSelection lets the diagram eraser
     // commit custom-layer ink. If it cannot be verified the eraser simply
     // keeps stock behavior; selection and pen routing remain unaffected.
     resolvePinned(iinkHandle, kCoreEraserUpdateSelectionSymbol,
-        kCoreEraserUpdateSelectionVma, &coreEraserUpdateSelection);
+        kCoreEraserUpdateSelectionVma, &firmwareApi().coreEraserUpdateSelection);
 
     bool const nativeLayerMenuSymbols = nickelHandle
         && resolvePinned(nickelHandle, kNickelTouchMenuConstructorSymbol,
-            kNickelTouchMenuConstructorVma, &nickelTouchMenuConstructor)
+            kNickelTouchMenuConstructorVma, &firmwareApi().nickelTouchMenuConstructor)
         && resolvePinned(nickelHandle, kNickelTouchMenuSetAlignmentSymbol,
-            kNickelTouchMenuSetAlignmentVma, &nickelTouchMenuSetAlignment)
+            kNickelTouchMenuSetAlignmentVma, &firmwareApi().nickelTouchMenuSetAlignment)
         && resolvePinned(
             nickelHandle,
             kTouchMenuSetCustomPopupPositionOffsetSymbol,
             kTouchMenuSetCustomPopupPositionOffsetVma,
-            &touchMenuSetCustomPopupPositionOffset)
+            &firmwareApi().touchMenuSetCustomPopupPositionOffset)
         && resolvePinned(
             nickelHandle,
             kAbstractNickelMenuControllerPopupFromWidgetSymbol,
             kAbstractNickelMenuControllerPopupFromWidgetVma,
-            &abstractNickelMenuControllerPopupFromWidget)
+            &firmwareApi().abstractNickelMenuControllerPopupFromWidget)
         && resolvePinned(
             nickelHandle,
             kNickelTouchMenuPopupPositionSymbol,
             kNickelTouchMenuPopupPositionVma,
-            &nickelTouchMenuPopupPosition);
+            &firmwareApi().nickelTouchMenuPopupPosition);
 
     // Selectable layer rows use the exact native tool-row surface, but never
     // pass a synthetic layer value through IInkToolMenuWidget::setTool(). The
@@ -975,22 +975,22 @@ static bool resolveCoverApis(void* iinknoteHandle) {
             iinknoteHandle,
             kIInkToolMenuWidgetConstructorSymbol,
             kIInkToolMenuWidgetConstructorVma,
-            &iInkToolMenuWidgetConstructor)
+            &firmwareApi().iInkToolMenuWidgetConstructor)
         && resolvePinned(
             iinknoteHandle,
             kIInkToolMenuWidgetSetSelectedSymbol,
             kIInkToolMenuWidgetSetSelectedVma,
-            &iInkToolMenuWidgetSetSelected)
+            &firmwareApi().iInkToolMenuWidgetSetSelected)
         && resolvePinned(
             nickelHandle,
             kAbstractMenuControllerGrabTapGestureSymbol,
             kAbstractMenuControllerGrabTapGestureVma,
-            &abstractMenuControllerGrabTapGesture)
+            &firmwareApi().abstractMenuControllerGrabTapGesture)
         && resolvePinned(
             nickelHandle,
             kAbstractMenuControllerTapGestureSymbol,
             kAbstractMenuControllerTapGestureVma,
-            &abstractMenuControllerTapGesture);
+            &firmwareApi().abstractMenuControllerTapGesture);
 
     layerHooksReady = noteSymbols && iinkSymbols && layerSymbols
         && nativeLayerMenuSymbols && nativeLayerRowSymbols;

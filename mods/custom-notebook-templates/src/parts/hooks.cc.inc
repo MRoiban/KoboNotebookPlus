@@ -7,12 +7,12 @@ void _cnt_remove_common_book_data_hook(
     void const* device,
     void* volume,
     bool removeBackingFile) {
-    if (!removeCommonBookDataOriginal)
+    if (!firmwareApi().removeCommonBookDataOriginal)
         return;
 
     bool preserveBackingFile = false;
-    if (removeBackingFile && contentGetId && volume) {
-        QString const id = contentGetId(volume);
+    if (removeBackingFile && firmwareApi().contentGetId && volume) {
+        QString const id = firmwareApi().contentGetId(volume);
         preserveBackingFile =
             id.startsWith(QLatin1String(kCustomAssetOnboardContentPrefix))
             || id.startsWith(QLatin1String(
@@ -37,16 +37,16 @@ void _cnt_remove_common_book_data_hook(
         }
     }
 
-    removeCommonBookDataOriginal(
+    firmwareApi().removeCommonBookDataOriginal(
         manager, device, volume, removeBackingFile);
 }
 
 extern "C" __attribute__((visibility("default")))
 QString _cnt_exclude_sync_folders_hook(void* featureSettings) {
-    if (!excludeSyncFoldersOriginal)
+    if (!firmwareApi().excludeSyncFoldersOriginal)
         return QString();
 
-    QString exclusions = excludeSyncFoldersOriginal(featureSettings);
+    QString exclusions = firmwareApi().excludeSyncFoldersOriginal(featureSettings);
     QString const pattern = QLatin1String(kCustomAssetExcludePattern);
     QStringList const entries = exclusions.split(
         QLatin1Char(';'), QString::SkipEmptyParts);
@@ -75,7 +75,7 @@ QString _cnt_exclude_sync_folders_hook(void* featureSettings) {
 extern "C" __attribute__((visibility("default")))
 QVector<BackgroundOption> _cnt_background_options_hook() {
     trace("backgroundOptions hook invoked");
-    QVector<BackgroundOption> options = backgroundOptionsOriginal();
+    QVector<BackgroundOption> options = firmwareApi().backgroundOptionsOriginal();
 
     if (coverPickerPending) {
         coverPickerPending = false;
@@ -98,17 +98,17 @@ QVector<BackgroundOption> _cnt_background_options_hook() {
 
 extern "C" __attribute__((visibility("default")))
 void _cnt_set_dialog_title_hook(void* dialog, QString const& title) {
-    if (!setDialogTitleOriginal)
+    if (!firmwareApi().setDialogTitleOriginal)
         return;
     if (coverHooksReady
             && coverTitlePending
             && title == QLatin1String("Notebook Templates")) {
         coverTitlePending = false;
-        setDialogTitleOriginal(dialog, QLatin1String("Notebook Covers"));
+        firmwareApi().setDialogTitleOriginal(dialog, QLatin1String("Notebook Covers"));
         trace("covers: picker title changed to Notebook Covers");
         return;
     }
-    setDialogTitleOriginal(dialog, title);
+    firmwareApi().setDialogTitleOriginal(dialog, title);
 }
 
 extern "C" __attribute__((visibility("default")))
@@ -116,17 +116,17 @@ void _cnt_parser_image_parsed_hook(
     void* parser,
     void const* volume,
     QImage const& image) {
-    if (!parserImageParsedOriginal)
+    if (!firmwareApi().parserImageParsedOriginal)
         return;
 
     uintptr_t const caller = reinterpret_cast<uintptr_t>(
         __builtin_return_address(0)) & ~uintptr_t(1);
     if (!coverHooksReady
-            || !contentGetId
+            || !firmwareApi().contentGetId
             || !zipOpen
-            || !iinknoteBase
-            || caller != iinknoteBase + kThumbnailCallbackReturnVma) {
-        parserImageParsedOriginal(parser, volume, image);
+            || !firmwareApi().iinknoteBase
+            || caller != firmwareApi().iinknoteBase + kThumbnailCallbackReturnVma) {
+        firmwareApi().parserImageParsedOriginal(parser, volume, image);
         return;
     }
 
@@ -137,34 +137,34 @@ void _cnt_parser_image_parsed_hook(
     QString type;
     if (notebookPath.isEmpty()
             || !cachedNotebookCoverType(notebookPath, &type, pathResolveMs)) {
-        parserImageParsedOriginal(parser, volume, image);
+        firmwareApi().parserImageParsedOriginal(parser, volume, image);
         return;
     }
 
     QImage const composed = composeCoverWithRenderedInk(type, image);
     if (composed.isNull()) {
-        parserImageParsedOriginal(parser, volume, image);
+        firmwareApi().parserImageParsedOriginal(parser, volume, image);
         trace("covers: cover-and-ink composition failed; stock preview preserved");
         return;
     }
 
     cacheRenderedCoverImage(notebookPath, type, composed);
-    parserImageParsedOriginal(parser, volume, composed);
+    firmwareApi().parserImageParsedOriginal(parser, volume, composed);
     trace("covers: custom cover composed with rendered page ink");
 }
 
 extern "C" __attribute__((visibility("default")))
 void _cnt_volume_load_cover_hook(void* view) {
-    if (!volumeLoadCoverOriginal)
+    if (!firmwareApi().volumeLoadCoverOriginal)
         return;
 
     // Preserve Kobo's normal cache/download/default-cover behavior first.
-    volumeLoadCoverOriginal(view);
+    firmwareApi().volumeLoadCoverOriginal(view);
     if (!coverGridHookReady
             || !view
-            || !contentGetId
-            || !contentGetImageId
-            || !pixmapSetImage
+            || !firmwareApi().contentGetId
+            || !firmwareApi().contentGetImageId
+            || !firmwareApi().pixmapSetImage
             || !zipOpen) {
         return;
     }
@@ -192,9 +192,9 @@ void _cnt_volume_load_cover_hook(void* view) {
         return;
     }
 
-    QString const imageId = contentGetImageId(volume);
+    QString const imageId = firmwareApi().contentGetImageId(volume);
     timer.restart();
-    pixmapSetImage(view, preview, imageId);
+    firmwareApi().pixmapSetImage(view, preview, imageId);
     char line[128];
     snprintf(line, sizeof(line),
         "covers: live notebook card replaced (set-image=%.1fms)",
@@ -209,7 +209,7 @@ void _cnt_tool_menu_constructor_hook(
     QVector<int> const* tools,
     QVector<int> const* brushSections,
     void* themeStorage) {
-    if (!toolMenuConstructorOriginal)
+    if (!firmwareApi().toolMenuConstructorOriginal)
         return;
 
     bool const exactEraserMenu = eraserSizeMenuHooksReady
@@ -221,7 +221,7 @@ void _cnt_tool_menu_constructor_hook(
         && tools->at(1) == 2
         && brushSections->isEmpty();
     if (!exactEraserMenu) {
-        toolMenuConstructorOriginal(
+        firmwareApi().toolMenuConstructorOriginal(
             controller, parent, tools, brushSections, themeStorage);
         return;
     }
@@ -231,7 +231,7 @@ void _cnt_tool_menu_constructor_hook(
     // safely when the original returns.
     QVector<int> eraserSections;
     eraserSections.append(0);
-    toolMenuConstructorOriginal(
+    firmwareApi().toolMenuConstructorOriginal(
         controller, parent, tools, &eraserSections, themeStorage);
 
     try {
@@ -242,8 +242,8 @@ void _cnt_tool_menu_constructor_hook(
         // Seed before onToolButtonTapped invokes virtual loadView immediately
         // after this constructor returns. The empty button vector is handled
         // by stock setBrushSizeIndex.
-        if (setBrushSizeIndexOriginal && validEraserSizeIndex(index))
-            setBrushSizeIndexOriginal(controller, index);
+        if (firmwareApi().setBrushSizeIndexOriginal && validEraserSizeIndex(index))
+            firmwareApi().setBrushSizeIndexOriginal(controller, index);
         trace(QLatin1String(
             "eraser-size: native eraser controller augmented index=")
             + QString::number(index));
@@ -257,7 +257,7 @@ void _cnt_create_brush_size_row_hook(
     void* controller,
     NickelTouchMenu* menu,
     QString const& title) {
-    if (!createBrushSizeRowOriginal)
+    if (!firmwareApi().createBrushSizeRowOriginal)
         return;
     bool marked = false;
     if (eraserSizeMenuHooksReady && controller) {
@@ -265,7 +265,7 @@ void _cnt_create_brush_size_row_hook(
             ->property("_cnt_eraser_size_controller").toBool();
     }
     if (!marked || !menu) {
-        createBrushSizeRowOriginal(controller, menu, title);
+        firmwareApi().createBrushSizeRowOriginal(controller, menu, title);
         return;
     }
 
@@ -278,7 +278,7 @@ void _cnt_create_brush_size_row_hook(
     QString const eraserTitle = QLatin1String("Eraser Size");
     QList<QWidget*> const rowsBefore = menuObject->findChildren<QWidget*>(
         eraserTitle);
-    createBrushSizeRowOriginal(controller, menu, eraserTitle);
+    firmwareApi().createBrushSizeRowOriginal(controller, menu, eraserTitle);
     QList<QWidget*> const rowsAfter = menuObject->findChildren<QWidget*>(
         eraserTitle);
     bool identityRestored = false;
@@ -297,25 +297,25 @@ void _cnt_create_brush_size_row_hook(
 
 extern "C" __attribute__((visibility("default")))
 void _cnt_set_brush_size_index_hook(void* controller, int index) {
-    if (!setBrushSizeIndexOriginal)
+    if (!firmwareApi().setBrushSizeIndexOriginal)
         return;
     // Preserve every stock theme/button update first, including unknown future
     // callers. Only the two pinned firmware callsites below have plugin work.
-    setBrushSizeIndexOriginal(controller, index);
+    firmwareApi().setBrushSizeIndexOriginal(controller, index);
     if (!eraserSizeMenuHooksReady || !controller
             || !validEraserSizeIndex(index)
             || !reinterpret_cast<QObject*>(controller)
                 ->property("_cnt_eraser_size_controller").toBool()
-            || !iinknoteBase) {
+            || !firmwareApi().iinknoteBase) {
         return;
     }
 
     uintptr_t const caller = reinterpret_cast<uintptr_t>(
         __builtin_return_address(0)) & ~uintptr_t(1);
     bool const clicked =
-        caller == iinknoteBase + kSetBrushSizeIndexClickReturnVma;
+        caller == firmwareApi().iinknoteBase + kSetBrushSizeIndexClickReturnVma;
     bool const loaded =
-        caller == iinknoteBase + kSetBrushSizeIndexLoadReturnVma;
+        caller == firmwareApi().iinknoteBase + kSetBrushSizeIndexLoadReturnVma;
     if (!clicked && !loaded)
         return;
     if (clicked)
@@ -333,20 +333,20 @@ void _cnt_set_brush_size_index_hook(void* controller, int index) {
 
 extern "C" __attribute__((visibility("default")))
 void _cnt_set_active_tool_hook(void* widget, int tool) {
-    if (!setActiveToolOriginal)
+    if (!firmwareApi().setActiveToolOriginal)
         return;
 
     uintptr_t const caller = reinterpret_cast<uintptr_t>(
         __builtin_return_address(0)) & ~uintptr_t(1);
-    setActiveToolOriginal(widget, tool);
+    firmwareApi().setActiveToolOriginal(widget, tool);
 
     // stylusTouchBegin switches the engine to its saved eraser tool without
     // visiting IInkToolMenuController, and firmware resets the live radius in
     // that path. The user's configured size remains authoritative: replay it
     // after stock activation, then mirror the same index into any open popup.
     // Nothing here persists; only an explicit five-button tap writes JSON.
-    if (!eraserSizeMenuHooksReady || !widget || !iinknoteBase
-            || caller != iinknoteBase
+    if (!eraserSizeMenuHooksReady || !widget || !firmwareApi().iinknoteBase
+            || caller != firmwareApi().iinknoteBase
                 + kHardwareEraserSetActiveToolReturnVma
             || (tool != 1 && tool != 2)
             || !isNotebookWidget(reinterpret_cast<QObject*>(widget))) {
@@ -359,7 +359,7 @@ void _cnt_set_active_tool_hook(void* widget, int tool) {
             reinterpret_cast<QObject*>(widget), "hardware-eraser");
         bool uiUpdated = false;
         QObject* const controller = liveEraserSizeController.data();
-        if (engineUpdated && controller && setBrushSizeIndexOriginal
+        if (engineUpdated && controller && firmwareApi().setBrushSizeIndexOriginal
                 && findNotebookWidget(controller)
                     == reinterpret_cast<QObject*>(widget)
                 && controller->property(
@@ -367,7 +367,7 @@ void _cnt_set_active_tool_hook(void* widget, int tool) {
             // The stock setter updates controller+0x48 and all five native
             // BrushButtons but emits no toolSelected signal, so this cannot
             // recurse into setToolTheme or mutate the engine a second time.
-            setBrushSizeIndexOriginal(controller, configuredIndex);
+            firmwareApi().setBrushSizeIndexOriginal(controller, configuredIndex);
             uiUpdated = true;
         }
         trace(QLatin1String(
@@ -386,14 +386,14 @@ void _cnt_set_active_tool_hook(void* widget, int tool) {
 
 extern "C" __attribute__((visibility("default")))
 void _cnt_render_volume_hook(void* widget, void const* volume) {
-    if (!renderVolumeOriginal)
+    if (!firmwareApi().renderVolumeOriginal)
         return;
 
     // Stock renderVolume synchronously constructs the editor/backend/tool and,
     // on its saved-page path, installs the final part after setupVolume. The
     // caller reaches this symbol through the PLT, so running after the original
     // is the first hookable point where all three identities are coherent.
-    renderVolumeOriginal(widget, volume);
+    firmwareApi().renderVolumeOriginal(widget, volume);
     if (!notebookLifecycleHooksReady || !widget)
         return;
 
@@ -435,9 +435,9 @@ void _cnt_render_volume_hook(void* widget, void const* volume) {
 
 extern "C" __attribute__((visibility("default")))
 void _cnt_set_tool_theme_hook(void* widget, void* theme) {
-    if (!setToolThemeOriginal)
+    if (!firmwareApi().setToolThemeOriginal)
         return;
-    setToolThemeOriginal(widget, theme);
+    firmwareApi().setToolThemeOriginal(widget, theme);
     if (!notebookLifecycleHooksReady || !widget)
         return;
 
@@ -482,21 +482,21 @@ void _cnt_add_widget_action_hook(
     bool closesMenu,
     bool enabled,
     bool separatorAfter) {
-    if (!addWidgetActionOriginal)
+    if (!firmwareApi().addWidgetActionOriginal)
         return;
 
     uintptr_t const caller = reinterpret_cast<uintptr_t>(
         __builtin_return_address(0)) & ~uintptr_t(1);
-    addWidgetActionOriginal(
+    firmwareApi().addWidgetActionOriginal(
         controller, menu, widget, receiver, member,
         closesMenu, enabled, separatorAfter);
 
     if ((!coverHooksReady && !pageManagerHooksReady && !layerHooksReady)
             || !controller
             || !menu
-            || !iinknoteBase
-            || caller < iinknoteBase + kMenuLoadViewVma
-            || caller >= iinknoteBase + kMenuLoadViewVma + kMenuLoadViewSize
+            || !firmwareApi().iinknoteBase
+            || caller < firmwareApi().iinknoteBase + kMenuLoadViewVma
+            || caller >= firmwareApi().iinknoteBase + kMenuLoadViewVma + kMenuLoadViewSize
             || menu->property("_cnt_notebook_actions_added").toBool()) {
         return;
     }
@@ -516,14 +516,14 @@ void _cnt_add_widget_action_hook(
                     beginCoverPicker(target);
             });
 
-        QWidget* const coverItem = createIInkMenuItem(
+        QWidget* const coverItem = firmwareApi().createIInkMenuItem(
             controller,
             menu,
             QLatin1String("Change notebook cover"),
             noIcon,
             false);
         if (coverItem) {
-            addWidgetActionOriginal(
+            firmwareApi().addWidgetActionOriginal(
                 controller,
                 menu,
                 coverItem,
@@ -549,14 +549,14 @@ void _cnt_add_widget_action_hook(
                 if (target)
                     showLayerPopup(target);
             });
-        QWidget* const layerItem = createIInkMenuItem(
+        QWidget* const layerItem = firmwareApi().createIInkMenuItem(
             controller,
             menu,
             QLatin1String("Layers"),
             noIcon,
             false);
         if (layerItem) {
-            addWidgetActionOriginal(
+            firmwareApi().addWidgetActionOriginal(
                 controller,
                 menu,
                 layerItem,
@@ -597,14 +597,14 @@ void _cnt_add_widget_action_hook(
                     runPageOperation(target, MovePageLaterOperation);
             });
 
-        QWidget* const duplicateItem = createIInkMenuItem(
+        QWidget* const duplicateItem = firmwareApi().createIInkMenuItem(
             controller,
             menu,
             QLatin1String("Duplicate page"),
             noIcon,
             false);
         if (duplicateItem) {
-            addWidgetActionOriginal(
+            firmwareApi().addWidgetActionOriginal(
                 controller,
                 menu,
                 duplicateItem,
@@ -618,14 +618,14 @@ void _cnt_add_widget_action_hook(
             trace("pages: native duplicate menu item creation failed");
         }
 
-        QWidget* const earlierItem = createIInkMenuItem(
+        QWidget* const earlierItem = firmwareApi().createIInkMenuItem(
             controller,
             menu,
             QLatin1String("Move page earlier"),
             noIcon,
             false);
         if (earlierItem) {
-            addWidgetActionOriginal(
+            firmwareApi().addWidgetActionOriginal(
                 controller,
                 menu,
                 earlierItem,
@@ -639,14 +639,14 @@ void _cnt_add_widget_action_hook(
             trace("pages: native move-earlier menu item creation failed");
         }
 
-        QWidget* const laterItem = createIInkMenuItem(
+        QWidget* const laterItem = firmwareApi().createIInkMenuItem(
             controller,
             menu,
             QLatin1String("Move page later"),
             noIcon,
             false);
         if (laterItem) {
-            addWidgetActionOriginal(
+            firmwareApi().addWidgetActionOriginal(
                 controller,
                 menu,
                 laterItem,

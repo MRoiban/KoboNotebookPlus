@@ -1,101 +1,14 @@
 #line 528 "src/customnotebooktemplates.cc"
 
-static BackgroundOptions backgroundOptionsOriginal = nullptr;
-static SetDialogTitle setDialogTitleOriginal = nullptr;
-static CreateIInkMenuItem createIInkMenuItem = nullptr;
-static NickelTouchMenuConstructor nickelTouchMenuConstructor = nullptr;
-static NickelTouchMenuSetAlignment nickelTouchMenuSetAlignment = nullptr;
-static TouchMenuSetCustomPopupPositionOffset
-    touchMenuSetCustomPopupPositionOffset = nullptr;
-static AbstractNickelMenuControllerPopupFromWidget
-    abstractNickelMenuControllerPopupFromWidget = nullptr;
-static NickelTouchMenuPopupPosition nickelTouchMenuPopupPosition = nullptr;
-static IInkToolMenuWidgetConstructor iInkToolMenuWidgetConstructor = nullptr;
-static IInkToolMenuWidgetSetSelected iInkToolMenuWidgetSetSelected = nullptr;
-static AbstractMenuControllerGrabTapGesture
-    abstractMenuControllerGrabTapGesture = nullptr;
-static ToolMenuTapGesture abstractMenuControllerTapGesture = nullptr;
-static AddWidgetAction addWidgetActionOriginal = nullptr;
-static ToolMenuTapGesture toolMenuTapGesture = nullptr;
-static MenuSelectBackground menuSelectBackground = nullptr;
-static SetBackgroundType setBackgroundTypeOriginal = nullptr;
-static SetToolTheme setToolThemeOriginal = nullptr;
-static RenderVolume renderVolumeOriginal = nullptr;
-static ToolMenuConstructor toolMenuConstructorOriginal = nullptr;
-static CreateBrushSizeRow createBrushSizeRowOriginal = nullptr;
-static SetBrushSizeIndex setBrushSizeIndexOriginal = nullptr;
-static SetActiveTool setActiveToolOriginal = nullptr;
-static WidgetSave widgetSave = nullptr;
-static WidgetFilePath widgetFilePath = nullptr;
-static WidgetRefresh widgetRefresh = nullptr;
-static ShowErrorPopup showErrorPopup = nullptr;
-static BackgroundType backgroundType = nullptr;
-static ParserImageParsed parserImageParsedOriginal = nullptr;
-static VolumeLoadCover volumeLoadCoverOriginal = nullptr;
-static PixmapSetImage pixmapSetImage = nullptr;
-static ContentGetId contentGetId = nullptr;
-static ContentGetImageId contentGetImageId = nullptr;
-static ExcludeSyncFolders excludeSyncFoldersOriginal = nullptr;
-static RemoveCommonBookData removeCommonBookDataOriginal = nullptr;
-static EditorGetPart editorGetPart = nullptr;
-static EditorGetEngine editorGetEngine = nullptr;
-static EditorGetConfiguration editorGetConfiguration = nullptr;
-static EditorGetRenderer editorGetRenderer = nullptr;
-static EditorSetPart editorSetPart = nullptr;
-static PartGetPackage partGetPackage = nullptr;
-static PartGetId partGetId = nullptr;
-static PartGetPage partGetPage = nullptr;
-static PageDocument pageDocument = nullptr;
-static PageDestructor pageDestructor = nullptr;
-static PageLayout pageLayout = nullptr;
-static LayoutDestructor layoutDestructor = nullptr;
-static LayoutAppendLayer layoutAppendLayer = nullptr;
-static LayoutRemoveLayer layoutRemoveLayer = nullptr;
-static AtkLayoutRawLayout atkLayoutRawLayout = nullptr;
-static DocumentLayoutGetLayer documentLayoutGetLayer = nullptr;
-static LayerIteratorIsAtEnd layerIteratorIsAtEnd = nullptr;
-static ManagedObjectDestructor managedObjectDestructor = nullptr;
-static RendererGetBackend rendererGetBackend = nullptr;
-static RendererRestrictToLayers rendererRestrictToLayers = nullptr;
-static PageControllerExportToPng pageControllerExportToPng = nullptr;
-static ImagePainterConstructor imagePainterConstructor = nullptr;
-static ImagePainterDeletingDestructor imagePainterDeletingDestructor = nullptr;
-static ImagePainterSetImageLoader imagePainterSetImageLoader = nullptr;
-static void* uirefEditorWidgetVtable = nullptr;
-static BackendImageDrawerMakeShared backendImageDrawerMakeShared = nullptr;
-static RendererListenerExport stockBackendImageDrawerExport = nullptr;
-static PageControllerInputDispatcher pageControllerInputDispatcher = nullptr;
-static PlatformInputDispatcherGetCurrentTool
-    platformInputDispatcherGetCurrentTool = nullptr;
-static DynamicToolDispatcherCast dynamicToolDispatcherCast = nullptr;
-static ToolDispatcherRestrictToLayer toolDispatcherRestrictToLayer = nullptr;
-static CompositeBoxFactoryMainBackend compositeBoxFactoryMainBackend = nullptr;
-static CompositeBoxFactoryBackends compositeBoxFactoryBackends = nullptr;
-static SelectionSelectLayer selectionSelectLayer = nullptr;
-static SelectionSelectPolygon selectionSelectPolygon = nullptr;
-static SelectionSelectNone selectionSelectNone = nullptr;
-static SelectionIsEmpty selectionIsEmpty = nullptr;
-static SelectionAdjustToStrokeBoundaries
-    selectionAdjustToStrokeBoundaries = nullptr;
-static EraserPolicy eraserPolicy = nullptr;
-static EraserSetRadius eraserSetRadius = nullptr;
-static EraserRadius eraserRadius = nullptr;
-static EraserWidthFromThicknessRatio eraserWidthFromThicknessRatio = nullptr;
-static LayoutGridLineGap layoutGridLineGap = nullptr;
-static EraserStrokerPolygon eraserStrokerPolygon = nullptr;
-static IInkStringToStdString iinkStringToStdString = nullptr;
-static std::string const* documentLayerName = nullptr;
-static std::string const* backgroundObjectLayerName = nullptr;
-static void* neboBackendVtable = nullptr;
-static void* drawingBackendVtable = nullptr;
-static void* drawingEraserVtable = nullptr;
-static void* plainDrawingEraserVtable = nullptr;
-static void* diagramEraserVtable = nullptr;
-static void* coreEraserVtable = nullptr;
-static void* textEraserSntVtable = nullptr;
-static void* mathEraserVtable = nullptr;
-static void* textEraserVtable = nullptr;
-static void* diagramPenVtable = nullptr;
+static PluginState* gPluginState = nullptr;
+
+static PluginState& pluginState() {
+    return *gPluginState;
+}
+
+static FirmwareApi& firmwareApi() {
+    return pluginState().firmware;
+}
 // snt::DrawingEraser, the global DrawingEraser, and the raw-content
 // atk::diagram::DiagramEraser each have 148-byte Itanium ABI vtables. Separate
 // writable, process-lifetime clones preserve every class override while
@@ -112,36 +25,6 @@ static bool layerAwareDiagramEraserVtableReady = false;
 static bool layerAwareDiagramEraserObserversReady = false;
 static int layerAwareEraserTraceBudget = 0;
 static int layerAwareDiagramEraserObserverTraceBudget = 0;
-typedef void* (*DrawingEraserSelectionFromPointsFn)(
-    void* result,
-    void* eraser,
-    void const* points);
-typedef uint32_t (*DiagramEraserUpdateSelectionFn)(
-    void* eraser,
-    void const* selection,
-    void const* points);
-typedef int32_t (*DiagramEraserEraseSelectionFn)(void* eraser);
-// atk::core::Eraser::updateSelection(this, Selection const&, vector const&)
-// unions its Selection argument into the eraser's committed selection at
-// Eraser+0xd0 (verified: isEmpty guard then combine(this+0xd0, sel, 1)). The
-// diagram override discards our layer-scoped selection and rebuilds from the
-// diagram layoutGroup, so we call this base method directly to re-inject it.
-typedef uint32_t (*CoreEraserUpdateSelectionFn)(
-    void* eraser,
-    void const* selection,
-    void const* points);
-static DrawingEraserSelectionFromPointsFn
-    drawingEraserSelectionFromPointsOriginal = nullptr;
-static DrawingEraserSelectionFromPointsFn
-    plainDrawingEraserSelectionFromPointsOriginal = nullptr;
-static DrawingEraserSelectionFromPointsFn
-    diagramEraserSelectionFromPointsOriginal = nullptr;
-static DiagramEraserUpdateSelectionFn
-    diagramEraserUpdateSelectionOriginal = nullptr;
-static DiagramEraserEraseSelectionFn
-    diagramEraserEraseSelectionOriginal = nullptr;
-static CoreEraserUpdateSelectionFn
-    coreEraserUpdateSelection = nullptr;
 // Raw-content pages cache one 152-byte DiagramPen vtable. A writable clone
 // replaces only penDown so the selected layer can be reasserted at the last
 // possible point before core Pen tags the new stroke. This guards against a
@@ -151,21 +34,8 @@ static size_t const kDiagramPenVtableWords = 152 / sizeof(void*);
 static void* layerGuardedDiagramPenVtable[kDiagramPenVtableWords];
 static bool layerGuardedDiagramPenVtableReady = false;
 static int layerGuardedDiagramPenTraceBudget = 0;
-typedef bool (*DiagramPenPenDownFn)(void* pen, void const* pointerInfo);
-static DiagramPenPenDownFn diagramPenPenDownOriginal = nullptr;
 static std::map<void*, std::string> desiredDiagramPenLayers;
 static QMutex desiredDiagramPenLayersMutex;
-static PackagePartCount packagePartCount = nullptr;
-static PackageGetPart packageGetPart = nullptr;
-static PackageIndexOfPart packageIndexOfPart = nullptr;
-static PackageCreatePart packageCreatePart = nullptr;
-static PackageClonePart packageClonePart = nullptr;
-static PackageRemovePart packageRemovePart = nullptr;
-static PackageSave packageSave = nullptr;
-static EngineOpenPackage engineOpenPackage = nullptr;
-static DocumentPageCount documentPageCount = nullptr;
-static DocumentMovePage documentMovePage = nullptr;
-static IInkStringCtor iinkStringCtor = nullptr;
 static ZipOpen zipOpen = nullptr;
 static ZipGetNumEntries zipGetNumEntries = nullptr;
 static ZipGetName zipGetName = nullptr;
@@ -186,7 +56,6 @@ static quint64 renderedCoverSequence = 0;
 static QHash<QString, CleanCoverEntry> cleanCoverCache;
 static quint64 cleanCoverSequence = 0;
 static QMutex coverCacheMutex;
-static QMap<QString, QString>* rendererMap = nullptr;
 static QTimer* hookTimer = nullptr;
 static bool coverPickerPending = false;
 static bool coverTitlePending = false;
@@ -208,7 +77,6 @@ static int eraserSizeIndex = 2;
 // lets the hardware-eraser hook update an open popup without retaining it or
 // touching a controller after the menu has been destroyed.
 static QPointer<QObject> liveEraserSizeController;
-static uintptr_t iinknoteBase = 0;
 
 static char const kManifest[] = "/mnt/onboard/.kobo/custom/templates/templates.json";
 static char const kTemplateRoot[] = "/mnt/onboard/.kobo/custom/templates/";

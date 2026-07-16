@@ -68,11 +68,11 @@ enum LayerOperation {
 };
 
 static QString nativeDocumentLayerId() {
-    if (!documentLayerName || documentLayerName->empty())
+    if (!firmwareApi().documentLayerName || firmwareApi().documentLayerName->empty())
         return QString();
     return QString::fromUtf8(
-        documentLayerName->data(),
-        static_cast<int>(documentLayerName->size()));
+        firmwareApi().documentLayerName->data(),
+        static_cast<int>(firmwareApi().documentLayerName->size()));
 }
 
 static bool safeLayerId(QString const& id) {
@@ -249,13 +249,13 @@ static bool nativeDocumentLayout(
     LayoutStorage const& layout,
     ManagedObjectStorage* documentLayout,
     QString* error) {
-    if (!documentLayout || !atkLayoutRawLayout || !managedObjectDestructor) {
+    if (!documentLayout || !firmwareApi().atkLayoutRawLayout || !firmwareApi().managedObjectDestructor) {
         if (error)
             *error = QLatin1String("Layers unavailable: native layout API is missing.");
         return false;
     }
     try {
-        atkLayoutRawLayout(documentLayout->bytes, layout.bytes);
+        firmwareApi().atkLayoutRawLayout(documentLayout->bytes, layout.bytes);
         documentLayout->constructed = true;
     } catch (...) {
         if (error)
@@ -275,7 +275,7 @@ static bool nativeLayerExists(
     QString const& id,
     bool* exists,
     QString* error) {
-    if (!exists || !documentLayoutGetLayer || !layerIteratorIsAtEnd
+    if (!exists || !firmwareApi().documentLayoutGetLayer || !firmwareApi().layerIteratorIsAtEnd
             || id.isEmpty()) {
         if (error)
             *error = QLatin1String("Layers unavailable: native layer API is missing.");
@@ -284,9 +284,9 @@ static bool nativeLayerExists(
     ManagedObjectStorage iterator;
     try {
         std::string const nativeId = id.toUtf8().constData();
-        documentLayoutGetLayer(iterator.bytes, documentLayout.bytes, nativeId);
+        firmwareApi().documentLayoutGetLayer(iterator.bytes, documentLayout.bytes, nativeId);
         iterator.constructed = true;
-        *exists = iterator.hasObject() && !layerIteratorIsAtEnd(iterator.bytes);
+        *exists = iterator.hasObject() && !firmwareApi().layerIteratorIsAtEnd(iterator.bytes);
         return true;
     } catch (...) {
         if (error)
@@ -309,8 +309,8 @@ static bool reconcileLayerStateWithNativeLayout(
     SharedPart const& part,
     LayerState* state,
     QString* error) {
-    if (!state || !atkLayoutRawLayout || !documentLayoutGetLayer
-            || !layerIteratorIsAtEnd || !managedObjectDestructor) {
+    if (!state || !firmwareApi().atkLayoutRawLayout || !firmwareApi().documentLayoutGetLayer
+            || !firmwareApi().layerIteratorIsAtEnd || !firmwareApi().managedObjectDestructor) {
         if (error)
             *error = QLatin1String("Layers unavailable: reconciliation API is missing.");
         return false;
@@ -390,10 +390,10 @@ static bool loadLayerContext(
             *error = QLatin1String("Layers unavailable: notebook editor is not ready.");
         return false;
     }
-    context->part = editorGetPart(context->editor);
+    context->part = firmwareApi().editorGetPart(context->editor);
     context->package = context->part
-        ? partGetPackage(context->part.get()) : SharedPackage();
-    QString const rawNotebookPath = QDir::cleanPath(widgetFilePath(context->widget));
+        ? firmwareApi().partGetPackage(context->part.get()) : SharedPackage();
+    QString const rawNotebookPath = QDir::cleanPath(firmwareApi().widgetFilePath(context->widget));
     QString const notebookPath = canonicalNotebookPath(rawNotebookPath);
     QString const partId = partStableId(context->part);
     if (!context->part || !context->package

@@ -300,6 +300,20 @@ typedef float (*LayoutGridLineGap)(void const* layoutGrid);
 typedef std::vector<SelectionPointOpaque> (*EraserStrokerPolygon)(
     float width,
     PointerInfoVectorOpaque const& points);
+typedef void* (*DrawingEraserSelectionFromPointsFn)(
+    void* result,
+    void* eraser,
+    void const* points);
+typedef uint32_t (*DiagramEraserUpdateSelectionFn)(
+    void* eraser,
+    void const* selection,
+    void const* points);
+typedef int32_t (*DiagramEraserEraseSelectionFn)(void* eraser);
+typedef uint32_t (*CoreEraserUpdateSelectionFn)(
+    void* eraser,
+    void const* selection,
+    void const* points);
+typedef bool (*DiagramPenPenDownFn)(void* pen, void const* pointerInfo);
 typedef SharedToolDispatcher (*DynamicToolDispatcherCast)(
     SharedTool const& tool);
 typedef void (*ToolDispatcherRestrictToLayer)(

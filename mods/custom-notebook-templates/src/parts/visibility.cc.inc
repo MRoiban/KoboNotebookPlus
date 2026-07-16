@@ -36,8 +36,8 @@ static bool installCustomAssetVisibilityHooks() {
         return false;
     }
 
-    contentGetId = resolvedContentGetId;
-    removeCommonBookDataOriginal = resolvedRemoveCommonBookData;
+    firmwareApi().contentGetId = resolvedContentGetId;
+    firmwareApi().removeCommonBookDataOriginal = resolvedRemoveCommonBookData;
     RemoveCommonBookDataAddress preservationReplacement;
     preservationReplacement.function = _cnt_remove_common_book_data_hook;
     void* const originalPreservation = nh_dlhook(
@@ -60,13 +60,13 @@ static bool installCustomAssetVisibilityHooks() {
         dlclose(handle);
         return false;
     }
-    removeCommonBookDataOriginal =
+    firmwareApi().removeCommonBookDataOriginal =
         reinterpret_cast<RemoveCommonBookData>(originalPreservation);
 
     // Set the pass-through before mutating the second GOT entry. Even if
     // validation rejects it, the wrapper preserves the complete stock/user
     // setting rather than replacing it.
-    excludeSyncFoldersOriginal = resolvedExcludeSyncFolders;
+    firmwareApi().excludeSyncFoldersOriginal = resolvedExcludeSyncFolders;
     ExcludeSyncFoldersAddress exclusionReplacement;
     exclusionReplacement.function = _cnt_exclude_sync_folders_hook;
     void* const originalExclusion = nh_dlhook(
@@ -90,7 +90,7 @@ static bool installCustomAssetVisibilityHooks() {
         dlclose(handle);
         return false;
     }
-    excludeSyncFoldersOriginal =
+    firmwareApi().excludeSyncFoldersOriginal =
         reinterpret_cast<ExcludeSyncFolders>(originalExclusion);
 
     dlclose(handle);

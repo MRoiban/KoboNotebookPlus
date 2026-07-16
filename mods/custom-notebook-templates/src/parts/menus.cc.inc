@@ -82,8 +82,8 @@ static void runLayerOperation(
 }
 
 static QMenu* createNativeLayerPopup(QWidget* anchor, QString* error) {
-    if (!anchor || !nickelTouchMenuConstructor || !nickelTouchMenuSetAlignment
-            || !touchMenuSetCustomPopupPositionOffset) {
+    if (!anchor || !firmwareApi().nickelTouchMenuConstructor || !firmwareApi().nickelTouchMenuSetAlignment
+            || !firmwareApi().touchMenuSetCustomPopupPositionOffset) {
         if (error)
             *error = QLatin1String("Layers unavailable: native menu API is missing.");
         return nullptr;
@@ -98,12 +98,12 @@ static QMenu* createNativeLayerPopup(QWidget* anchor, QString* error) {
         // Stock loadView parents the menu to popupFromWidget(), which is the
         // toolbar button used to open the controller. That relationship is
         // also consumed by NickelTouchMenu's decoration/placement code.
-        nickelTouchMenuConstructor(storage, anchor, 0);
+        firmwareApi().nickelTouchMenuConstructor(storage, anchor, 0);
         constructed = true;
-        nickelTouchMenuSetAlignment(
+        firmwareApi().nickelTouchMenuSetAlignment(
             storage, Qt::AlignHCenter | Qt::AlignBottom);
         QPoint const offset(0, 14);
-        touchMenuSetCustomPopupPositionOffset(storage, offset);
+        firmwareApi().touchMenuSetCustomPopupPositionOffset(storage, offset);
         QMenu* const popup = reinterpret_cast<QMenu*>(storage);
         popup->setAttribute(static_cast<Qt::WidgetAttribute>(55), true);
         return popup;
@@ -125,9 +125,9 @@ static QWidget* createNativeLayerToolRow(
     QPixmap const& preview,
     bool active,
     QString* error) {
-    if (!controller || !popup || !iInkToolMenuWidgetConstructor
-            || !iInkToolMenuWidgetSetSelected
-            || !abstractMenuControllerGrabTapGesture) {
+    if (!controller || !popup || !firmwareApi().iInkToolMenuWidgetConstructor
+            || !firmwareApi().iInkToolMenuWidgetSetSelected
+            || !firmwareApi().abstractMenuControllerGrabTapGesture) {
         if (error)
             *error = QLatin1String("Layers unavailable: native row API is missing.");
         return nullptr;
@@ -137,7 +137,7 @@ static QWidget* createNativeLayerToolRow(
     bool constructed = false;
     try {
         storage = ::operator new(kIInkToolMenuWidgetSize);
-        iInkToolMenuWidgetConstructor(storage, popup);
+        firmwareApi().iInkToolMenuWidgetConstructor(storage, popup);
         constructed = true;
 
         QWidget* const row = reinterpret_cast<QWidget*>(storage);
@@ -159,7 +159,7 @@ static QWidget* createNativeLayerToolRow(
         // pen/eraser icons and labels. Our active thumbnail already carries
         // the visible dark border, while the native row supplies its exact
         // typography and reversible press/release treatment.
-        iInkToolMenuWidgetSetSelected(storage, active);
+        firmwareApi().iInkToolMenuWidgetSetSelected(storage, active);
         button->setAlignment(Qt::AlignCenter);
         button->setPixmap(preview);
         label->setText(text);
@@ -168,7 +168,7 @@ static QWidget* createNativeLayerToolRow(
         // base at +0x44 on this exact firmware. Stock loadView registers that
         // adjusted pointer, not the QWidget address, before creating the
         // QAction. The ABI verifier pins both the adjustment and call site.
-        abstractMenuControllerGrabTapGesture(
+        firmwareApi().abstractMenuControllerGrabTapGesture(
             controller,
             reinterpret_cast<char*>(storage)
                 + kIInkToolMenuWidgetGestureReceiverOffset);
@@ -241,9 +241,9 @@ static void showLayerPopup(QObject* controller) {
         return;
     }
     QWidget* const parent = qobject_cast<QWidget*>(context.widgetObject.data());
-    if (!parent || !createIInkMenuItem || !addWidgetActionOriginal
-            || !abstractNickelMenuControllerPopupFromWidget
-            || !nickelTouchMenuPopupPosition) {
+    if (!parent || !firmwareApi().createIInkMenuItem || !firmwareApi().addWidgetActionOriginal
+            || !firmwareApi().abstractNickelMenuControllerPopupFromWidget
+            || !firmwareApi().nickelTouchMenuPopupPosition) {
         showLayerError(
             context.widget,
             QLatin1String("Layers unavailable: native menu actions are missing."));
@@ -253,7 +253,7 @@ static void showLayerPopup(QObject* controller) {
     // IInkMenuController is opened from the notebook toolbar's overflow
     // button. Recover that exact stock anchor instead of guessing a screen
     // position from the notebook rectangle.
-    QWidget* const anchor = abstractNickelMenuControllerPopupFromWidget(
+    QWidget* const anchor = firmwareApi().abstractNickelMenuControllerPopupFromWidget(
         controller);
     if (!anchor) {
         showLayerError(
@@ -316,7 +316,7 @@ static void showLayerPopup(QObject* controller) {
             else
                 deferredPreviewRows.append(row);
         }
-        addWidgetActionOriginal(
+        firmwareApi().addWidgetActionOriginal(
             controller,
             popup,
             item,
@@ -351,11 +351,11 @@ static void showLayerPopup(QObject* controller) {
         });
 
     QPixmap noIcon;
-    QWidget* const add = createIInkMenuItem(
+    QWidget* const add = firmwareApi().createIInkMenuItem(
         controller, popup, QLatin1String("Add layer"), noIcon, false);
-    QWidget* const remove = createIInkMenuItem(
+    QWidget* const remove = firmwareApi().createIInkMenuItem(
         controller, popup, QLatin1String("Delete active layer"), noIcon, false);
-    QWidget* const refresh = createIInkMenuItem(
+    QWidget* const refresh = firmwareApi().createIInkMenuItem(
         controller,
         popup,
         QLatin1String("Refresh layer previews"),
@@ -364,7 +364,7 @@ static void showLayerPopup(QObject* controller) {
     if (!add || !remove || !refresh) {
         menuComplete = false;
     } else {
-        addWidgetActionOriginal(
+        firmwareApi().addWidgetActionOriginal(
             controller,
             popup,
             add,
@@ -373,7 +373,7 @@ static void showLayerPopup(QObject* controller) {
             true,
             context.state.customLayers.size() + 1 < kMaximumNotebookLayers,
             false);
-        addWidgetActionOriginal(
+        firmwareApi().addWidgetActionOriginal(
             controller,
             popup,
             remove,
@@ -382,7 +382,7 @@ static void showLayerPopup(QObject* controller) {
             true,
             !baseActive,
             false);
-        addWidgetActionOriginal(
+        firmwareApi().addWidgetActionOriginal(
             controller,
             popup,
             refresh,
@@ -407,7 +407,7 @@ static void showLayerPopup(QObject* controller) {
         + QString::number(deferredPreviewRows.size()));
     trace("layers: native tool-style NickelTouchMenu popup opened");
     popup->ensurePolished();
-    QPoint const position = nickelTouchMenuPopupPosition(popup, anchor);
+    QPoint const position = firmwareApi().nickelTouchMenuPopupPosition(popup, anchor);
     trace("layers: native popup anchored to notebook toolbar");
     ControllerMenuViewGuard const activeMenu(controller, popup);
     // Stock uses QMenu::popup(position). Keep exec(position) here because the
@@ -423,8 +423,8 @@ static void showLayerPopup(QObject* controller) {
 
 static void showPageOperationError(void* widget, QString const& error) {
     trace("pages: operation failed safely");
-    if (showErrorPopup)
-        showErrorPopup(widget, error);
+    if (firmwareApi().showErrorPopup)
+        firmwareApi().showErrorPopup(widget, error);
 }
 
 enum PageOperation {
@@ -477,7 +477,7 @@ static void runPageOperation(QObject* controller, PageOperation operation) {
         if (operation == DuplicatePageOperation) {
             succeeded = duplicateCurrentPage(widget, &error);
         } else {
-            widgetSave(widget);
+            firmwareApi().widgetSave(widget);
             PageContext context;
             if (!loadPageContext(widget, &context, &error)) {
                 showPageOperationError(widget, error);
@@ -487,8 +487,8 @@ static void runPageOperation(QObject* controller, PageOperation operation) {
             int const target = context.index
                 + (operation == MovePageEarlierOperation ? -1 : 1);
             if (target < 0 || target >= context.count) {
-                if (showErrorPopup) {
-                    showErrorPopup(
+                if (firmwareApi().showErrorPopup) {
+                    firmwareApi().showErrorPopup(
                         widget,
                         operation == MovePageEarlierOperation
                             ? QLatin1String("This is already the first page.")
@@ -543,29 +543,29 @@ static void beginCoverPicker(QObject* controller) {
         return;
     }
 
-    SharedPart const originalPart = editorGetPart(editor);
+    SharedPart const originalPart = firmwareApi().editorGetPart(editor);
     if (!originalPart) {
         trace("covers: current page missing before picker");
         return;
     }
-    SharedPackage const package = partGetPackage(originalPart.get());
-    if (!package || packagePartCount(package.get()) < 1) {
+    SharedPackage const package = firmwareApi().partGetPackage(originalPart.get());
+    if (!package || firmwareApi().packagePartCount(package.get()) < 1) {
         trace("covers: notebook package missing before picker");
         return;
     }
-    SharedPart const firstPart = packageGetPart(package.get(), 0);
+    SharedPart const firstPart = firmwareApi().packageGetPart(package.get(), 0);
     if (!firstPart) {
         trace("covers: first page missing before picker");
         return;
     }
 
-    editorSetPart(editor, firstPart);
+    firmwareApi().editorSetPart(editor, firstPart);
     std::shared_ptr<CoverPickerState> const state(new CoverPickerState);
     state->widgetObject = widgetObject;
     state->widget = widget;
     state->editor = editor;
     state->originalPart = originalPart;
-    state->originalFirstBackground = backgroundType(backgroundWidget);
+    state->originalFirstBackground = firmwareApi().backgroundType(backgroundWidget);
 
     QTimer* const timer = new QTimer(widgetObject);
     state->timer = timer;
@@ -578,7 +578,7 @@ static void beginCoverPicker(QObject* controller) {
         QObject* const object = state->widgetObject.data();
         void* const backgroundWidget = notePadBackgroundWidget(state->widget);
         QString const selected = backgroundWidget
-            ? backgroundType(backgroundWidget) : QString();
+            ? firmwareApi().backgroundType(backgroundWidget) : QString();
 
         if (selected.startsWith(QLatin1String("Custom_Cover_"))
                 && selected != state->originalFirstBackground) {
@@ -589,17 +589,17 @@ static void beginCoverPicker(QObject* controller) {
             // Nickel has applied the picker result to page zero. Restore that
             // page first, then let the backed-up insertion routine decide
             // whether to update an existing cover or create a new one.
-            setBackgroundTypeOriginal(
+            firmwareApi().setBackgroundTypeOriginal(
                 state->widget, state->originalFirstBackground);
-            widgetSave(state->widget);
+            firmwareApi().widgetSave(state->widget);
 
             QString error;
             if (!applyNotebookCover(state->widget, selected, &error)) {
-                editorSetPart(state->editor, state->originalPart);
-                widgetRefresh(state->widget);
+                firmwareApi().editorSetPart(state->editor, state->originalPart);
+                firmwareApi().widgetRefresh(state->widget);
                 trace("covers: cover operation failed safely");
-                if (showErrorPopup)
-                    showErrorPopup(state->widget, error);
+                if (firmwareApi().showErrorPopup)
+                    firmwareApi().showErrorPopup(state->widget, error);
             }
             state->timer->deleteLater();
             return;
@@ -611,8 +611,8 @@ static void beginCoverPicker(QObject* controller) {
             state->timer->stop();
             object->setProperty("_cnt_cover_picker_active", false);
             coverTitlePending = false;
-            editorSetPart(state->editor, state->originalPart);
-            widgetRefresh(state->widget);
+            firmwareApi().editorSetPart(state->editor, state->originalPart);
+            firmwareApi().widgetRefresh(state->widget);
             state->timer->deleteLater();
             trace("covers: picker cancelled or unchanged");
         }
@@ -620,7 +620,7 @@ static void beginCoverPicker(QObject* controller) {
 
     coverPickerPending = true;
     coverTitlePending = true;
-    menuSelectBackground(controller);
+    firmwareApi().menuSelectBackground(controller);
     // backgroundOptions() is invoked synchronously by this signal on Nickel's
     // UI thread. A leftover flag means controller creation failed.
     coverPickerPending = false;

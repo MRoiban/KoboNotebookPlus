@@ -7,7 +7,7 @@ static bool copyLiveLayerPreviewImageLoader(
     if (!loaderResult || !context.widget || !context.widgetObject
             || context.widgetObject.data()
                 != reinterpret_cast<QObject*>(context.widget)
-            || !uirefEditorWidgetVtable) {
+            || !firmwareApi().uirefEditorWidgetVtable) {
         if (error) {
             *error = QLatin1String(
                 "Layer preview unavailable: notebook UI is no longer live.");
@@ -33,7 +33,7 @@ static bool copyLiveLayerPreviewImageLoader(
     void* const editorWidget = *reinterpret_cast<void**>(
         widgetBytes + kNotePadEditorWidgetObjectOffset);
     void* const expectedEditorWidgetVptr =
-        static_cast<char*>(uirefEditorWidgetVtable) + 8;
+        static_cast<char*>(firmwareApi().uirefEditorWidgetVtable) + 8;
     if (!editorWidget
             || *reinterpret_cast<void**>(editorWidget)
                 != expectedEditorWidgetVptr) {
@@ -102,11 +102,11 @@ static bool createLayerPreviewDrawer(
     SharedImagePainter* painterResult,
     SharedBackendImageDrawer* drawerResult,
     QString* error) {
-    if (!painterResult || !drawerResult || !editorGetEngine
-            || !editorGetConfiguration || !imagePainterConstructor
-            || !imagePainterDeletingDestructor
-            || !imagePainterSetImageLoader
-            || !backendImageDrawerMakeShared) {
+    if (!painterResult || !drawerResult || !firmwareApi().editorGetEngine
+            || !firmwareApi().editorGetConfiguration || !firmwareApi().imagePainterConstructor
+            || !firmwareApi().imagePainterDeletingDestructor
+            || !firmwareApi().imagePainterSetImageLoader
+            || !firmwareApi().backendImageDrawerMakeShared) {
         if (error) {
             *error = QLatin1String(
                 "Layer preview unavailable: stock image writer APIs are missing.");
@@ -114,9 +114,9 @@ static bool createLayerPreviewDrawer(
         return false;
     }
 
-    SharedEngine const engine = editorGetEngine(context.editor);
+    SharedEngine const engine = firmwareApi().editorGetEngine(context.editor);
     SharedConfiguration const configuration =
-        editorGetConfiguration(context.editor);
+        firmwareApi().editorGetConfiguration(context.editor);
     if (!engine || !configuration) {
         if (error) {
             *error = QLatin1String(
@@ -133,7 +133,7 @@ static bool createLayerPreviewDrawer(
     try {
         painterMemory = ::operator new(kImagePainterObjectBytes);
         memset(painterMemory, 0, kImagePainterObjectBytes);
-        imagePainterConstructor(painterMemory);
+        firmwareApi().imagePainterConstructor(painterMemory);
     } catch (...) {
         if (painterMemory)
             ::operator delete(painterMemory);
@@ -153,10 +153,10 @@ static bool createLayerPreviewDrawer(
         painter.reset(
             reinterpret_cast<ImagePainterOpaque*>(painterMemory),
             ImagePainterDeletingDeleter());
-        imagePainterSetImageLoader(painter.get(), imageLoader);
+        firmwareApi().imagePainterSetImageLoader(painter.get(), imageLoader);
         SharedEngine engineArgument = engine;
         SharedConfiguration configurationArgument = configuration;
-        backendImageDrawerMakeShared(
+        firmwareApi().backendImageDrawerMakeShared(
             &drawer,
             0,
             nullptr,
@@ -230,14 +230,14 @@ public:
         if (writerInvoked_)
             *writerInvoked_ = false;
         try {
-            if (renderer && rendererRestrictToLayers) {
+            if (renderer && firmwareApi().rendererRestrictToLayers) {
                 std::vector<std::string> ids(1, layerId_);
-                if (backgroundObjectLayerName
-                        && !backgroundObjectLayerName->empty()
-                        && *backgroundObjectLayerName != layerId_) {
-                    ids.push_back(*backgroundObjectLayerName);
+                if (firmwareApi().backgroundObjectLayerName
+                        && !firmwareApi().backgroundObjectLayerName->empty()
+                        && *firmwareApi().backgroundObjectLayerName != layerId_) {
+                    ids.push_back(*firmwareApi().backgroundObjectLayerName);
                 }
-                rendererRestrictToLayers(renderer.get(), ids);
+                firmwareApi().rendererRestrictToLayers(renderer.get(), ids);
                 if (restrictionApplied_)
                     *restrictionApplied_ = true;
             }
@@ -245,13 +245,13 @@ public:
             trace("layers: preview renderer restriction failed");
         }
 
-        if (!stockBackendImageDrawerExport || !drawer_ || !backend_)
+        if (!firmwareApi().stockBackendImageDrawerExport || !drawer_ || !backend_)
             return;
         StockPreviewCallbackContext callback(drawer_.get(), backend_);
         if (writerInvoked_)
             *writerInvoked_ = true;
         try {
-            stockBackendImageDrawerExport(
+            firmwareApi().stockBackendImageDrawerExport(
                 callback.bytes, renderer, selection, extent, flags, path);
         } catch (...) {
             trace("layers: stock preview image writer threw");
@@ -275,16 +275,16 @@ static bool liveNeboControllerAndBackend(
     void** backendResult,
     QString* error) {
     if (!rendererKeepAlive || !pageController || !backendResult
-            || !editorGetRenderer || !rendererGetBackend || !neboBackendVtable) {
+            || !firmwareApi().editorGetRenderer || !firmwareApi().rendererGetBackend || !firmwareApi().neboBackendVtable) {
         if (error)
             *error = QLatin1String("Layer preview unavailable: renderer APIs are missing.");
         return false;
     }
 
-    *rendererKeepAlive = editorGetRenderer(context.editor);
+    *rendererKeepAlive = firmwareApi().editorGetRenderer(context.editor);
     void* const backend = *rendererKeepAlive
-        ? rendererGetBackend(rendererKeepAlive->get()) : nullptr;
-    void* const expectedVptr = static_cast<char*>(neboBackendVtable) + 8;
+        ? firmwareApi().rendererGetBackend(rendererKeepAlive->get()) : nullptr;
+    void* const expectedVptr = static_cast<char*>(firmwareApi().neboBackendVtable) + 8;
     if (!backend || *reinterpret_cast<void**>(backend) != expectedVptr) {
         if (error)
             *error = QLatin1String("Layer preview unavailable for this notebook backend.");
@@ -355,8 +355,8 @@ static bool generateLayerPreview(
     LayerContext const& context,
     QString const& id,
     QString* error) {
-    if (!layerPreviewApisReady || !rendererRestrictToLayers
-            || !pageControllerExportToPng || !stockBackendImageDrawerExport) {
+    if (!layerPreviewApisReady || !firmwareApi().rendererRestrictToLayers
+            || !firmwareApi().pageControllerExportToPng || !firmwareApi().stockBackendImageDrawerExport) {
         if (error) {
             *error = QLatin1String(
                 "Layer preview unavailable: firmware export APIs are not ready.");
@@ -418,7 +418,7 @@ static bool generateLayerPreview(
     trace(QLatin1String("layers: isolated preview export begin id=") + id);
     try {
         std::string const output = temporaryPath.toUtf8().constData();
-        exported = pageControllerExportToPng(
+        exported = firmwareApi().pageControllerExportToPng(
             pageController, SharedBox(), output, opaqueProxy, 0);
     } catch (...) {
         exported = false;
@@ -622,8 +622,8 @@ static QPixmap layerPreview(
 
 static void showLayerError(void* widget, QString const& error) {
     trace("layers: operation failed safely");
-    if (showErrorPopup)
-        showErrorPopup(widget, error);
+    if (firmwareApi().showErrorPopup)
+        firmwareApi().showErrorPopup(widget, error);
 }
 
 static bool addNotebookLayer(LayerContext* context, QString* error) {
@@ -633,7 +633,7 @@ static bool addNotebookLayer(LayerContext* context, QString* error) {
         return false;
     }
 
-    widgetSave(context->widget);
+    firmwareApi().widgetSave(context->widget);
     QString backupPath;
     if (!backupNotebookPath(
             context->state.notebookPath,
@@ -653,7 +653,7 @@ static bool addNotebookLayer(LayerContext* context, QString* error) {
     record.name = QLatin1String("Layer ")
         + QString::number(context->state.customLayers.size() + 2);
     std::string const nativeId = record.id.toUtf8().constData();
-    if (!layoutAppendLayer(layout.bytes, nativeId)) {
+    if (!firmwareApi().layoutAppendLayer(layout.bytes, nativeId)) {
         if (error)
             *error = QLatin1String("Layer not added: document rejected the new layer.");
         return false;
@@ -662,7 +662,7 @@ static bool addNotebookLayer(LayerContext* context, QString* error) {
     if (!nativeLayerExists(layout, record.id, &addedExists, error)
             || !addedExists) {
         try {
-            layoutRemoveLayer(layout.bytes, nativeId);
+            firmwareApi().layoutRemoveLayer(layout.bytes, nativeId);
         } catch (...) {
             trace("layers: failed add could not be rolled back in memory");
         }
@@ -679,7 +679,7 @@ static bool addNotebookLayer(LayerContext* context, QString* error) {
     context->state.activeId = record.id;
     if (!applyActiveLayer(*context, record.id, error)
             || !saveLayerState(context->state, error)) {
-        layoutRemoveLayer(layout.bytes, nativeId);
+        firmwareApi().layoutRemoveLayer(layout.bytes, nativeId);
         context->state = previous;
         saveLayerState(previous, nullptr);
         applyActiveLayer(*context, previous.activeId, nullptr);
@@ -687,12 +687,12 @@ static bool addNotebookLayer(LayerContext* context, QString* error) {
     }
 
     trace("layers: package save begin after native add");
-    packageSave(context->package.get());
+    firmwareApi().packageSave(context->package.get());
     trace("layers: package save complete after native add");
-    widgetSave(context->widget);
+    firmwareApi().widgetSave(context->widget);
     trace("layers: widget save complete after native add");
     traceSerializedLayerProbe(context->state, record.id, "after-add-save");
-    widgetRefresh(context->widget);
+    firmwareApi().widgetRefresh(context->widget);
     trace("layers: native layer added and selected");
     return true;
 }
@@ -725,7 +725,7 @@ static bool activateNotebookLayer(
     // only on isolated export/thumbnail renderers; mutating the live
     // RenderPad vector from this menu callback races its render lifecycle.
     // The active ToolDispatcher still routes all future strokes natively.
-    widgetRefresh(context->widget);
+    firmwareApi().widgetRefresh(context->widget);
     trace("layers: active layer changed");
     return true;
 }
@@ -750,7 +750,7 @@ static bool deleteActiveNotebookLayer(LayerContext* context, QString* error) {
         return false;
     }
 
-    widgetSave(context->widget);
+    firmwareApi().widgetSave(context->widget);
     QString backupPath;
     if (!backupNotebookPath(
             context->state.notebookPath,
@@ -768,7 +768,7 @@ static bool deleteActiveNotebookLayer(LayerContext* context, QString* error) {
     std::string const nativeId = deletedId.toUtf8().constData();
     QString const previewPath = layerPreviewPath(
         context->state, context->state.activeId);
-    layoutRemoveLayer(layout.bytes, nativeId);
+    firmwareApi().layoutRemoveLayer(layout.bytes, nativeId);
     bool stillExists = true;
     if (!nativeLayerExists(
             layout, context->state.activeId, &stillExists, error)) {
@@ -799,14 +799,14 @@ static bool deleteActiveNotebookLayer(LayerContext* context, QString* error) {
         return false;
     }
     trace("layers: package save begin after native delete");
-    packageSave(context->package.get());
+    firmwareApi().packageSave(context->package.get());
     trace("layers: package save complete after native delete");
-    widgetSave(context->widget);
+    firmwareApi().widgetSave(context->widget);
     trace("layers: widget save complete after native delete");
     traceSerializedLayerProbe(context->state, deletedId, "after-delete-save");
     QFile::remove(previewPath);
     layerPreviewCardCache.remove(previewPath);
-    widgetRefresh(context->widget);
+    firmwareApi().widgetRefresh(context->widget);
     trace("layers: active native layer deleted");
     return true;
 }
@@ -814,7 +814,7 @@ static bool deleteActiveNotebookLayer(LayerContext* context, QString* error) {
 static bool refreshLayerPreviews(LayerContext* context, QString* error) {
     if (!context)
         return false;
-    widgetSave(context->widget);
+    firmwareApi().widgetSave(context->widget);
 
     QVector<QString> ids;
     ids.append(nativeDocumentLayerId());
