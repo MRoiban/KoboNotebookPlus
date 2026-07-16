@@ -26,6 +26,7 @@ check:
 	python3 ../../scripts/test-verify-layer-artifacts.py
 	python3 ../../scripts/test-verify-binary-parity.py
 	python3 ../../scripts/test-verify-globals-budget.py
+	python3 ../../scripts/test-verify-release-package.py
 	python3 ../../scripts/verify-globals-budget.py
 
 ifneq ($(filter check,$(MAKECMDGOALS)),check)
