@@ -770,7 +770,7 @@ static bool applyConfiguredEraserSizeForWidget(
         return false;
     }
 
-    int const index = configuredEraserSizeIndex();
+    int const index = settingsStore().configuredEraserSizeIndex();
     if (!validEraserSizeIndex(index))
         return false;
     void* const editor = notePadEditor(widgetObject);

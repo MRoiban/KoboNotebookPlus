@@ -238,7 +238,7 @@ void _cnt_tool_menu_constructor_hook(
         QObject* const object = reinterpret_cast<QObject*>(controller);
         object->setProperty("_cnt_eraser_size_controller", true);
         eraserState().liveSizeController = object;
-        int const index = configuredEraserSizeIndex();
+        int const index = settingsStore().configuredEraserSizeIndex();
         // Seed before onToolButtonTapped invokes virtual loadView immediately
         // after this constructor returns. The empty button vector is handled
         // by stock setBrushSizeIndex.
@@ -319,7 +319,7 @@ void _cnt_set_brush_size_index_hook(void* controller, int index) {
     if (!clicked && !loaded)
         return;
     if (clicked)
-        persistEraserSizeIndex(index);
+        settingsStore().persistEraserSizeIndex(index);
 
     QObject* const widget = findNotebookWidget(
         reinterpret_cast<QObject*>(controller));
@@ -354,7 +354,7 @@ void _cnt_set_active_tool_hook(void* widget, int tool) {
     }
 
     try {
-        int const configuredIndex = configuredEraserSizeIndex();
+        int const configuredIndex = settingsStore().configuredEraserSizeIndex();
         bool const engineUpdated = applyConfiguredEraserSizeForWidget(
             reinterpret_cast<QObject*>(widget), "hardware-eraser");
         bool uiUpdated = false;

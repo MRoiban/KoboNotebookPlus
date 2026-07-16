@@ -55,6 +55,10 @@
 
 #include "covermenureceiver.h"
 #include "fs_util.h"
+#include "settings.h"
+
+using cnt::trace;
+using cnt::validEraserSizeIndex;
 
 namespace {
 
@@ -62,7 +66,6 @@ namespace {
 #include "firmware_api.h"
 #include "plugin_state.h"
 #include "parts/resolve.cc.inc"
-#include "parts/settings.cc.inc"
 #include "parts/templates.cc.inc"
 #include "parts/covers.cc.inc"
 #include "parts/cover_cache.cc.inc"

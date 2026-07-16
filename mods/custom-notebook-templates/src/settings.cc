@@ -1,6 +1,34 @@
-#line 1195 "src/customnotebooktemplates.cc"
+#include "settings.h"
 
-static void trace(char const* message, bool truncate = false) {
+#include <QByteArray>
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonParseError>
+#include <QJsonValue>
+#include <QMutexLocker>
+#include <QSaveFile>
+#include <QString>
+
+#include <cstring>
+#include <fcntl.h>
+#include <unistd.h>
+
+namespace {
+
+char const kTrace[] =
+    "/mnt/onboard/.kobo/custom/templates/plugin-status.txt";
+char const kTemplateRoot[] = "/mnt/onboard/.kobo/custom/templates/";
+char const kEraserSizeSettings[] =
+    "/mnt/onboard/.kobo/custom/templates/eraser-size.json";
+
+} // namespace
+
+namespace cnt {
+
+void trace(char const* message, bool truncate) {
     int const flags = O_WRONLY | O_CREAT | (truncate ? O_TRUNC : O_APPEND);
     int const fd = open(kTrace, flags, 0644);
     if (fd < 0)
@@ -11,28 +39,28 @@ static void trace(char const* message, bool truncate = false) {
     close(fd);
 }
 
-static void trace(QString const& message) {
+void trace(QString const& message) {
     QByteArray const utf8 = message.left(1024).toUtf8();
     trace(utf8.constData());
 }
 
-static bool validEraserSizeIndex(int index) {
+bool validEraserSizeIndex(int index) {
     return index >= 0 && index < 5;
 }
 
-static void rememberEraserSizeIndex(int index) {
+void SettingsStore::rememberEraserSizeIndex(int index) {
     if (!validEraserSizeIndex(index))
         return;
-    QMutexLocker locker(&eraserState().settingsMutex);
-    eraserState().sizeIndex = index;
-    eraserState().settingsLoaded = true;
+    QMutexLocker locker(&mutex_);
+    sizeIndex_ = index;
+    loaded_ = true;
 }
 
-static int configuredEraserSizeIndex() {
+int SettingsStore::configuredEraserSizeIndex() {
     {
-        QMutexLocker locker(&eraserState().settingsMutex);
-        if (eraserState().settingsLoaded)
-            return eraserState().sizeIndex;
+        QMutexLocker locker(&mutex_);
+        if (loaded_)
+            return sizeIndex_;
     }
 
     int loadedIndex = 2;
@@ -68,12 +96,12 @@ static int configuredEraserSizeIndex() {
     }
 
     {
-        QMutexLocker locker(&eraserState().settingsMutex);
-        if (!eraserState().settingsLoaded) {
-            eraserState().sizeIndex = loadedIndex;
-            eraserState().settingsLoaded = true;
+        QMutexLocker locker(&mutex_);
+        if (!loaded_) {
+            sizeIndex_ = loadedIndex;
+            loaded_ = true;
         }
-        loadedIndex = eraserState().sizeIndex;
+        loadedIndex = sizeIndex_;
     }
     trace(QLatin1String("eraser-size: configured index=")
         + QString::number(loadedIndex)
@@ -82,7 +110,7 @@ static int configuredEraserSizeIndex() {
     return loadedIndex;
 }
 
-static bool persistEraserSizeIndex(int index) {
+bool SettingsStore::persistEraserSizeIndex(int index) {
     if (!validEraserSizeIndex(index))
         return false;
     rememberEraserSizeIndex(index);
@@ -111,6 +139,8 @@ static bool persistEraserSizeIndex(int index) {
     return true;
 }
 
+} // namespace cnt
+
 __attribute__((constructor(101))) static void traceLibraryLoad() {
-    trace("plugin library loaded", true);
+    cnt::trace("plugin library loaded", true);
 }

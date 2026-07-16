@@ -34,6 +34,10 @@ static EraserRuntimeState& eraserState() {
     return pluginState().eraser;
 }
 
+static cnt::SettingsStore& settingsStore() {
+    return pluginState().settings;
+}
+
 static VisibilityRuntimeState& visibilityState() {
     return pluginState().visibility;
 }
@@ -88,9 +92,6 @@ static char const kCustomAssetSdContentPrefix[] =
 static char const kCustomAssetSdExternalContentPrefix[] =
     "file:///mnt/sd/koboExtStorage/custom/";
 static char const kCondorSuffix[] = "_condor.png";
-static char const kTrace[] = "/mnt/onboard/.kobo/custom/templates/plugin-status.txt";
-static char const kEraserSizeSettings[] =
-    "/mnt/onboard/.kobo/custom/templates/eraser-size.json";
 static int const kMaximumCustomTemplates = 32;
 static int const kMaximumCustomCovers = 32;
 static qint64 const kMaximumAutomaticPngSize = 32 * 1024 * 1024;

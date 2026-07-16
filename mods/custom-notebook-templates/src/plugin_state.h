@@ -60,9 +60,6 @@ struct LayerRuntimeState {
 struct EraserRuntimeState {
     bool sizeApisReady = false;
     bool sizeMenuHooksReady = false;
-    QMutex settingsMutex;
-    bool settingsLoaded = false;
-    int sizeIndex = 2;
     QPointer<QObject> liveSizeController;
 };
 
@@ -88,6 +85,7 @@ struct PluginState {
     PageRuntimeState pages;
     LayerRuntimeState layers;
     EraserRuntimeState eraser;
+    cnt::SettingsStore settings;
     VisibilityRuntimeState visibility;
     HookRuntimeState hooks;
 };
