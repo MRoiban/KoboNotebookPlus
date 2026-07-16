@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify the Phase 2 namespace-scope storage budget.
+"""Verify the plugin's namespace-scope storage budget.
 
 The old ``grep '^static '`` metric mixed functions, immutable constants, and
 mutable storage.  This verifier performs a deliberately small, fail-closed
@@ -9,6 +9,12 @@ It does not need Qt headers or a host C++ compiler.
 Only declarations at fragment depth zero are considered.  The umbrella
 includes those fragments directly inside its anonymous namespace, so depth
 zero in a fragment is namespace scope in the effective translation unit.
+
+Promoted real translation units are audited separately.  Their namespace
+objects do not need an explicit ``static`` keyword (an anonymous namespace
+already gives them internal linkage), so that audit walks namespace bodies
+and classifies every object definition while ignoring function bodies and
+type definitions.
 """
 
 from __future__ import annotations
@@ -414,6 +420,230 @@ def analyze_source(source: str, path: pathlib.Path | None = None) -> tuple[Decla
         raise VerificationError(f"{source_path}: {exc}") from exc
 
 
+def _matching_brace(masked: str, opening: int, limit: int) -> int:
+    depth = 1
+    index = opening + 1
+    while index < limit:
+        if masked[index] == "{":
+            depth += 1
+        elif masked[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return index
+        index += 1
+    raise VerificationError("unterminated namespace-scope brace")
+
+
+def _top_level_equal(head: str) -> int | None:
+    paren = square = braces = angle = 0
+    for index, char in enumerate(head):
+        if char == "(":
+            paren += 1
+        elif char == ")":
+            paren -= 1
+        elif char == "[":
+            square += 1
+        elif char == "]":
+            square -= 1
+        elif char == "{":
+            braces += 1
+        elif char == "}":
+            braces -= 1
+        elif char == "<" and not (paren or square or braces):
+            angle += 1
+        elif char == ">" and angle and not (paren or square or braces):
+            angle -= 1
+        elif char == "=" and not (paren or square or braces or angle):
+            return index
+    return None
+
+
+def _declarator_head(statement: str) -> str:
+    equal = _top_level_equal(statement)
+    return statement[:equal] if equal is not None else statement
+
+
+def _starts_with_word(source: str, word: str) -> bool:
+    stripped = source.lstrip()
+    return _word_at(stripped, 0, word)
+
+
+def _is_type_definition_head(head: str) -> bool:
+    stripped = head.strip()
+    # Promoted implementation files should not define namespace-scope types,
+    # but recognize ordinary class/struct/union/enum definitions so their
+    # members are never mistaken for plugin globals.
+    stripped = re.sub(r"^template\s*<.*>\s*", "", stripped, flags=re.DOTALL)
+    if _top_level_equal(stripped) is not None:
+        return False
+    class_definition = re.match(
+        r"^(?:class|struct|union)(?:\s+[A-Za-z_]\w*)?"
+        r"(?:\s+final)?(?:\s*:\s*.*)?$",
+        stripped,
+        re.DOTALL,
+    )
+    enum_definition = re.match(
+        r"^enum(?:\s+class)?(?:\s+[A-Za-z_]\w*)?"
+        r"(?:\s*:\s*[A-Za-z_:]\w*)?$",
+        stripped,
+    )
+    return class_definition is not None or enum_definition is not None
+
+
+def _object_declaration(
+    statement: str,
+    source: str,
+    start: int,
+    end: int,
+    path: pathlib.Path,
+) -> Declaration | None:
+    if _top_level_commas(statement):
+        raise VerificationError(
+            "multiple namespace-scope declarators in one statement are unsupported"
+        )
+    head = _declarator_head(statement).strip()
+    if not head:
+        return None
+    if re.match(r"^template\s*<.*>\s*using\b", head, re.DOTALL):
+        return None
+    if any(
+        _starts_with_word(head, keyword)
+        for keyword in ("using", "typedef", "static_assert", "namespace")
+    ):
+        return None
+    if _is_function_declarator(head):
+        # A semicolon-terminated ``Type name(args)`` is syntactically
+        # ambiguous to this lexical verifier: it may be a prototype or a
+        # direct-initialized object.  Never silently waive it, since that
+        # would let ``QMutex lock(QMutex::Recursive)`` bypass the budget.
+        raise VerificationError(
+            "ambiguous parenthesized namespace declaration is unsupported"
+        )
+    if _starts_with_word(head, "extern") and _top_level_equal(statement) is None:
+        return None
+    if _is_type_definition_head(head):
+        return None
+    name, name_offset = _object_name(head)
+    category = _object_category(head, name_offset)
+    line = source.count("\n", 0, start) + 1
+    return Declaration(path, line, name, category, source[start:end].strip())
+
+
+def _scan_namespace_body(
+    masked: str,
+    source: str,
+    path: pathlib.Path,
+    begin: int,
+    limit: int,
+) -> list[Declaration]:
+    declarations: list[Declaration] = []
+    index = begin
+    while index < limit:
+        while index < limit and (masked[index].isspace() or masked[index] == ";"):
+            index += 1
+        if index >= limit:
+            break
+        if masked[index] == "}":
+            raise VerificationError("unexpected namespace-scope closing brace")
+
+        start = index
+        paren = square = angle = 0
+        while index < limit:
+            char = masked[index]
+            if char == "(":
+                paren += 1
+            elif char == ")":
+                paren -= 1
+            elif char == "[":
+                square += 1
+            elif char == "]":
+                square -= 1
+            elif char == "<" and not (paren or square):
+                angle += 1
+            elif char == ">" and angle and not (paren or square):
+                angle -= 1
+            elif char == ";" and not (paren or square):
+                end = index + 1
+                declaration = _object_declaration(
+                    masked[start:index], source, start, end, path
+                )
+                if declaration is not None:
+                    declarations.append(declaration)
+                index = end
+                break
+            elif char == "{" and not (paren or square):
+                head = masked[start:index]
+                closing = _matching_brace(masked, index, limit)
+                stripped = head.strip()
+                namespace_block = re.match(
+                    r"^(?:inline\s+)?namespace(?:\s+[A-Za-z_]\w*)?\s*$",
+                    stripped,
+                ) is not None
+                linkage_block = (
+                    _starts_with_word(stripped, "extern")
+                    and _top_level_equal(stripped) is None
+                    and len(IDENTIFIER.findall(stripped)) == 1
+                )
+                if namespace_block or linkage_block:
+                    declarations.extend(
+                        _scan_namespace_body(
+                            masked, source, path, index + 1, closing
+                        )
+                    )
+                    index = closing + 1
+                    break
+                if _is_function_declarator(stripped) or _is_type_definition_head(
+                    stripped
+                ):
+                    index = closing + 1
+                    while index < limit and masked[index].isspace():
+                        index += 1
+                    if index < limit and masked[index] == ";":
+                        index += 1
+                    break
+
+                # This is a namespace object with a braced initializer (or a
+                # lambda initializer).  Continue to its terminating semicolon
+                # while ignoring any nested braces in the initializer body.
+                cursor = closing + 1
+                while cursor < limit and masked[cursor].isspace():
+                    cursor += 1
+                if cursor >= limit or masked[cursor] != ";":
+                    raise VerificationError(
+                        "unsupported namespace-scope braced declaration"
+                    )
+                end = cursor + 1
+                declaration = _object_declaration(
+                    head, source, start, end, path
+                )
+                if declaration is not None:
+                    declarations.append(declaration)
+                index = end
+                break
+            if paren < 0 or square < 0:
+                raise VerificationError("unbalanced namespace declaration")
+            index += 1
+        else:
+            raise VerificationError("unterminated namespace-scope declaration")
+    return declarations
+
+
+def analyze_translation_unit_source(
+    source: str, path: pathlib.Path | None = None
+) -> tuple[Declaration, ...]:
+    """Classify object definitions in global and namespace scope."""
+    source_path = path or pathlib.Path("<memory>")
+    try:
+        masked = mask_cpp(source)
+        return tuple(
+            _scan_namespace_body(
+                masked, source, source_path, 0, len(masked)
+            )
+        )
+    except VerificationError as exc:
+        raise VerificationError(f"{source_path}: {exc}") from exc
+
+
 def top_level_invocation_count(source: str, name: str) -> int:
     masked = mask_cpp(source)
     brace_depth = 0
@@ -472,6 +702,25 @@ def audit_plugin(source_root: pathlib.Path) -> Audit:
     return Audit(tuple(declarations), tuple(framework_globals))
 
 
+def promoted_source_paths(source_root: pathlib.Path) -> tuple[pathlib.Path, ...]:
+    return tuple(
+        path
+        for path in sorted(source_root.rglob("*.cc"))
+        if path.name != UMBRELLA_NAME
+    )
+
+
+def audit_promoted_sources(source_root: pathlib.Path) -> Audit:
+    declarations: list[Declaration] = []
+    for path in promoted_source_paths(source_root):
+        try:
+            source = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            raise VerificationError(f"cannot read {path}: {exc}") from exc
+        declarations.extend(analyze_translation_unit_source(source, path))
+    return Audit(tuple(declarations), ())
+
+
 def _format_names(names: Iterable[str]) -> str:
     values = sorted(names)
     return ", ".join(values) if values else "none"
@@ -514,6 +763,23 @@ def validation_errors(audit: Audit) -> list[str]:
     return errors
 
 
+def promoted_validation_errors(audit: Audit) -> list[str]:
+    errors: list[str] = []
+    for declaration in audit.declarations:
+        if declaration.category not in ("mutable", "mutex"):
+            continue
+        errors.append(
+            "promoted-TU %s namespace object is forbidden: %s:%d (%s)"
+            % (
+                declaration.category,
+                declaration.path,
+                declaration.line,
+                declaration.name,
+            )
+        )
+    return errors
+
+
 def print_audit(audit: Audit) -> None:
     print(
         "INFO mutable namespace statics: %d (%s)"
@@ -528,6 +794,21 @@ def print_audit(audit: Audit) -> None:
     print(
         "INFO framework global descriptors: %d (%s)"
         % (len(audit.framework_globals), _format_names(audit.framework_globals))
+    )
+
+
+def print_promoted_audit(audit: Audit) -> None:
+    print(
+        "INFO promoted-TU mutable namespace objects: %d (%s)"
+        % (audit.count("mutable"), _format_names(audit.names("mutable")))
+    )
+    print(
+        "INFO promoted-TU mutex namespace objects: %d (%s)"
+        % (audit.count("mutex"), _format_names(audit.names("mutex")))
+    )
+    print(
+        "INFO promoted-TU immutable namespace objects: %d"
+        % audit.count("immutable")
     )
 
 
@@ -546,11 +827,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     arguments = parse_args(sys.argv[1:] if argv is None else argv)
     try:
         audit = audit_plugin(arguments.source_root.resolve())
+        promoted_audit = audit_promoted_sources(arguments.source_root.resolve())
     except VerificationError as exc:
         print("Globals budget verification ERROR: %s" % exc, file=sys.stderr)
         return 2
     print_audit(audit)
-    errors = validation_errors(audit)
+    print_promoted_audit(promoted_audit)
+    errors = validation_errors(audit) + promoted_validation_errors(promoted_audit)
     if errors:
         for error in errors:
             print("FAIL %s" % error, file=sys.stderr)

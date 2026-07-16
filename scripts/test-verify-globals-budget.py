@@ -144,6 +144,130 @@ void function() {
         )
 
 
+class PromotedTranslationUnitParserTests(unittest.TestCase):
+    def declarations(self, source: str):
+        return VERIFIER.analyze_translation_unit_source(source)
+
+    def inventory(self, source: str):
+        return {
+            (declaration.name, declaration.category)
+            for declaration in self.declarations(source)
+        }
+
+    def test_catches_namespace_objects_and_ignores_function_locals(self) -> None:
+        source = r'''
+int globalLeak = 0;
+namespace named {
+int namedLeak;
+}
+namespace {
+int anonymousLeak = 0;
+QMutex lock;
+char const kOk[] = "x";
+bool helper() {
+    static int lazy = 1;
+    return lazy != 0;
+}
+}
+'''
+        self.assertEqual(
+            self.inventory(source),
+            {
+                ("globalLeak", "mutable"),
+                ("namedLeak", "mutable"),
+                ("anonymousLeak", "mutable"),
+                ("lock", "mutex"),
+                ("kOk", "immutable"),
+            },
+        )
+
+    def test_ignores_types_members_functions_and_declaration_only_extern(self) -> None:
+        source = r'''
+extern int declarationOnly;
+struct ForwardDeclaration;
+class Example {
+    int member;
+    static int classState;
+};
+static void helper() {}
+int Example::classState = 0;
+'''
+        self.assertEqual(
+            self.inventory(source),
+            {("classState", "mutable")},
+        )
+
+    def test_catches_elaborated_struct_objects_and_braced_initializers(self) -> None:
+        source = r'''
+struct Info aggregate = { 1, 2 };
+struct Info anotherAggregate;
+int const kValues[] = { 1, 2, 3 };
+auto const kCallback = [] { return 1; };
+'''
+        self.assertEqual(
+            self.inventory(source),
+            {
+                ("aggregate", "mutable"),
+                ("anotherAggregate", "mutable"),
+                ("kValues", "immutable"),
+                ("kCallback", "immutable"),
+            },
+        )
+
+    def test_classifies_pointers_and_function_pointer_storage(self) -> None:
+        source = r'''
+char const* mutablePointer = nullptr;
+char const* const immutablePointer = nullptr;
+Result (*callback)(int) = nullptr;
+'''
+        self.assertEqual(
+            self.inventory(source),
+            {
+                ("mutablePointer", "mutable"),
+                ("immutablePointer", "immutable"),
+                ("callback", "mutable"),
+            },
+        )
+
+    def test_rejects_multiple_namespace_declarators(self) -> None:
+        with self.assertRaisesRegex(
+            VERIFIER.VerificationError,
+            "multiple namespace-scope declarators",
+        ):
+            self.declarations("int first = 0, second = 0;\n")
+
+    def test_direct_initialized_objects_fail_closed(self) -> None:
+        for declaration in (
+            "QMutex lock(QMutex::Recursive);",
+            "int leak(1);",
+            "std::atomic<bool> ready(false);",
+        ):
+            with self.subTest(declaration=declaration):
+                with self.assertRaisesRegex(
+                    VERIFIER.VerificationError,
+                    "ambiguous parenthesized namespace declaration",
+                ):
+                    self.declarations("namespace { %s }\n" % declaration)
+
+    def test_ignores_template_using_aliases(self) -> None:
+        self.assertEqual(
+            self.declarations(
+                "template<class T, class U> using Pair = QMap<T, U>;\n"
+            ),
+            (),
+        )
+
+    def test_promoted_validation_rejects_mutable_and_mutex_with_locations(self) -> None:
+        audit = VERIFIER.Audit(
+            self.declarations("namespace { int leak; QMutex lock; }\n"),
+            (),
+        )
+        errors = VERIFIER.promoted_validation_errors(audit)
+        self.assertEqual(len(errors), 2)
+        self.assertTrue(any("mutable" in error and "leak" in error for error in errors))
+        self.assertTrue(any("mutex" in error and "lock" in error for error in errors))
+
+
 class RepositoryGlobalsBudgetTests(unittest.TestCase):
     def test_repository_inventory_matches_phase_two_budget(self) -> None:
         audit = VERIFIER.audit_plugin(VERIFIER.DEFAULT_SOURCE_ROOT)
@@ -153,6 +277,29 @@ class RepositoryGlobalsBudgetTests(unittest.TestCase):
         self.assertEqual(audit.count("immutable"), 294)
         self.assertEqual(audit.count("function"), 132)
         self.assertEqual(audit.framework_globals, ("NickelHook",))
+
+        promoted = VERIFIER.audit_promoted_sources(VERIFIER.DEFAULT_SOURCE_ROOT)
+        self.assertEqual(VERIFIER.promoted_validation_errors(promoted), [])
+        self.assertEqual(promoted.count("mutable"), 0)
+        self.assertEqual(promoted.count("mutex"), 0)
+        self.assertEqual(promoted.count("immutable"), 8)
+        self.assertEqual(
+            {
+                (declaration.path.name, declaration.name)
+                for declaration in promoted.declarations
+                if declaration.category == "immutable"
+            },
+            {
+                ("fs_util.cc", "kTemplateRoot"),
+                ("fs_util.cc", "kCondorSuffix"),
+                ("fs_util.cc", "kBackgroundWidth"),
+                ("fs_util.cc", "kBackgroundHeight"),
+                ("fs_util.cc", "kPickerIconSize"),
+                ("settings.cc", "kTrace"),
+                ("settings.cc", "kTemplateRoot"),
+                ("settings.cc", "kEraserSizeSettings"),
+            },
+        )
 
     def test_cli_reports_verified_inventory(self) -> None:
         result = subprocess.run(
@@ -166,6 +313,18 @@ class RepositoryGlobalsBudgetTests(unittest.TestCase):
         self.assertIn("mutable namespace statics: 2 (gPluginState, info)", result.stdout)
         self.assertIn("immutable namespace statics: 294", result.stdout)
         self.assertIn("framework global descriptors: 1 (NickelHook)", result.stdout)
+        self.assertIn(
+            "promoted-TU mutable namespace objects: 0 (none)",
+            result.stdout,
+        )
+        self.assertIn(
+            "promoted-TU mutex namespace objects: 0 (none)",
+            result.stdout,
+        )
+        self.assertIn(
+            "promoted-TU immutable namespace objects: 8",
+            result.stdout,
+        )
         self.assertIn("Globals budget verified", result.stdout)
 
 
