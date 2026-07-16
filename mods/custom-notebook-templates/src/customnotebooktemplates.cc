@@ -63,6 +63,7 @@
 #include "eraser_menu.h"
 #include "fs_util.h"
 #include "layers.h"
+#include "layers_eraser.h"
 #include "layers_preview.h"
 #include "layers_service.h"
 #include "layers_state.h"

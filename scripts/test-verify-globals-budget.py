@@ -274,8 +274,8 @@ class RepositoryGlobalsBudgetTests(unittest.TestCase):
         self.assertEqual(VERIFIER.validation_errors(audit), [])
         self.assertEqual(audit.names("mutable"), {"gPluginState", "info"})
         self.assertEqual(audit.count("mutex"), 0)
-        self.assertEqual(audit.count("immutable"), 244)
-        self.assertEqual(audit.count("function"), 54)
+        self.assertEqual(audit.count("immutable"), 217)
+        self.assertEqual(audit.count("function"), 39)
         self.assertEqual(audit.framework_globals, ("NickelHook",))
 
         promoted = VERIFIER.audit_promoted_sources(VERIFIER.DEFAULT_SOURCE_ROOT)
@@ -349,7 +349,7 @@ class RepositoryGlobalsBudgetTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("mutable namespace statics: 2 (gPluginState, info)", result.stdout)
-        self.assertIn("immutable namespace statics: 244", result.stdout)
+        self.assertIn("immutable namespace statics: 217", result.stdout)
         self.assertIn("framework global descriptors: 1 (NickelHook)", result.stdout)
         self.assertIn(
             "promoted-TU mutable namespace objects: 0 (none)",

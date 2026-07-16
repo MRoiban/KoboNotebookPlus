@@ -46,19 +46,6 @@ static HookRuntimeState& hookState() {
 // symbols. Preserve that dynamic ABI surface with an immutable empty anchor;
 // all live routing data remains owned by PluginState.
 static std::map<void*, std::string> const kMapDestructorParityAnchor;
-// snt::DrawingEraser, the global DrawingEraser, and the raw-content
-// atk::diagram::DiagramEraser each have 148-byte Itanium ABI vtables. Separate
-// writable, process-lifetime clones preserve every class override while
-// replacing selectionFromPoints. The two DrawingErasers filter their stock
-// hit selection. DiagramEraser rebuilds that hit selection in firmware's
-// layer-first order. Stock libiink text and code remain untouched.
-static size_t const kDrawingEraserVtableWords = 148 / sizeof(void*);
-// Raw-content pages cache one 152-byte DiagramPen vtable. A writable clone
-// replaces only penDown so the selected layer can be reasserted at the last
-// possible point before core Pen tags the new stroke. This guards against a
-// later native tool refresh silently restoring an older layer between popup
-// activation and physical pen-down; every other DiagramPen slot remains stock.
-static size_t const kDiagramPenVtableWords = 152 / sizeof(void*);
 // Both caches are shared between the UI-thread loadCover hook and the parser
 // thumbnail callback, so every access happens under coverCacheMutex. The lock
 // is only ever held for map operations, never across archive scans, PNG
@@ -382,84 +369,47 @@ static cnt::layers_preview::Pins const kLayerPreviewPins = {
     /* editorWidgetImageLoaderObjectOffset */ 0x20,
     /* editorWidgetImageLoaderControlOffset */ 0x24
 };
-static uintptr_t const kPageControllerLayoutGridOffset = 0xe4;
-// Five native BrushButton swatches, mapped onto firmware's own eraser-width
-// buckets. Index 2 deliberately preserves the common 3px radius at a 12px
-// line gap; the two widest buckets remain clearly distinguishable on e-ink.
-static float const kEraserSizeRatios[] = {
-    0.0f, 0.25f, 0.35f, 0.70f, 1.0f
+// Every layer/eraser vtable slot, object offset, stock implementation VMA,
+// selection mode, and size bucket enters the promoted implementation through
+// this inert aggregate. The values are unchanged from the verified umbrella.
+// In particular: Tool restrict/restricted are +0x54/+0x58; DrawingEraser
+// selection is +0x78; Diagram update/remove are +0x7c/+0x80; PID owns its box
+// factory at +0x24; and the active backend tool getter is +0x2c.
+static cnt::layers_eraser::Pins const kLayerEraserPins = {
+    /* drawingEraserVtableWords */ 148 / sizeof(void*),
+    /* diagramPenVtableWords */ 152 / sizeof(void*),
+    /* toolRestrictToLayerVtableSlot */ 0x54,
+    /* toolRestrictedLayerVtableSlot */ 0x58,
+    /* drawingBackendRestrictedToolOffsets */ { 0x44, 0x54, 0x5c },
+    /* drawingBackendRestrictedToolNames */ {
+        "pen(kinds0-2)", "selector(kind3)", "brush(kind6)"
+    },
+    /* drawingBackendEraserToolOffset */ 0x4c,
+    /* drawingEraserSelectionFromPointsVtableSlot */ 0x78,
+    /* diagramPenPenDownVtableSlot */ 0x3c,
+    /* diagramPenPenDownVma */ 0x7af1e4,
+    /* drawingEraserSelectionFromPointsVma */ 0x562838,
+    /* plainDrawingEraserSelectionFromPointsVma */ 0x421314,
+    /* coreEraserSelectionFromPointsVma */ 0xa77470,
+    /* eraserWidthOffset */ 0xcc,
+    /* eraserViewScaleOffset */ 0x110,
+    /* diagramEraserUpdateSelectionVtableSlot */ 0x7c,
+    /* diagramEraserEraseSelectionVtableSlot */ 0x80,
+    /* diagramEraserUpdateSelectionVma */ 0x75b73c,
+    /* diagramEraserEraseSelectionVma */ 0x75c224,
+    /* eraserFinalSelectionOffset */ 0xd0,
+    /* customLayerIdPrefix */ "cnt.layer.",
+    /* customLayerIdPrefixLength */ sizeof("cnt.layer.") - 1,
+    /* selectionModeReplace */ 0,
+    /* selectionModeIntersect */ 2,
+    /* eraserPolicyStroke */ 0,
+    /* pidBoxFactoryOffset */ 0x24,
+    /* activeBackendGetToolVtableSlot */ 0x2c,
+    /* neboBackendPageControllerOffset */ 0x14,
+    /* pageControllerLayoutGridOffset */ 0xe4,
+    /* eraserSizeRatios */ { 0.0f, 0.25f, 0.35f, 0.70f, 1.0f }
 };
-// atk::core::Tool::restrictToLayer(std::string const&) is virtual vtable slot
-// +0x54 (restrictedLayer() is +0x58). Binary Ninja / objdump confirmed slot
-// +0x54 resolves to Tool::restrictToLayer (0xa84358) in the base Tool vtable
-// (0xd977a8) and to snt::ToolDispatcher::restrictToLayer (0x5c4c90) in the
-// dispatcher override vtable (0xd8b538). Calling it virtually on the concrete
-// tool that PlatformInputDispatcher::getCurrentTool() returns routes the next
-// stroke into the active layer and honors any tool-specific override, without
-// the wrong-type cast that previously failed (a concrete Pen is not a
-// ToolDispatcher). scripts/verify-layer-abi.py pins this slot against both
-// vtables.
-static uintptr_t const kToolRestrictToLayerVtableSlot = 0x54;
-static uintptr_t const kToolRestrictedLayerVtableSlot = 0x58;
-// snt::DrawingBackend caches one persistent tool per kind as members. From
-// DrawingBackend::getTool (0x5589cc): pen kinds -> +0x44, kind 4 (eraser) ->
-// +0x4c, kind 3 -> +0x54, kind 6 -> +0x5c (each a shared_ptr; the raw Tool* is
-// the low word). DrawingBackend::init applies DOCUMENT_LAYER_NAME to the Pen,
-// Selector, and DrawingBrush through virtual slot +0x54, but deliberately
-// skips DrawingEraser. Mirror that stock policy: DrawingBrush inherits the Pen
-// penDown path and consumes restrictedLayer(), while DrawingEraser inherits
-// core Eraser selection over the composite Layout and never reads it.
-static uintptr_t const kDrawingBackendRestrictedToolOffsets[] = {
-    0x44, 0x54, 0x5c
-};
-static char const* const kDrawingBackendRestrictedToolNames[] = {
-    "pen(kinds0-2)", "selector(kind3)", "brush(kind6)"
-};
-static uintptr_t const kDrawingBackendEraserToolOffset = 0x4c;
-// DrawingEraser::selectionFromPoints is vslot +0x78 and returns Selection by
-// hidden result pointer on ARM. The replacement calls the original first, then
-// intersects that polygon hit selection with the eraser's restrictedLayer().
-// Mode 2 is Intersection, proven by Selector::computeSelection at BN
-// 0xa8ced8 (selectLayer/Replace) and 0xa8d082 (selectPolygon/Intersection).
-static uintptr_t const kDrawingEraserSelectionFromPointsVtableSlot = 0x78;
-static uintptr_t const kDiagramPenPenDownVtableSlot = 0x3c;
-static uintptr_t const kDiagramPenPenDownVma = 0x7af1e4;
-static uintptr_t const kDrawingEraserSelectionFromPointsVma = 0x562838;
-static uintptr_t const kPlainDrawingEraserSelectionFromPointsVma = 0x421314;
-static uintptr_t const kCoreEraserSelectionFromPointsVma = 0xa77470;
-// Core Eraser::selectionFromPoints multiplies these exact fields before
-// calling strokerPolygon (BN 0xa8748c, 0xa87492, 0xa874a8).
-static uintptr_t const kEraserWidthOffset = 0xcc;
-static uintptr_t const kEraserViewScaleOffset = 0x110;
-// DiagramEraser's inherited +0x78 selectionFromPoints slot is replaced on the
-// exact DiagramEraser clone to enforce layer-first polygon selection. Its +0x7c
-// updateSelection slot (BN 0x76b73c) is also replaced: the stock diagram
-// override rebuilds the erase set from Diagram::layoutGroup ->
-// selectByType(0xcc4) -> itemsIntersecting (BN 0x76b784/0x76b7ae/0x76b7da),
-// which omits custom named-layer ink, then commits the empty set through core
-// Eraser::updateSelection. Our +0x7c wrapper runs the stock override unchanged
-// for the document/base layer. For plugin-created cnt.layer.* layers it calls
-// the base Eraser::updateSelection directly with the +0x78 layer-scoped
-// selection, avoiding the diagram-only narrowing which has been observed not
-// to return for one valid custom layer. The same removal sink (Eraser+0xd0) is
-// drained by DiagramEraser::eraseSelection from core Eraser::penUp.
-static uintptr_t const kDiagramEraserUpdateSelectionVtableSlot = 0x7c;
-static uintptr_t const kDiagramEraserEraseSelectionVtableSlot = 0x80;
-static uintptr_t const kDiagramEraserUpdateSelectionVma = 0x75b73c;
-static uintptr_t const kDiagramEraserEraseSelectionVma = 0x75c224;
 static uintptr_t const kCoreEraserUpdateSelectionVma = 0xa75ce4;
-static uintptr_t const kEraserFinalSelectionOffset = 0xd0;
-static char const kCustomLayerIdPrefix[] = "cnt.layer.";
-static int const kSelectionModeReplace = 0;
-static int const kSelectionModeIntersect = 2;
-// ToolDispatcher maps eraser.policy="stroke" to 0 and "precise" to 1
-// (BN 0x5d3998/0x5d3b1e). Only policy 0 receives whole-stroke expansion.
-static int const kEraserPolicyStroke = 0;
-// snt::PlatformInputDispatcher stores the GridBoxFactory (a CompositeBoxFactory)
-// shared_ptr at +0x24; CompositeBoxFactory::mainBackend() yields the active
-// DrawingBackend. Recovered from activatePenCategoryForMainBackend (0x5bcd2c).
-static uintptr_t const kPidBoxFactoryOffset = 0x24;
-static uintptr_t const kActiveBackendGetToolVtableSlot = 0x2c;
 static uintptr_t const kPackagePartCountVma = 0x3eeb40;
 static uintptr_t const kPackageGetPartVma = 0x3f4850;
 static uintptr_t const kPackageIndexOfPartVma = 0x3f2238;
