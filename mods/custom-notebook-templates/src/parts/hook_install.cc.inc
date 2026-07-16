@@ -42,15 +42,15 @@ static void installHookAfterNaturalLoad() {
             replacement.pointer);
         firmwareApi().addWidgetActionOriginal = reinterpret_cast<AddWidgetAction>(original);
         if (pointerMatchesVma(original, kAddWidgetActionVma)) {
-            pageManagerHooksReady = true;
+            pageState().hooksReady = true;
             trace("pages: guarded notebook-menu hook installed");
         } else {
-            layerHooksReady = false;
+            layerState().hooksReady = false;
             trace("pages: notebook-menu hook validation failed");
             trace("layers: native action hook unavailable; feature disabled");
         }
 
-        if (layerHooksReady || eraserSizeApisReady) {
+        if (layerState().hooksReady || eraserState().sizeApisReady) {
             SetToolTheme resolvedTheme = nullptr;
             RenderVolume resolvedRender = nullptr;
             bool const lifecycleSymbols =
@@ -88,33 +88,33 @@ static void installHookAfterNaturalLoad() {
                     renderHookValid = true;
                 }
             }
-            notebookLifecycleHooksReady =
+            hookState().notebookLifecycleHooksReady =
                 lifecycleSymbols && themeHookValid && renderHookValid;
-            if (notebookLifecycleHooksReady) {
+            if (hookState().notebookLifecycleHooksReady) {
                 trace("layers: active-layer lifecycle hooks installed");
                 trace("eraser-size: notebook lifecycle reapply hooks installed");
             } else {
-                if (layerHooksReady)
+                if (layerState().hooksReady)
                     trace("layers: lifecycle hook validation failed; feature disabled");
-                if (eraserSizeApisReady) {
+                if (eraserState().sizeApisReady) {
                     trace("eraser-size: lifecycle hook validation failed; feature disabled");
                 }
-                layerHooksReady = false;
-                eraserSizeApisReady = false;
+                layerState().hooksReady = false;
+                eraserState().sizeApisReady = false;
             }
         }
 
-        if (notebookLifecycleHooksReady && eraserSizeApisReady
+        if (hookState().notebookLifecycleHooksReady && eraserState().sizeApisReady
                 && !installEraserSizeMenuHooks(handle)) {
-            eraserSizeApisReady = false;
+            eraserState().sizeApisReady = false;
             trace("eraser-size: popup augmentation unavailable; feature disabled");
         }
 
-        if (layerHooksReady && !loadZipApis()) {
+        if (layerState().hooksReady && !loadZipApis()) {
             trace("layers: read-only archive persistence probe unavailable");
         }
 
-        if (!customCovers.isEmpty() && loadZipApis()) {
+        if (!coverState().customCovers.isEmpty() && loadZipApis()) {
             SetDialogTitleAddress titleReplacement;
         titleReplacement.function = _cnt_set_dialog_title_hook;
         void* const originalTitle = nh_dlhook(
@@ -154,7 +154,7 @@ static void installHookAfterNaturalLoad() {
                     originalLoadCover);
                 if (pointerMatchesVma(
                         originalLoadCover, kVolumeLoadCoverVma)) {
-                    coverGridHookReady = true;
+                    coverState().gridHookReady = true;
                     trace("covers: live notebook-card load hook installed");
                 } else {
                     trace("covers: notebook-card load hook validation failed");
@@ -175,7 +175,7 @@ static void installHookAfterNaturalLoad() {
                 && pointerMatchesVma(originalTitle, kSetDialogTitleVma)
                 && pointerMatchesVma(
                     originalImageParsed, kParserImageParsedVma)) {
-            coverHooksReady = true;
+            coverState().hooksReady = true;
             trace("covers: guarded menu, picker-title, and parser-thumbnail hooks installed");
         } else {
             trace("covers: hook validation failed");
@@ -197,10 +197,10 @@ static int initialize() {
     trace("NickelHook init entered");
     installCustomAssetVisibilityHooks();
     hideLegacyNotebookBackups();
-    hookTimer = new QTimer(QCoreApplication::instance());
-    hookTimer->setInterval(100);
-    QObject::connect(hookTimer, &QTimer::timeout, installHookAfterNaturalLoad);
-    hookTimer->start();
+    hookState().timer = new QTimer(QCoreApplication::instance());
+    hookState().timer->setInterval(100);
+    QObject::connect(hookState().timer, &QTimer::timeout, installHookAfterNaturalLoad);
+    hookState().timer->start();
     trace("NickelHook init complete; waiting for natural libiinknote load");
     return 0;
 }

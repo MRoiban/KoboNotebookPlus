@@ -389,7 +389,7 @@ static void showLayerPopup(QObject* controller) {
             commands,
             SLOT(refreshPreviews()),
             true,
-            layerPreviewApisReady,
+            layerState().previewApisReady,
             true);
     }
 
@@ -584,7 +584,7 @@ static void beginCoverPicker(QObject* controller) {
                 && selected != state->originalFirstBackground) {
             state->timer->stop();
             object->setProperty("_cnt_cover_picker_active", false);
-            coverTitlePending = false;
+            coverState().titlePending = false;
 
             // Nickel has applied the picker result to page zero. Restore that
             // page first, then let the backed-up insertion routine decide
@@ -610,7 +610,7 @@ static void beginCoverPicker(QObject* controller) {
         if (++state->polls >= 300) {
             state->timer->stop();
             object->setProperty("_cnt_cover_picker_active", false);
-            coverTitlePending = false;
+            coverState().titlePending = false;
             firmwareApi().editorSetPart(state->editor, state->originalPart);
             firmwareApi().widgetRefresh(state->widget);
             state->timer->deleteLater();
@@ -618,12 +618,12 @@ static void beginCoverPicker(QObject* controller) {
         }
     });
 
-    coverPickerPending = true;
-    coverTitlePending = true;
+    coverState().pickerPending = true;
+    coverState().titlePending = true;
     firmwareApi().menuSelectBackground(controller);
     // backgroundOptions() is invoked synchronously by this signal on Nickel's
     // UI thread. A leftover flag means controller creation failed.
-    coverPickerPending = false;
+    coverState().pickerPending = false;
     timer->start();
     trace("covers: cover picker opened from notebook menu");
 }

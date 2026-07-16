@@ -23,16 +23,16 @@ static bool validEraserSizeIndex(int index) {
 static void rememberEraserSizeIndex(int index) {
     if (!validEraserSizeIndex(index))
         return;
-    QMutexLocker locker(&eraserSizeSettingsMutex);
-    eraserSizeIndex = index;
-    eraserSizeSettingsLoaded = true;
+    QMutexLocker locker(&eraserState().settingsMutex);
+    eraserState().sizeIndex = index;
+    eraserState().settingsLoaded = true;
 }
 
 static int configuredEraserSizeIndex() {
     {
-        QMutexLocker locker(&eraserSizeSettingsMutex);
-        if (eraserSizeSettingsLoaded)
-            return eraserSizeIndex;
+        QMutexLocker locker(&eraserState().settingsMutex);
+        if (eraserState().settingsLoaded)
+            return eraserState().sizeIndex;
     }
 
     int loadedIndex = 2;
@@ -68,12 +68,12 @@ static int configuredEraserSizeIndex() {
     }
 
     {
-        QMutexLocker locker(&eraserSizeSettingsMutex);
-        if (!eraserSizeSettingsLoaded) {
-            eraserSizeIndex = loadedIndex;
-            eraserSizeSettingsLoaded = true;
+        QMutexLocker locker(&eraserState().settingsMutex);
+        if (!eraserState().settingsLoaded) {
+            eraserState().sizeIndex = loadedIndex;
+            eraserState().settingsLoaded = true;
         }
-        loadedIndex = eraserSizeIndex;
+        loadedIndex = eraserState().sizeIndex;
     }
     trace(QLatin1String("eraser-size: configured index=")
         + QString::number(loadedIndex)

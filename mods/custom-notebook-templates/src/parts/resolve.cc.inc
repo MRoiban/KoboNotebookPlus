@@ -9,6 +9,43 @@ static PluginState& pluginState() {
 static FirmwareApi& firmwareApi() {
     return pluginState().firmware;
 }
+
+static ZipApi& zipApi() {
+    return pluginState().zip;
+}
+
+static TemplateRuntimeState& templateState() {
+    return pluginState().templates;
+}
+
+static CoverRuntimeState& coverState() {
+    return pluginState().covers;
+}
+
+static PageRuntimeState& pageState() {
+    return pluginState().pages;
+}
+
+static LayerRuntimeState& layerState() {
+    return pluginState().layers;
+}
+
+static EraserRuntimeState& eraserState() {
+    return pluginState().eraser;
+}
+
+static VisibilityRuntimeState& visibilityState() {
+    return pluginState().visibility;
+}
+
+static HookRuntimeState& hookState() {
+    return pluginState().hooks;
+}
+
+// The alpha's file-scope diagram-pen map emitted two weak std::map destructor
+// symbols. Preserve that dynamic ABI surface with an immutable empty anchor;
+// all live routing data remains owned by PluginState.
+static std::map<void*, std::string> const kMapDestructorParityAnchor;
 // snt::DrawingEraser, the global DrawingEraser, and the raw-content
 // atk::diagram::DiagramEraser each have 148-byte Itanium ABI vtables. Separate
 // writable, process-lifetime clones preserve every class override while
@@ -16,68 +53,16 @@ static FirmwareApi& firmwareApi() {
 // hit selection. DiagramEraser rebuilds that hit selection in firmware's
 // layer-first order. Stock libiink text and code remain untouched.
 static size_t const kDrawingEraserVtableWords = 148 / sizeof(void*);
-static void* layerAwareDrawingEraserVtable[kDrawingEraserVtableWords];
-static void* layerAwarePlainDrawingEraserVtable[kDrawingEraserVtableWords];
-static void* layerAwareDiagramEraserVtable[kDrawingEraserVtableWords];
-static bool layerAwareDrawingEraserVtableReady = false;
-static bool layerAwarePlainDrawingEraserVtableReady = false;
-static bool layerAwareDiagramEraserVtableReady = false;
-static bool layerAwareDiagramEraserObserversReady = false;
-static int layerAwareEraserTraceBudget = 0;
-static int layerAwareDiagramEraserObserverTraceBudget = 0;
 // Raw-content pages cache one 152-byte DiagramPen vtable. A writable clone
 // replaces only penDown so the selected layer can be reasserted at the last
 // possible point before core Pen tags the new stroke. This guards against a
 // later native tool refresh silently restoring an older layer between popup
 // activation and physical pen-down; every other DiagramPen slot remains stock.
 static size_t const kDiagramPenVtableWords = 152 / sizeof(void*);
-static void* layerGuardedDiagramPenVtable[kDiagramPenVtableWords];
-static bool layerGuardedDiagramPenVtableReady = false;
-static int layerGuardedDiagramPenTraceBudget = 0;
-static std::map<void*, std::string> desiredDiagramPenLayers;
-static QMutex desiredDiagramPenLayersMutex;
-static ZipOpen zipOpen = nullptr;
-static ZipGetNumEntries zipGetNumEntries = nullptr;
-static ZipGetName zipGetName = nullptr;
-static ZipFopen zipFopen = nullptr;
-static ZipFread zipFread = nullptr;
-static ZipFclose zipFclose = nullptr;
-static ZipDiscard zipDiscard = nullptr;
-static void* zipLibraryHandle = nullptr;
-static QVector<CustomTemplate> customTemplates;
-static QVector<CustomTemplate> customCovers;
 // Both caches are shared between the UI-thread loadCover hook and the parser
 // thumbnail callback, so every access happens under coverCacheMutex. The lock
 // is only ever held for map operations, never across archive scans, PNG
 // decoding, or calls back into Qt or firmware code.
-static QHash<QString, CoverScanEntry> coverScanCache;
-static QHash<QString, RenderedCoverEntry> renderedCoverCache;
-static quint64 renderedCoverSequence = 0;
-static QHash<QString, CleanCoverEntry> cleanCoverCache;
-static quint64 cleanCoverSequence = 0;
-static QMutex coverCacheMutex;
-static QTimer* hookTimer = nullptr;
-static bool coverPickerPending = false;
-static bool coverTitlePending = false;
-static bool coverHooksReady = false;
-static bool coverGridHookReady = false;
-static bool pageManagerHooksReady = false;
-static bool layerHooksReady = false;
-static bool layerPreviewApisReady = false;
-static bool eraserSizeApisReady = false;
-static bool eraserSizeMenuHooksReady = false;
-static bool notebookLifecycleHooksReady = false;
-static QMutex customAssetExclusionTraceMutex;
-static bool customAssetExclusionObserved = false;
-static bool customAssetBackingFilePreserved = false;
-static QMutex eraserSizeSettingsMutex;
-static bool eraserSizeSettingsLoaded = false;
-static int eraserSizeIndex = 2;
-// Native tool-menu controllers are QObjects on Nickel's UI thread. QPointer
-// lets the hardware-eraser hook update an open popup without retaining it or
-// touching a controller after the menu has been destroyed.
-static QPointer<QObject> liveEraserSizeController;
-
 static char const kManifest[] = "/mnt/onboard/.kobo/custom/templates/templates.json";
 static char const kTemplateRoot[] = "/mnt/onboard/.kobo/custom/templates/";
 static char const kCoverRoot[] = "/mnt/onboard/.kobo/custom/covers/";

@@ -182,7 +182,7 @@ static bool loadManifest() {
     for (int i = 0; i < parsed.size(); ++i) {
         CustomTemplate const& value = parsed.at(i);
         firmwareApi().rendererMap->insert(value.id, value.backgroundBase);
-        customTemplates.append(value);
+        templateState().customTemplates.append(value);
         nh_log("loaded custom notebook template '%s' as '%s'",
             qPrintable(value.id), qPrintable(value.label));
     }
@@ -197,7 +197,7 @@ static void loadAutomaticTemplates() {
         QDir::Name | QDir::IgnoreCase);
 
     for (int i = 0; i < files.size(); ++i) {
-        if (customTemplates.size() >= kMaximumCustomTemplates) {
+        if (templateState().customTemplates.size() >= kMaximumCustomTemplates) {
             trace("automatic: template limit reached");
             break;
         }
@@ -245,7 +245,7 @@ static void loadAutomaticTemplates() {
         }
 
         firmwareApi().rendererMap->insert(id, sourcePath);
-        customTemplates.append(CustomTemplate{id, label, iconPath, sourcePath});
+        templateState().customTemplates.append(CustomTemplate{id, label, iconPath, sourcePath});
         trace("automatic: PNG template loaded");
         nh_log("automatically loaded notebook template '%s' as '%s'",
             qPrintable(info.fileName()), qPrintable(label));

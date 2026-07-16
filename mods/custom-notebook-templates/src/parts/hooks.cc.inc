@@ -26,9 +26,9 @@ void _cnt_remove_common_book_data_hook(
         removeBackingFile = false;
         bool shouldTrace = false;
         {
-            QMutexLocker locker(&customAssetExclusionTraceMutex);
-            if (!customAssetBackingFilePreserved) {
-                customAssetBackingFilePreserved = true;
+            QMutexLocker locker(&visibilityState().traceMutex);
+            if (!visibilityState().backingFilePreserved) {
+                visibilityState().backingFilePreserved = true;
                 shouldTrace = true;
             }
         }
@@ -60,9 +60,9 @@ QString _cnt_exclude_sync_folders_hook(void* featureSettings) {
     // PLT/GOT seam. Avoid logging every recursive directory visit.
     bool shouldTrace = false;
     {
-        QMutexLocker locker(&customAssetExclusionTraceMutex);
-        if (!customAssetExclusionObserved) {
-            customAssetExclusionObserved = true;
+        QMutexLocker locker(&visibilityState().traceMutex);
+        if (!visibilityState().exclusionObserved) {
+            visibilityState().exclusionObserved = true;
             shouldTrace = true;
         }
     }
@@ -77,19 +77,19 @@ QVector<BackgroundOption> _cnt_background_options_hook() {
     trace("backgroundOptions hook invoked");
     QVector<BackgroundOption> options = firmwareApi().backgroundOptionsOriginal();
 
-    if (coverPickerPending) {
-        coverPickerPending = false;
+    if (coverState().pickerPending) {
+        coverState().pickerPending = false;
         options.clear();
-        for (int i = 0; i < customCovers.size(); ++i) {
-            CustomTemplate const& value = customCovers.at(i);
+        for (int i = 0; i < coverState().customCovers.size(); ++i) {
+            CustomTemplate const& value = coverState().customCovers.at(i);
             options.append(BackgroundOption(value.id, value.icon, value.label));
         }
         trace("backgroundOptions hook returned cover-only rows");
         return options;
     }
 
-    for (int i = 0; i < customTemplates.size(); ++i) {
-        CustomTemplate const& value = customTemplates.at(i);
+    for (int i = 0; i < templateState().customTemplates.size(); ++i) {
+        CustomTemplate const& value = templateState().customTemplates.at(i);
         options.append(BackgroundOption(value.id, value.icon, value.label));
     }
     trace("backgroundOptions hook appended custom rows");
@@ -100,10 +100,10 @@ extern "C" __attribute__((visibility("default")))
 void _cnt_set_dialog_title_hook(void* dialog, QString const& title) {
     if (!firmwareApi().setDialogTitleOriginal)
         return;
-    if (coverHooksReady
-            && coverTitlePending
+    if (coverState().hooksReady
+            && coverState().titlePending
             && title == QLatin1String("Notebook Templates")) {
-        coverTitlePending = false;
+        coverState().titlePending = false;
         firmwareApi().setDialogTitleOriginal(dialog, QLatin1String("Notebook Covers"));
         trace("covers: picker title changed to Notebook Covers");
         return;
@@ -121,9 +121,9 @@ void _cnt_parser_image_parsed_hook(
 
     uintptr_t const caller = reinterpret_cast<uintptr_t>(
         __builtin_return_address(0)) & ~uintptr_t(1);
-    if (!coverHooksReady
+    if (!coverState().hooksReady
             || !firmwareApi().contentGetId
-            || !zipOpen
+            || !zipApi().open
             || !firmwareApi().iinknoteBase
             || caller != firmwareApi().iinknoteBase + kThumbnailCallbackReturnVma) {
         firmwareApi().parserImageParsedOriginal(parser, volume, image);
@@ -160,12 +160,12 @@ void _cnt_volume_load_cover_hook(void* view) {
 
     // Preserve Kobo's normal cache/download/default-cover behavior first.
     firmwareApi().volumeLoadCoverOriginal(view);
-    if (!coverGridHookReady
+    if (!coverState().gridHookReady
             || !view
             || !firmwareApi().contentGetId
             || !firmwareApi().contentGetImageId
             || !firmwareApi().pixmapSetImage
-            || !zipOpen) {
+            || !zipApi().open) {
         return;
     }
 
@@ -212,7 +212,7 @@ void _cnt_tool_menu_constructor_hook(
     if (!firmwareApi().toolMenuConstructorOriginal)
         return;
 
-    bool const exactEraserMenu = eraserSizeMenuHooksReady
+    bool const exactEraserMenu = eraserState().sizeMenuHooksReady
         && controller
         && tools
         && brushSections
@@ -237,7 +237,7 @@ void _cnt_tool_menu_constructor_hook(
     try {
         QObject* const object = reinterpret_cast<QObject*>(controller);
         object->setProperty("_cnt_eraser_size_controller", true);
-        liveEraserSizeController = object;
+        eraserState().liveSizeController = object;
         int const index = configuredEraserSizeIndex();
         // Seed before onToolButtonTapped invokes virtual loadView immediately
         // after this constructor returns. The empty button vector is handled
@@ -260,7 +260,7 @@ void _cnt_create_brush_size_row_hook(
     if (!firmwareApi().createBrushSizeRowOriginal)
         return;
     bool marked = false;
-    if (eraserSizeMenuHooksReady && controller) {
+    if (eraserState().sizeMenuHooksReady && controller) {
         marked = reinterpret_cast<QObject*>(controller)
             ->property("_cnt_eraser_size_controller").toBool();
     }
@@ -302,7 +302,7 @@ void _cnt_set_brush_size_index_hook(void* controller, int index) {
     // Preserve every stock theme/button update first, including unknown future
     // callers. Only the two pinned firmware callsites below have plugin work.
     firmwareApi().setBrushSizeIndexOriginal(controller, index);
-    if (!eraserSizeMenuHooksReady || !controller
+    if (!eraserState().sizeMenuHooksReady || !controller
             || !validEraserSizeIndex(index)
             || !reinterpret_cast<QObject*>(controller)
                 ->property("_cnt_eraser_size_controller").toBool()
@@ -345,7 +345,7 @@ void _cnt_set_active_tool_hook(void* widget, int tool) {
     // that path. The user's configured size remains authoritative: replay it
     // after stock activation, then mirror the same index into any open popup.
     // Nothing here persists; only an explicit five-button tap writes JSON.
-    if (!eraserSizeMenuHooksReady || !widget || !firmwareApi().iinknoteBase
+    if (!eraserState().sizeMenuHooksReady || !widget || !firmwareApi().iinknoteBase
             || caller != firmwareApi().iinknoteBase
                 + kHardwareEraserSetActiveToolReturnVma
             || (tool != 1 && tool != 2)
@@ -358,7 +358,7 @@ void _cnt_set_active_tool_hook(void* widget, int tool) {
         bool const engineUpdated = applyConfiguredEraserSizeForWidget(
             reinterpret_cast<QObject*>(widget), "hardware-eraser");
         bool uiUpdated = false;
-        QObject* const controller = liveEraserSizeController.data();
+        QObject* const controller = eraserState().liveSizeController.data();
         if (engineUpdated && controller && firmwareApi().setBrushSizeIndexOriginal
                 && findNotebookWidget(controller)
                     == reinterpret_cast<QObject*>(widget)
@@ -394,20 +394,20 @@ void _cnt_render_volume_hook(void* widget, void const* volume) {
     // caller reaches this symbol through the PLT, so running after the original
     // is the first hookable point where all three identities are coherent.
     firmwareApi().renderVolumeOriginal(widget, volume);
-    if (!notebookLifecycleHooksReady || !widget)
+    if (!hookState().notebookLifecycleHooksReady || !widget)
         return;
 
     QObject* const object = reinterpret_cast<QObject*>(widget);
     if (!isNotebookWidget(object))
         return;
-    if (eraserSizeApisReady) {
+    if (eraserState().sizeApisReady) {
         try {
             applyConfiguredEraserSizeForWidget(object, "notebook-open");
         } catch (...) {
             trace("eraser-size: notebook-open replay threw; stock radius preserved");
         }
     }
-    if (!layerHooksReady)
+    if (!layerState().hooksReady)
         return;
 
     try {
@@ -438,20 +438,20 @@ void _cnt_set_tool_theme_hook(void* widget, void* theme) {
     if (!firmwareApi().setToolThemeOriginal)
         return;
     firmwareApi().setToolThemeOriginal(widget, theme);
-    if (!notebookLifecycleHooksReady || !widget)
+    if (!hookState().notebookLifecycleHooksReady || !widget)
         return;
 
     QObject* const object = reinterpret_cast<QObject*>(widget);
     if (!isNotebookWidget(object))
         return;
-    if (eraserSizeApisReady) {
+    if (eraserState().sizeApisReady) {
         try {
             applyConfiguredEraserSizeForWidget(object, "tool-theme");
         } catch (...) {
             trace("eraser-size: tool-theme replay threw; stock radius preserved");
         }
     }
-    if (!layerHooksReady)
+    if (!layerState().hooksReady)
         return;
     trace("layers: setToolTheme hook invoked for notebook");
     LayerContext context;
@@ -491,7 +491,7 @@ void _cnt_add_widget_action_hook(
         controller, menu, widget, receiver, member,
         closesMenu, enabled, separatorAfter);
 
-    if ((!coverHooksReady && !pageManagerHooksReady && !layerHooksReady)
+    if ((!coverState().hooksReady && !pageState().hooksReady && !layerState().hooksReady)
             || !controller
             || !menu
             || !firmwareApi().iinknoteBase
@@ -505,7 +505,7 @@ void _cnt_add_widget_action_hook(
     QObject* const controllerObject = reinterpret_cast<QObject*>(controller);
     QPixmap noIcon;
 
-    if (coverHooksReady && !customCovers.isEmpty()) {
+    if (coverState().hooksReady && !coverState().customCovers.isEmpty()) {
         CoverMenuReceiver* const coverReceiver = new CoverMenuReceiver(
             controllerObject, menu);
         QObject::connect(
@@ -539,7 +539,7 @@ void _cnt_add_widget_action_hook(
         }
     }
 
-    if (layerHooksReady) {
+    if (layerState().hooksReady) {
         CoverMenuReceiver* const layerReceiver = new CoverMenuReceiver(
             controllerObject, menu);
         QObject::connect(
@@ -572,7 +572,7 @@ void _cnt_add_widget_action_hook(
         }
     }
 
-    if (pageManagerHooksReady) {
+    if (pageState().hooksReady) {
         CoverMenuReceiver* const pageReceiver = new CoverMenuReceiver(
             controllerObject, menu);
         QObject::connect(

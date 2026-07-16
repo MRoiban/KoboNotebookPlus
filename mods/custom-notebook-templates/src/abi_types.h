@@ -53,6 +53,13 @@ struct CleanCoverEntry {
     quint64 sequence;
 };
 
+struct LayerPreviewCardCacheEntry {
+    QImage image;
+    qint64 modifiedMs;
+    qint64 size;
+    quint64 sequence;
+};
+
 // ABI-only declarations for MyScript objects. Most come from libiink-owned
 // shared_ptr control blocks. Layer preview export additionally constructs the
 // stock UI-reference ImagePainter and stock BackendImageDrawer through their

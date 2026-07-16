@@ -7,7 +7,7 @@ static void loadAutomaticCovers() {
         QDir::Name | QDir::IgnoreCase);
 
     for (int i = 0; i < files.size(); ++i) {
-        if (customCovers.size() >= kMaximumCustomCovers) {
+        if (coverState().customCovers.size() >= kMaximumCustomCovers) {
             trace("covers: cover limit reached");
             break;
         }
@@ -52,7 +52,7 @@ static void loadAutomaticCovers() {
         }
 
         firmwareApi().rendererMap->insert(id, sourcePath);
-        customCovers.append(CustomTemplate{id, label, iconPath, sourcePath});
+        coverState().customCovers.append(CustomTemplate{id, label, iconPath, sourcePath});
         trace("covers: PNG cover loaded");
         nh_log("automatically loaded notebook cover '%s' as '%s'",
             qPrintable(info.fileName()), qPrintable(label));

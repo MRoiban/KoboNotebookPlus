@@ -46,10 +46,10 @@ static bool layerGuardedDiagramPenDown(
 
     std::string desired;
     {
-        QMutexLocker locker(&desiredDiagramPenLayersMutex);
+        QMutexLocker locker(&layerState().desiredDiagramPenLayersMutex);
         std::map<void*, std::string>::const_iterator const it =
-            desiredDiagramPenLayers.find(pen);
-        if (it != desiredDiagramPenLayers.end())
+            layerState().desiredDiagramPenLayers.find(pen);
+        if (it != layerState().desiredDiagramPenLayers.end())
             desired = it->second;
     }
 
@@ -66,8 +66,8 @@ static bool layerGuardedDiagramPenDown(
         trace("layers: diagram pen-down layer guard threw; stock pen-down preserved");
     }
 
-    if (layerGuardedDiagramPenTraceBudget > 0) {
-        --layerGuardedDiagramPenTraceBudget;
+    if (layerState().diagramPenTraceBudget > 0) {
+        --layerState().diagramPenTraceBudget;
         trace(QLatin1String("layers: diagram pen-down layer guard desired=")
             + QString::fromUtf8(
                 desired.data(), static_cast<int>(desired.size()))
@@ -82,13 +82,13 @@ static bool layerGuardedDiagramPenDown(
 }
 
 static bool initializeLayerGuardedDiagramPenVtable() {
-    if (layerGuardedDiagramPenVtableReady)
+    if (layerState().diagramPenVtableReady)
         return true;
     if (!firmwareApi().diagramPenVtable)
         return false;
 
     memcpy(
-        layerGuardedDiagramPenVtable,
+        layerState().diagramPenVtable,
         firmwareApi().diagramPenVtable,
         kDiagramPenVtableWords * sizeof(void*));
     size_t const slot = 2
@@ -100,7 +100,7 @@ static bool initializeLayerGuardedDiagramPenVtable() {
         void* pointer;
         DiagramPenPenDownFn function;
     } original;
-    original.pointer = layerGuardedDiagramPenVtable[slot];
+    original.pointer = layerState().diagramPenVtable[slot];
     if (!pointerMatchesVma(original.pointer, kDiagramPenPenDownVma)) {
         trace("layers: diagram pen vtable clone rejected unexpected penDown slot");
         return false;
@@ -112,8 +112,8 @@ static bool initializeLayerGuardedDiagramPenVtable() {
         DiagramPenPenDownFn function;
     } replacement;
     replacement.function = layerGuardedDiagramPenDown;
-    layerGuardedDiagramPenVtable[slot] = replacement.pointer;
-    layerGuardedDiagramPenVtableReady = true;
+    layerState().diagramPenVtable[slot] = replacement.pointer;
+    layerState().diagramPenVtableReady = true;
     trace("layers: diagram pen-down layer guard vtable clone verified");
     return true;
 }
@@ -123,9 +123,9 @@ static bool isExactOrLayerGuardedDiagramPen(void* tool) {
         return false;
     void* const vptr = *reinterpret_cast<void**>(tool);
     return vptr == static_cast<char*>(firmwareApi().diagramPenVtable) + 8
-        || (layerGuardedDiagramPenVtableReady
+        || (layerState().diagramPenVtableReady
             && vptr == static_cast<void*>(
-                layerGuardedDiagramPenVtable + 2));
+                layerState().diagramPenVtable + 2));
 }
 
 static bool armLayerGuardedDiagramPen(
@@ -138,13 +138,13 @@ static bool armLayerGuardedDiagramPen(
     void* const stockVptr = static_cast<char*>(firmwareApi().diagramPenVtable) + 8;
     if (*reinterpret_cast<void**>(pen) == stockVptr) {
         *reinterpret_cast<void**>(pen) = static_cast<void*>(
-            layerGuardedDiagramPenVtable + 2);
+            layerState().diagramPenVtable + 2);
     }
     {
-        QMutexLocker locker(&desiredDiagramPenLayersMutex);
-        desiredDiagramPenLayers[pen] = layerId;
+        QMutexLocker locker(&layerState().desiredDiagramPenLayersMutex);
+        layerState().desiredDiagramPenLayers[pen] = layerId;
     }
-    layerGuardedDiagramPenTraceBudget = 8;
+    layerState().diagramPenTraceBudget = 8;
     return restrictToolToLayer(pen, layerId);
 }
 
@@ -192,8 +192,8 @@ static void filterLayerAwareEraserSelection(
         bool const emptyBefore = firmwareApi().selectionIsEmpty(result);
         firmwareApi().selectionSelectLayer(result, activeLayer, kSelectionModeIntersect);
         bool const emptyAfter = firmwareApi().selectionIsEmpty(result);
-        if (layerAwareEraserTraceBudget > 0) {
-            --layerAwareEraserTraceBudget;
+        if (layerState().eraserTraceBudget > 0) {
+            --layerState().eraserTraceBudget;
             trace(QLatin1String(
                 "layers: eraser selection intersected active layer id=")
                 + QString::fromUtf8(
@@ -209,8 +209,8 @@ static void filterLayerAwareEraserSelection(
         }
     } catch (...) {
         clearLayerAwareEraserSelection(result);
-        if (layerAwareEraserTraceBudget > 0) {
-            --layerAwareEraserTraceBudget;
+        if (layerState().eraserTraceBudget > 0) {
+            --layerState().eraserTraceBudget;
             trace(QLatin1String(
                 "layers: eraser layer intersection failed closed implementation=")
                 + QLatin1String(implementation));
@@ -329,8 +329,8 @@ static void* layerAwareDiagramEraserSelectionFromPoints(
             geometryEmpty = firmwareApi().selectionIsEmpty(result);
         }
 
-        if (layerAwareEraserTraceBudget > 0) {
-            --layerAwareEraserTraceBudget;
+        if (layerState().eraserTraceBudget > 0) {
+            --layerState().eraserTraceBudget;
             trace(QLatin1String(
                 "layers: diagram eraser layer-first selection id=")
                 + QString::fromUtf8(
@@ -354,8 +354,8 @@ static void* layerAwareDiagramEraserSelectionFromPoints(
         }
     } catch (...) {
         clearLayerAwareEraserSelection(result);
-        if (layerAwareEraserTraceBudget > 0) {
-            --layerAwareEraserTraceBudget;
+        if (layerState().eraserTraceBudget > 0) {
+            --layerState().eraserTraceBudget;
             trace(QLatin1String(
                 "layers: diagram eraser layer-first selection failed closed"));
         }
@@ -408,8 +408,8 @@ static uint32_t layerAwareDiagramEraserUpdateSelection(
             }
         }
     } catch (...) {
-        if (layerAwareDiagramEraserObserverTraceBudget > 0) {
-            --layerAwareDiagramEraserObserverTraceBudget;
+        if (layerState().diagramEraserObserverTraceBudget > 0) {
+            --layerState().diagramEraserObserverTraceBudget;
             trace(QLatin1String(
                 "layers: diagram eraser routing inspection failed; stock update preserved"));
         }
@@ -435,8 +435,8 @@ static uint32_t layerAwareDiagramEraserUpdateSelection(
             committedBeforeEmpty = -1;
         }
     }
-    if (layerAwareDiagramEraserObserverTraceBudget > 0) {
-        --layerAwareDiagramEraserObserverTraceBudget;
+    if (layerState().diagramEraserObserverTraceBudget > 0) {
+        --layerState().diagramEraserObserverTraceBudget;
         trace(QLatin1String("layers: diagram eraser core-only enter id=")
             + QString::fromUtf8(
                 activeLayer.data(), static_cast<int>(activeLayer.size()))
@@ -455,16 +455,16 @@ static uint32_t layerAwareDiagramEraserUpdateSelection(
                     + kEraserFinalSelectionOffset) ? 1 : 0;
         }
     } catch (...) {
-        if (layerAwareDiagramEraserObserverTraceBudget > 0) {
-            --layerAwareDiagramEraserObserverTraceBudget;
+        if (layerState().diagramEraserObserverTraceBudget > 0) {
+            --layerState().diagramEraserObserverTraceBudget;
             trace(QLatin1String(
                 "layers: diagram eraser core-only update threw; failed closed"));
         }
         return 0;
     }
 
-    if (layerAwareDiagramEraserObserverTraceBudget > 0) {
-        --layerAwareDiagramEraserObserverTraceBudget;
+    if (layerState().diagramEraserObserverTraceBudget > 0) {
+        --layerState().diagramEraserObserverTraceBudget;
         trace(QLatin1String("layers: diagram eraser core-only exit id=")
             + QString::fromUtf8(
                 activeLayer.data(), static_cast<int>(activeLayer.size()))
@@ -495,8 +495,8 @@ static int32_t layerAwareDiagramEraserEraseSelection(void* eraser) {
         activeLayer = restrictedToolLayer(eraser);
     } catch (...) {}
 
-    if (layerAwareDiagramEraserObserverTraceBudget > 0) {
-        --layerAwareDiagramEraserObserverTraceBudget;
+    if (layerState().diagramEraserObserverTraceBudget > 0) {
+        --layerState().diagramEraserObserverTraceBudget;
         trace(QLatin1String("layers: diagram eraser remove enter id=")
             + QString::fromUtf8(
                 activeLayer.data(), static_cast<int>(activeLayer.size()))
@@ -514,8 +514,8 @@ static int32_t layerAwareDiagramEraserEraseSelection(void* eraser) {
                     + kEraserFinalSelectionOffset) ? 1 : 0;
         }
     } catch (...) {}
-    if (layerAwareDiagramEraserObserverTraceBudget > 0) {
-        --layerAwareDiagramEraserObserverTraceBudget;
+    if (layerState().diagramEraserObserverTraceBudget > 0) {
+        --layerState().diagramEraserObserverTraceBudget;
         trace(QLatin1String("layers: diagram eraser remove exit id=")
             + QString::fromUtf8(
                 activeLayer.data(), static_cast<int>(activeLayer.size()))
@@ -532,9 +532,9 @@ static int32_t layerAwareDiagramEraserEraseSelection(void* eraser) {
 // verified first. Both stock slots are validated before either is replaced,
 // so the object vptr is never published with a partial downstream clone.
 static bool installLayerAwareDiagramEraserUpdateHook() {
-    if (layerAwareDiagramEraserObserversReady)
+    if (layerState().diagramEraserObserversReady)
         return true;
-    if (!layerAwareDiagramEraserVtableReady || !firmwareApi().coreEraserUpdateSelection)
+    if (!layerState().diagramEraserVtableReady || !firmwareApi().coreEraserUpdateSelection)
         return false;
 
     size_t const updateSlot = 2
@@ -549,7 +549,7 @@ static bool installLayerAwareDiagramEraserUpdateHook() {
         void* pointer;
         DiagramEraserUpdateSelectionFn function;
     } originalUpdate;
-    originalUpdate.pointer = layerAwareDiagramEraserVtable[updateSlot];
+    originalUpdate.pointer = layerState().diagramEraserVtable[updateSlot];
     if (!pointerMatchesVma(
             originalUpdate.pointer, kDiagramEraserUpdateSelectionVma)) {
         trace(QLatin1String(
@@ -561,7 +561,7 @@ static bool installLayerAwareDiagramEraserUpdateHook() {
         void* pointer;
         DiagramEraserEraseSelectionFn function;
     } originalErase;
-    originalErase.pointer = layerAwareDiagramEraserVtable[eraseSlot];
+    originalErase.pointer = layerState().diagramEraserVtable[eraseSlot];
     if (!pointerMatchesVma(
             originalErase.pointer, kDiagramEraserEraseSelectionVma)) {
         trace(QLatin1String(
@@ -582,9 +582,9 @@ static bool installLayerAwareDiagramEraserUpdateHook() {
 
     firmwareApi().diagramEraserUpdateSelectionOriginal = originalUpdate.function;
     firmwareApi().diagramEraserEraseSelectionOriginal = originalErase.function;
-    layerAwareDiagramEraserVtable[updateSlot] = replacementUpdate.pointer;
-    layerAwareDiagramEraserVtable[eraseSlot] = replacementErase.pointer;
-    layerAwareDiagramEraserObserversReady = true;
+    layerState().diagramEraserVtable[updateSlot] = replacementUpdate.pointer;
+    layerState().diagramEraserVtable[eraseSlot] = replacementErase.pointer;
+    layerState().diagramEraserObserversReady = true;
     trace(QLatin1String(
         "layers: diagram eraser core-only update and remove observer installed"));
     return true;
@@ -651,23 +651,23 @@ static ConcreteDrawingEraserKind concreteDrawingEraserKind(void* tool) {
     void* const vptr = *reinterpret_cast<void**>(tool);
     if (firmwareApi().drawingEraserVtable
             && (vptr == static_cast<char*>(firmwareApi().drawingEraserVtable) + 8
-                || (layerAwareDrawingEraserVtableReady
+                || (layerState().drawingEraserVtableReady
                     && vptr == static_cast<void*>(
-                        layerAwareDrawingEraserVtable + 2)))) {
+                        layerState().drawingEraserVtable + 2)))) {
         return kSntDrawingEraser;
     }
     if (firmwareApi().plainDrawingEraserVtable
             && (vptr == static_cast<char*>(firmwareApi().plainDrawingEraserVtable) + 8
-                || (layerAwarePlainDrawingEraserVtableReady
+                || (layerState().plainDrawingEraserVtableReady
                     && vptr == static_cast<void*>(
-                        layerAwarePlainDrawingEraserVtable + 2)))) {
+                        layerState().plainDrawingEraserVtable + 2)))) {
         return kPlainDrawingEraser;
     }
     if (firmwareApi().diagramEraserVtable
             && (vptr == static_cast<char*>(firmwareApi().diagramEraserVtable) + 8
-                || (layerAwareDiagramEraserVtableReady
+                || (layerState().diagramEraserVtableReady
                     && vptr == static_cast<void*>(
-                        layerAwareDiagramEraserVtable + 2)))) {
+                        layerState().diagramEraserVtable + 2)))) {
         return kDiagramEraser;
     }
     return kNotDrawingEraser;
@@ -765,7 +765,7 @@ static bool applyRadiusToExactEraser(
 static bool applyConfiguredEraserSizeForWidget(
     QObject* widgetObject,
     char const* reason) {
-    if (!eraserSizeApisReady || !widgetObject
+    if (!eraserState().sizeApisReady || !widgetObject
             || !isNotebookWidget(widgetObject)) {
         return false;
     }
@@ -941,16 +941,16 @@ static bool armLayerAwareDrawingEraser(
     char const* implementation = nullptr;
     if (kind == kSntDrawingEraser) {
         stockVtable = firmwareApi().drawingEraserVtable;
-        layerVtable = layerAwareDrawingEraserVtable;
-        ready = &layerAwareDrawingEraserVtableReady;
+        layerVtable = layerState().drawingEraserVtable;
+        ready = &layerState().drawingEraserVtableReady;
         original = &firmwareApi().drawingEraserSelectionFromPointsOriginal;
         replacement = layerAwareDrawingEraserSelectionFromPoints;
         expectedSelectionVma = kDrawingEraserSelectionFromPointsVma;
         implementation = "snt";
     } else if (kind == kPlainDrawingEraser) {
         stockVtable = firmwareApi().plainDrawingEraserVtable;
-        layerVtable = layerAwarePlainDrawingEraserVtable;
-        ready = &layerAwarePlainDrawingEraserVtableReady;
+        layerVtable = layerState().plainDrawingEraserVtable;
+        ready = &layerState().plainDrawingEraserVtableReady;
         original = &firmwareApi().plainDrawingEraserSelectionFromPointsOriginal;
         replacement = layerAwarePlainDrawingEraserSelectionFromPoints;
         expectedSelectionVma = kPlainDrawingEraserSelectionFromPointsVma;
@@ -959,8 +959,8 @@ static bool armLayerAwareDrawingEraser(
         if (!firmwareApi().selectionSelectPolygon || !firmwareApi().eraserStrokerPolygon)
             return false;
         stockVtable = firmwareApi().diagramEraserVtable;
-        layerVtable = layerAwareDiagramEraserVtable;
-        ready = &layerAwareDiagramEraserVtableReady;
+        layerVtable = layerState().diagramEraserVtable;
+        ready = &layerState().diagramEraserVtableReady;
         original = &firmwareApi().diagramEraserSelectionFromPointsOriginal;
         replacement = layerAwareDiagramEraserSelectionFromPoints;
         expectedSelectionVma = kCoreEraserSelectionFromPointsVma;
@@ -991,7 +991,7 @@ static bool armLayerAwareDrawingEraser(
                 "layers: diagram eraser custom-layer core-only hook unavailable"));
             return false;
         }
-        layerAwareDiagramEraserObserverTraceBudget = 60;
+        layerState().diagramEraserObserverTraceBudget = 60;
     }
     if (currentVptr == stockVptr)
         *reinterpret_cast<void**>(tool) = layerVptr;
@@ -1137,7 +1137,7 @@ static bool armLayerAwareDrawingErasers(
     }
 
     if (armedCount > 0)
-        layerAwareEraserTraceBudget = 8;
+        layerState().eraserTraceBudget = 8;
     bool const diagramRoutingReady = diagramEraserCount == 0
         || diagramPenRestrictedCount > 0;
     trace(QLatin1String("layers: eraser adapters backends=")

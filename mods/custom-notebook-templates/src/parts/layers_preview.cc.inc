@@ -355,7 +355,7 @@ static bool generateLayerPreview(
     LayerContext const& context,
     QString const& id,
     QString* error) {
-    if (!layerPreviewApisReady || !firmwareApi().rendererRestrictToLayers
+    if (!layerState().previewApisReady || !firmwareApi().rendererRestrictToLayers
             || !firmwareApi().pageControllerExportToPng || !firmwareApi().stockBackendImageDrawerExport) {
         if (error) {
             *error = QLatin1String(
@@ -512,7 +512,7 @@ static bool generateLayerPreview(
     // FAT timestamps are coarse and two tiny PNGs can occasionally have the
     // same byte count. Explicit eviction guarantees the just-written card is
     // decoded once instead of reusing an indistinguishable old memory entry.
-    layerPreviewCardCache.remove(finalPath);
+    layerState().previewCardCache.remove(finalPath);
     return true;
 }
 
@@ -526,17 +526,17 @@ static bool readLayerPreviewCard(
     QFileInfo const cached(path);
     qint64 const modifiedMs = cached.lastModified().toMSecsSinceEpoch();
     QHash<QString, LayerPreviewCardCacheEntry>::iterator found =
-        layerPreviewCardCache.find(path);
-    if (found != layerPreviewCardCache.end()
+        layerState().previewCardCache.find(path);
+    if (found != layerState().previewCardCache.end()
             && found->modifiedMs == modifiedMs
             && found->size == cached.size()
             && !found->image.isNull()) {
-        found->sequence = ++layerPreviewCardCacheSequence;
+        found->sequence = ++layerState().previewCardCacheSequence;
         *result = found->image;
         return true;
     }
-    if (found != layerPreviewCardCache.end())
-        layerPreviewCardCache.erase(found);
+    if (found != layerState().previewCardCache.end())
+        layerState().previewCardCache.erase(found);
 
     QImageReader reader(path);
     QSize const decodedSize = reader.size();
@@ -562,24 +562,25 @@ static bool readLayerPreviewCard(
     if (image.isNull())
         return false;
 
-    if (layerPreviewCardCache.size() >= kMaximumLayerPreviewCardCacheEntries) {
+    if (layerState().previewCardCache.size()
+            >= kMaximumLayerPreviewCardCacheEntries) {
         QHash<QString, LayerPreviewCardCacheEntry>::iterator oldest =
-            layerPreviewCardCache.begin();
+            layerState().previewCardCache.begin();
         for (QHash<QString, LayerPreviewCardCacheEntry>::iterator it =
-                 layerPreviewCardCache.begin();
-                it != layerPreviewCardCache.end(); ++it) {
+                 layerState().previewCardCache.begin();
+                it != layerState().previewCardCache.end(); ++it) {
             if (it->sequence < oldest->sequence)
                 oldest = it;
         }
-        if (oldest != layerPreviewCardCache.end())
-            layerPreviewCardCache.erase(oldest);
+        if (oldest != layerState().previewCardCache.end())
+            layerState().previewCardCache.erase(oldest);
     }
     LayerPreviewCardCacheEntry entry;
     entry.image = image;
     entry.modifiedMs = modifiedMs;
     entry.size = cached.size();
-    entry.sequence = ++layerPreviewCardCacheSequence;
-    layerPreviewCardCache.insert(path, entry);
+    entry.sequence = ++layerState().previewCardCacheSequence;
+    layerState().previewCardCache.insert(path, entry);
     *result = image;
     return true;
 }
@@ -805,7 +806,7 @@ static bool deleteActiveNotebookLayer(LayerContext* context, QString* error) {
     trace("layers: widget save complete after native delete");
     traceSerializedLayerProbe(context->state, deletedId, "after-delete-save");
     QFile::remove(previewPath);
-    layerPreviewCardCache.remove(previewPath);
+    layerState().previewCardCache.remove(previewPath);
     firmwareApi().widgetRefresh(context->widget);
     trace("layers: active native layer deleted");
     return true;
@@ -969,7 +970,7 @@ static void startDeferredLayerPreviewRefresh(
     LayerContext const& context,
     QMenu* popup,
     QVector<DeferredLayerPreviewRow> const& rows) {
-    if (!popup || rows.isEmpty() || !layerPreviewApisReady) {
+    if (!popup || rows.isEmpty() || !layerState().previewApisReady) {
         trace(QLatin1String("layers: deferred popup preview refresh queued=0"));
         return;
     }

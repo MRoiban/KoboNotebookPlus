@@ -1,7 +1,7 @@
 #line 7204 "src/customnotebooktemplates.cc"
 
 static bool installEraserSizeMenuHooks(void* handle) {
-    if (!handle || !eraserSizeApisReady)
+    if (!handle || !eraserState().sizeApisReady)
         return false;
 
     // Resolve every pass-through before mutating any GOT entry. A partial
@@ -74,7 +74,7 @@ static bool installEraserSizeMenuHooks(void* handle) {
     }
     firmwareApi().toolMenuConstructorOriginal =
         reinterpret_cast<ToolMenuConstructor>(originalConstructor);
-    eraserSizeMenuHooksReady = true;
+    eraserState().sizeMenuHooksReady = true;
     trace("eraser-size: stock five-button eraser row hooks installed");
     return true;
 }

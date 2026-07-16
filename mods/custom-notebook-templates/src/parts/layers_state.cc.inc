@@ -37,18 +37,8 @@ struct LayerState {
     QVector<LayerRecord> customLayers;
 };
 
-struct LayerPreviewCardCacheEntry {
-    QImage image;
-    qint64 modifiedMs;
-    qint64 size;
-    quint64 sequence;
-};
-
 // Layer popup construction is GUI-thread-only. Cache the already scaled card
 // images so repeatedly opening the native menu does not decode every PNG again.
-static QHash<QString, LayerPreviewCardCacheEntry> layerPreviewCardCache;
-static quint64 layerPreviewCardCacheSequence = 0;
-
 struct LayerContext {
     QPointer<QObject> widgetObject;
     void* widget;
@@ -370,7 +360,7 @@ static bool loadLayerContext(
     QObject* controller,
     LayerContext* context,
     QString* error) {
-    if (!layerHooksReady || !context) {
+    if (!layerState().hooksReady || !context) {
         if (error)
             *error = QLatin1String("Layers unavailable: firmware APIs are not ready.");
         return false;

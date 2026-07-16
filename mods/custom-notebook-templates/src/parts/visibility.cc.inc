@@ -1,11 +1,11 @@
 #line 7088 "src/customnotebooktemplates.cc"
 
 static void stopHookTimer() {
-    if (!hookTimer)
+    if (!hookState().timer)
         return;
-    hookTimer->stop();
-    hookTimer->deleteLater();
-    hookTimer = nullptr;
+    hookState().timer->stop();
+    hookState().timer->deleteLater();
+    hookState().timer = nullptr;
 }
 
 static bool installCustomAssetVisibilityHooks() {
