@@ -424,18 +424,6 @@ static void showLayerPopup(QObject* controller) {
     popup->exec(position);
 }
 
-static void showPageOperationError(void* widget, QString const& error) {
-    trace("pages: operation failed safely");
-    if (firmwareApi().showErrorPopup)
-        firmwareApi().showErrorPopup(widget, error);
-}
-
-enum PageOperation {
-    DuplicatePageOperation,
-    MovePageEarlierOperation,
-    MovePageLaterOperation
-};
-
 class PageOperationActiveGuard {
 public:
     explicit PageOperationActiveGuard(QObject* widgetObject)
@@ -452,7 +440,9 @@ private:
     QPointer<QObject> widgetObject_;
 };
 
-static void runPageOperation(QObject* controller, PageOperation operation) {
+static void runPageOperation(
+        QObject* controller,
+        cnt::page_actions::PageOperation operation) {
     if (!controller)
         return;
     QObject* const widgetObject =
@@ -475,61 +465,11 @@ static void runPageOperation(QObject* controller, PageOperation operation) {
         (void)movePage;
     }
 
-    QString error;
-    try {
-        bool succeeded = false;
-        if (operation == DuplicatePageOperation) {
-            succeeded = cnt::pages::duplicateCurrentPage(
-                firmwareApi(),
-                coverState(),
-                widget,
-                kMaximumNotebookPages,
-                kPageBackupRoot,
-                &error);
-        } else {
-            firmwareApi().widgetSave(widget);
-            cnt::pages::PageContext context;
-            if (!cnt::pages::loadPageContext(
-                    firmwareApi(),
-                    widget,
-                    kMaximumNotebookPages,
-                    &context,
-                    &error)) {
-                showPageOperationError(widget, error);
-                return;
-            }
-
-            int const target = context.index
-                + (operation == MovePageEarlierOperation ? -1 : 1);
-            if (target < 0 || target >= context.count) {
-                if (firmwareApi().showErrorPopup) {
-                    firmwareApi().showErrorPopup(
-                        widget,
-                        operation == MovePageEarlierOperation
-                            ? QLatin1String("This is already the first page.")
-                            : QLatin1String("This is already the last page."));
-                }
-                return;
-            }
-            succeeded = cnt::pages::reorderCurrentPage(
-                firmwareApi(),
-                coverState(),
-                widget,
-                target,
-                kMaximumNotebookPages,
-                kPageBackupRoot,
-                &error);
-        }
-
-        if (!succeeded)
-            showPageOperationError(widget, error);
-    } catch (std::exception const&) {
-        showPageOperationError(
-            widget,
-            QLatin1String("Page operation failed: the notebook engine rejected it."));
-    } catch (...) {
-        showPageOperationError(
-            widget,
-            QLatin1String("Page operation failed: unexpected notebook error."));
-    }
+    cnt::page_actions::runForWidget(
+        firmwareApi(),
+        coverState(),
+        widget,
+        operation,
+        kMaximumNotebookPages,
+        kPageBackupRoot);
 }

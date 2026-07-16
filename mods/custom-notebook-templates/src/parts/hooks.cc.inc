@@ -585,21 +585,27 @@ void _cnt_add_widget_action_hook(
             &CoverMenuReceiver::duplicatePageRequested,
             [](QObject* target) {
                 if (target)
-                    runPageOperation(target, DuplicatePageOperation);
+                    runPageOperation(
+                        target,
+                        cnt::page_actions::DuplicatePageOperation);
             });
         QObject::connect(
             pageReceiver,
             &CoverMenuReceiver::movePageEarlierRequested,
             [](QObject* target) {
                 if (target)
-                    runPageOperation(target, MovePageEarlierOperation);
+                    runPageOperation(
+                        target,
+                        cnt::page_actions::MovePageEarlierOperation);
             });
         QObject::connect(
             pageReceiver,
             &CoverMenuReceiver::movePageLaterRequested,
             [](QObject* target) {
                 if (target)
-                    runPageOperation(target, MovePageLaterOperation);
+                    runPageOperation(
+                        target,
+                        cnt::page_actions::MovePageLaterOperation);
             });
 
         QWidget* const duplicateItem = firmwareApi().createIInkMenuItem(

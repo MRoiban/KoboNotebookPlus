@@ -38,7 +38,7 @@ UMBRELLA_NAME = "customnotebooktemplates.cc"
 EXPECTED_MUTABLE = frozenset(("gPluginState", "info"))
 EXPECTED_MUTEXES = frozenset()
 EXPECTED_IMMUTABLE_COUNT = 273
-EXPECTED_FUNCTION_COUNT = 88
+EXPECTED_FUNCTION_COUNT = 87
 EXPECTED_FRAMEWORK_GLOBALS = ("NickelHook",)
 
 IDENTIFIER = re.compile(r"[A-Za-z_]\w*")
