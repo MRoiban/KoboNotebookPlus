@@ -317,7 +317,7 @@ void _cnt_set_brush_size_index_hook(void* controller, int index) {
     if (clicked)
         settingsStore().persistEraserSizeIndex(index);
 
-    QObject* const widget = findNotebookWidget(
+    QObject* const widget = cnt::notebook_widget::findNotebookWidget(
         reinterpret_cast<QObject*>(controller));
     if (!widget) {
         trace("eraser-size: notebook widget missing from native controller");
@@ -345,7 +345,8 @@ void _cnt_set_active_tool_hook(void* widget, int tool) {
             || caller != firmwareApi().iinknoteBase
                 + kHardwareEraserSetActiveToolReturnVma
             || (tool != 1 && tool != 2)
-            || !isNotebookWidget(reinterpret_cast<QObject*>(widget))) {
+            || !cnt::notebook_widget::isNotebookWidget(
+                reinterpret_cast<QObject*>(widget))) {
         return;
     }
 
@@ -356,7 +357,7 @@ void _cnt_set_active_tool_hook(void* widget, int tool) {
         bool uiUpdated = false;
         QObject* const controller = eraserState().liveSizeController.data();
         if (engineUpdated && controller && firmwareApi().setBrushSizeIndexOriginal
-                && findNotebookWidget(controller)
+                && cnt::notebook_widget::findNotebookWidget(controller)
                     == reinterpret_cast<QObject*>(widget)
                 && controller->property(
                     "_cnt_eraser_size_controller").toBool()) {
@@ -394,7 +395,7 @@ void _cnt_render_volume_hook(void* widget, void const* volume) {
         return;
 
     QObject* const object = reinterpret_cast<QObject*>(widget);
-    if (!isNotebookWidget(object))
+    if (!cnt::notebook_widget::isNotebookWidget(object))
         return;
     if (eraserState().sizeApisReady) {
         try {
@@ -438,7 +439,7 @@ void _cnt_set_tool_theme_hook(void* widget, void* theme) {
         return;
 
     QObject* const object = reinterpret_cast<QObject*>(widget);
-    if (!isNotebookWidget(object))
+    if (!cnt::notebook_widget::isNotebookWidget(object))
         return;
     if (eraserState().sizeApisReady) {
         try {
@@ -509,7 +510,8 @@ void _cnt_add_widget_action_hook(
             &CoverMenuReceiver::coverRequested,
             [](QObject* target) {
                 if (target) {
-                    QObject* const widgetObject = findNotebookWidget(target);
+                    QObject* const widgetObject =
+                        cnt::notebook_widget::findNotebookWidget(target);
                     cnt::cover_editor::beginPicker(
                         firmwareApi(),
                         coverState(),

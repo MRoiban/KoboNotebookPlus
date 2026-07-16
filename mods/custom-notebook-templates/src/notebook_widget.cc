@@ -1,5 +1,9 @@
 #include "notebook_widget.h"
 
+#include <QObject>
+
+#include <cstring>
+
 namespace cnt {
 namespace notebook_widget {
 namespace {
@@ -15,6 +19,31 @@ enum NotePadWidgetOffset {
 };
 
 } // namespace
+
+bool isNotebookWidget(QObject* object) {
+    return object
+        && object->metaObject()
+        && strcmp(object->metaObject()->className(), "IInkNotePadWidget") == 0;
+}
+
+QObject* findNotebookWidget(QObject* controller) {
+    QObject* root = controller;
+    for (QObject* current = controller; current; current = current->parent()) {
+        if (isNotebookWidget(current))
+            return current;
+        root = current;
+    }
+
+    // The menu controller is normally parented directly to the note-pad
+    // widget. Keep a guarded descendant fallback for this pinned firmware's
+    // alternate ownership path.
+    QObjectList const descendants = root->findChildren<QObject*>();
+    for (int i = 0; i < descendants.size(); ++i) {
+        if (isNotebookWidget(descendants.at(i)))
+            return descendants.at(i);
+    }
+    return nullptr;
+}
 
 void* notePadEditor(void* widget) {
     char* const bytes = static_cast<char*>(widget);

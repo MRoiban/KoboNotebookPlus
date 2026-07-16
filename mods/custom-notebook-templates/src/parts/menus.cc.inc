@@ -23,7 +23,8 @@ static void runLayerOperation(
     QString const& id = QString()) {
     if (!controller)
         return;
-    QObject* const widgetObject = findNotebookWidget(controller);
+    QObject* const widgetObject =
+        cnt::notebook_widget::findNotebookWidget(controller);
     if (!widgetObject
             || widgetObject->property("_cnt_layer_operation_active").toBool()) {
         return;
@@ -43,7 +44,8 @@ static void runLayerOperation(
     LayerContext context;
     QString error;
     if (!loadLayerContext(controller, &context, &error)) {
-        QObject* const widgetObject = findNotebookWidget(controller);
+        QObject* const widgetObject =
+            cnt::notebook_widget::findNotebookWidget(controller);
         showLayerError(widgetObject, error);
         return;
     }
@@ -229,7 +231,8 @@ static void showLayerPopup(QObject* controller) {
     LayerContext context;
     QString error;
     if (!loadLayerContext(controller, &context, &error)) {
-        QObject* const widgetObject = findNotebookWidget(controller);
+        QObject* const widgetObject =
+            cnt::notebook_widget::findNotebookWidget(controller);
         showLayerError(widgetObject, error);
         return;
     }
@@ -452,7 +455,8 @@ private:
 static void runPageOperation(QObject* controller, PageOperation operation) {
     if (!controller)
         return;
-    QObject* const widgetObject = findNotebookWidget(controller);
+    QObject* const widgetObject =
+        cnt::notebook_widget::findNotebookWidget(controller);
     if (!widgetObject)
         return;
     if (widgetObject->property("_cnt_page_operation_active").toBool())

@@ -766,7 +766,7 @@ static bool applyConfiguredEraserSizeForWidget(
     QObject* widgetObject,
     char const* reason) {
     if (!eraserState().sizeApisReady || !widgetObject
-            || !isNotebookWidget(widgetObject)) {
+            || !cnt::notebook_widget::isNotebookWidget(widgetObject)) {
         return false;
     }
 

@@ -1,30 +1,5 @@
 #line 3659 "src/customnotebooktemplates.cc"
 
-static bool isNotebookWidget(QObject* object) {
-    return object
-        && object->metaObject()
-        && strcmp(object->metaObject()->className(), "IInkNotePadWidget") == 0;
-}
-
-static QObject* findNotebookWidget(QObject* controller) {
-    QObject* root = controller;
-    for (QObject* current = controller; current; current = current->parent()) {
-        if (isNotebookWidget(current))
-            return current;
-        root = current;
-    }
-
-    // The menu controller is normally parented directly to the note-pad
-    // widget. Keep a guarded descendant fallback for this pinned firmware's
-    // alternate ownership path.
-    QObjectList const descendants = root->findChildren<QObject*>();
-    for (int i = 0; i < descendants.size(); ++i) {
-        if (isNotebookWidget(descendants.at(i)))
-            return descendants.at(i);
-    }
-    return nullptr;
-}
-
 struct LayerRecord {
     QString id;
     QString name;
@@ -365,7 +340,8 @@ static bool loadLayerContext(
             *error = QLatin1String("Layers unavailable: firmware APIs are not ready.");
         return false;
     }
-    QObject* const widgetObject = findNotebookWidget(controller);
+    QObject* const widgetObject =
+        cnt::notebook_widget::findNotebookWidget(controller);
     if (!widgetObject) {
         if (error)
             *error = QLatin1String("Layers unavailable: notebook widget was not found.");
