@@ -1,20 +1,33 @@
-#line 5312 "src/customnotebooktemplates.cc"
+#include "layers_service.h"
 
-static bool applyActiveLayer(
-    LayerContext const& context,
-    QString const& layerId,
-    QString* error) {
-    if (!firmwareApi().editorGetRenderer || !firmwareApi().rendererGetBackend
-            || !firmwareApi().neboBackendVtable || !firmwareApi().pageControllerInputDispatcher
-            || !firmwareApi().platformInputDispatcherGetCurrentTool) {
+#include "firmware_api.h"
+#include "settings.h"
+
+#include <QString>
+
+namespace cnt {
+namespace layers_service {
+
+bool applyActiveLayer(
+        FirmwareApi& firmware,
+        uintptr_t neboBackendPageControllerOffset,
+        ToolRoutingOperations const& operations,
+        layers::LayerContext const& context,
+        QString const& layerId,
+        QString* error) {
+    if (!firmware.editorGetRenderer || !firmware.rendererGetBackend
+            || !firmware.neboBackendVtable || !firmware.pageControllerInputDispatcher
+            || !firmware.platformInputDispatcherGetCurrentTool) {
         if (error)
             *error = QLatin1String("Layer not selected: routing API is unavailable.");
         return false;
     }
 
-    SharedRenderer const renderer = firmwareApi().editorGetRenderer(context.editor);
-    void* const backend = renderer ? firmwareApi().rendererGetBackend(renderer.get()) : nullptr;
-    void* const expectedVptr = static_cast<char*>(firmwareApi().neboBackendVtable) + 8;
+    SharedRenderer const renderer = firmware.editorGetRenderer(context.editor);
+    void* const backend = renderer
+        ? firmware.rendererGetBackend(renderer.get()) : nullptr;
+    void* const expectedVptr =
+        static_cast<char*>(firmware.neboBackendVtable) + 8;
     if (!backend || *reinterpret_cast<void**>(backend) != expectedVptr) {
         if (error) {
             *error = QLatin1String(
@@ -27,7 +40,7 @@ static bool applyActiveLayer(
     // shared_ptr object at +0x14/+0x18. The raw object is sufficient while the
     // renderer/backend shared_ptrs above remain alive.
     void* const pageController = *reinterpret_cast<void**>(
-        static_cast<char*>(backend) + kNeboBackendPageControllerOffset);
+        static_cast<char*>(backend) + neboBackendPageControllerOffset);
     if (!pageController) {
         if (error)
             *error = QLatin1String("Layer not selected: page controller is missing.");
@@ -36,17 +49,18 @@ static bool applyActiveLayer(
 
     trace("layers: routing input dispatcher query");
     SharedPlatformInputDispatcher const inputDispatcher =
-        firmwareApi().pageControllerInputDispatcher(pageController);
+        firmware.pageControllerInputDispatcher(pageController);
     if (!inputDispatcher) {
-        if (error)
+        if (error) {
             *error = QLatin1String(
                 "Layer not selected: input dispatcher is unavailable.");
+        }
         return false;
     }
     trace("layers: routing input dispatcher acquired");
 
     SharedTool const currentTool =
-        firmwareApi().platformInputDispatcherGetCurrentTool(inputDispatcher.get());
+        firmware.platformInputDispatcherGetCurrentTool(inputDispatcher.get());
     void* const tool = currentTool.get();
     if (!tool) {
         if (error)
@@ -65,7 +79,7 @@ static bool applyActiveLayer(
     bool currentIsEraser = false;
     bool applied = false;
     try {
-        bool const erasersArmed = armLayerAwareDrawingErasers(
+        bool const erasersArmed = operations.armLayerAwareDrawingErasers(
             inputDispatcher.get(), tool, nativeId, &currentIsEraser);
         if (currentIsEraser) {
             if (!erasersArmed) {
@@ -77,14 +91,14 @@ static bool applyActiveLayer(
                 return false;
             }
             applied = true;
-            if (concreteDrawingEraserKind(tool) == kDiagramEraser) {
+            if (operations.isDiagramDrawingEraser(tool)) {
                 trace(QLatin1String(
                     "layers: current diagram eraser layer-first geometry armed and cached pen synchronized"));
             } else {
                 trace(QLatin1String(
                     "layers: current eraser restricted for selection intersection"));
             }
-        } else if (restrictToolToLayer(tool, nativeId)) {
+        } else if (operations.restrictToolToLayer(tool, nativeId)) {
             applied = true;
             trace("layers: routing current tool restriction complete");
         } else {
@@ -96,7 +110,7 @@ static bool applyActiveLayer(
         // its cached pen for the next writing-tool switch. Never fatal — a page
         // whose main backend is not a DrawingBackend still routes through the
         // backends() traversal above.
-        if (restrictBackendWritingToolsToLayer(
+        if (operations.restrictBackendWritingToolsToLayer(
                 inputDispatcher.get(), tool, nativeId)) {
             applied = true;
         }
@@ -126,15 +140,24 @@ static bool applyActiveLayer(
 // a fresh set of concrete cached tools. Reassert the exact string ID after
 // Kobo has constructed those tools and again before showing an "active" row.
 // This is deliberately idempotent and never rewrites sidecar metadata.
-static bool synchronizeSavedActiveLayer(
-    LayerContext const& context,
-    char const* reason,
-    QString* error) {
+bool synchronizeSavedActiveLayer(
+        FirmwareApi& firmware,
+        uintptr_t neboBackendPageControllerOffset,
+        ToolRoutingOperations const& operations,
+        layers::LayerContext const& context,
+        char const* reason,
+        QString* error) {
     trace(QLatin1String("layers: active synchronization begin reason=")
         + QLatin1String(reason)
         + QLatin1String(" part=") + context.state.partId
         + QLatin1String(" id=") + context.state.activeId);
-    if (!applyActiveLayer(context, context.state.activeId, error)) {
+    if (!applyActiveLayer(
+            firmware,
+            neboBackendPageControllerOffset,
+            operations,
+            context,
+            context.state.activeId,
+            error)) {
         trace(QLatin1String("layers: active synchronization failed reason=")
             + QLatin1String(reason)
             + QLatin1String(" part=") + context.state.partId
@@ -150,9 +173,5 @@ static bool synchronizeSavedActiveLayer(
     return true;
 }
 
-struct ImagePainterDeletingDeleter {
-    void operator()(ImagePainterOpaque* painter) const {
-        if (painter && firmwareApi().imagePainterDeletingDestructor)
-            firmwareApi().imagePainterDeletingDestructor(painter);
-    }
-};
+} // namespace layers_service
+} // namespace cnt

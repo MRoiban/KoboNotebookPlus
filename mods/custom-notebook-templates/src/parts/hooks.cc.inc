@@ -184,8 +184,13 @@ void _cnt_render_volume_hook(void* widget, void const* volume) {
                 + error);
             return;
         }
-        if (!synchronizeSavedActiveLayer(
-                context, "notebook-open", &error)) {
+        if (!cnt::layers_service::synchronizeSavedActiveLayer(
+                firmwareApi(),
+                kNeboBackendPageControllerOffset,
+                kLayerToolRoutingOperations,
+                context,
+                "notebook-open",
+                &error)) {
             trace(QLatin1String(
                 "layers: notebook-open active layer not restored; metadata preserved: ")
                 + error);
@@ -230,7 +235,13 @@ void _cnt_set_tool_theme_hook(void* widget, void* theme) {
         trace(QLatin1String("layers: setToolTheme context unavailable: ") + error);
         return;
     }
-    if (!applyActiveLayer(context, context.state.activeId, &error)) {
+    if (!cnt::layers_service::applyActiveLayer(
+            firmwareApi(),
+            kNeboBackendPageControllerOffset,
+            kLayerToolRoutingOperations,
+            context,
+            context.state.activeId,
+            &error)) {
         trace(QLatin1String(
             "layers: active layer could not be reapplied after tool change: ")
             + error);

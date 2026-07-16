@@ -251,7 +251,13 @@ static void showLayerPopup(QObject* controller) {
     // A reopened notebook can restore the sidecar before any tool-theme
     // callback occurs. Synchronize first so the row marked "active" always
     // matches the concrete pen/eraser restriction used by the next stroke.
-    if (!synchronizeSavedActiveLayer(context, "popup-open", &error)) {
+    if (!cnt::layers_service::synchronizeSavedActiveLayer(
+            firmwareApi(),
+            kNeboBackendPageControllerOffset,
+            kLayerToolRoutingOperations,
+            context,
+            "popup-open",
+            &error)) {
         showLayerError(context.widget, error);
         return;
     }

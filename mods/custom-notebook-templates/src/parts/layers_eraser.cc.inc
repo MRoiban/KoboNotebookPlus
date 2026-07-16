@@ -1238,3 +1238,15 @@ static bool restrictBackendWritingToolsToLayer(
         trace("layers: cached writing-tool restriction found no writing tool");
     return restricted > 0;
 }
+
+static bool isDiagramDrawingEraser(void* tool) {
+    return concreteDrawingEraserKind(tool) == kDiagramEraser;
+}
+
+static cnt::layers_service::ToolRoutingOperations const
+    kLayerToolRoutingOperations = {
+        armLayerAwareDrawingErasers,
+        isDiagramDrawingEraser,
+        restrictToolToLayer,
+        restrictBackendWritingToolsToLayer
+    };

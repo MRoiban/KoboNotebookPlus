@@ -1,5 +1,12 @@
 #line 5469 "src/customnotebooktemplates.cc"
 
+struct ImagePainterDeletingDeleter {
+    void operator()(ImagePainterOpaque* painter) const {
+        if (painter && firmwareApi().imagePainterDeletingDestructor)
+            firmwareApi().imagePainterDeletingDestructor(painter);
+    }
+};
+
 static bool copyLiveLayerPreviewImageLoader(
     LayerContext const& context,
     SharedImageLoader* loaderResult,
@@ -680,12 +687,24 @@ static bool addNotebookLayer(LayerContext* context, QString* error) {
     LayerState const previous = context->state;
     context->state.customLayers.append(record);
     context->state.activeId = record.id;
-    if (!applyActiveLayer(*context, record.id, error)
+    if (!cnt::layers_service::applyActiveLayer(
+            firmwareApi(),
+            kNeboBackendPageControllerOffset,
+            kLayerToolRoutingOperations,
+            *context,
+            record.id,
+            error)
             || !cnt::layers_state::saveLayerState(context->state, error)) {
         firmwareApi().layoutRemoveLayer(layout.bytes, nativeId);
         context->state = previous;
         cnt::layers_state::saveLayerState(previous, nullptr);
-        applyActiveLayer(*context, previous.activeId, nullptr);
+        cnt::layers_service::applyActiveLayer(
+            firmwareApi(),
+            kNeboBackendPageControllerOffset,
+            kLayerToolRoutingOperations,
+            *context,
+            previous.activeId,
+            nullptr);
         return false;
     }
 
@@ -718,12 +737,24 @@ static bool activateNotebookLayer(
     }
 
     QString const previous = context->state.activeId;
-    if (!applyActiveLayer(*context, id, error))
+    if (!cnt::layers_service::applyActiveLayer(
+            firmwareApi(),
+            kNeboBackendPageControllerOffset,
+            kLayerToolRoutingOperations,
+            *context,
+            id,
+            error))
         return false;
     context->state.activeId = id;
     if (!cnt::layers_state::saveLayerState(context->state, error)) {
         context->state.activeId = previous;
-        applyActiveLayer(*context, previous, nullptr);
+        cnt::layers_service::applyActiveLayer(
+            firmwareApi(),
+            kNeboBackendPageControllerOffset,
+            kLayerToolRoutingOperations,
+            *context,
+            previous,
+            nullptr);
         return false;
     }
     // Keep the live renderer unrestricted. Firmware uses restrictToLayers()
@@ -801,7 +832,13 @@ static bool deleteActiveNotebookLayer(LayerContext* context, QString* error) {
     context->state.customLayers.remove(index);
     context->state.activeId =
         cnt::layers_state::nativeDocumentLayerId(firmwareApi());
-    if (!applyActiveLayer(*context, context->state.activeId, error)
+    if (!cnt::layers_service::applyActiveLayer(
+            firmwareApi(),
+            kNeboBackendPageControllerOffset,
+            kLayerToolRoutingOperations,
+            *context,
+            context->state.activeId,
+            error)
             || !cnt::layers_state::saveLayerState(context->state, error)) {
         if (error && error->isEmpty()) {
             *error = QLatin1String(
