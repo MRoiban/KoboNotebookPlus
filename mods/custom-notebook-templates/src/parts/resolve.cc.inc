@@ -104,14 +104,6 @@ static char const kCreateIInkMenuItemSymbol[] =
     "_ZN26IInkDropdownMenuController18createIInkMenuItemEP5QMenuRK7QStringRK7QPixmapb";
 static char const kToolMenuTapGestureSymbol[] =
     "_ZN22IInkToolMenuController10tapGestureEP15GestureReceiverP10TapGesture";
-static char const kToolMenuConstructorSymbol[] =
-    "_ZN22IInkToolMenuControllerC1EP7QWidgetRK7QVectorI8IInkToolERKS2_I13IInkToolBrushE13IInkToolTheme";
-static char const kCreateBrushSizeRowSymbol[] =
-    "_ZN22IInkToolMenuController18createBrushSizeRowEP15NickelTouchMenuRK7QString";
-static char const kSetBrushSizeIndexSymbol[] =
-    "_ZN22IInkToolMenuController17setBrushSizeIndexEi";
-static char const kSetActiveToolSymbol[] =
-    "_ZN17IInkNotePadWidget13setActiveToolE8IInkTool";
 static char const kNickelTouchMenuConstructorSymbol[] =
     "_ZN15NickelTouchMenuC1EP7QWidget18DecorationPosition";
 static char const kNickelTouchMenuSetAlignmentSymbol[] =
@@ -157,15 +149,6 @@ static uintptr_t const kMenuLoadViewSize = 0xe5e;
 static uintptr_t const kAddWidgetActionVma = 0xb3ce80;
 static uintptr_t const kCreateIInkMenuItemVma = 0x46bc4;
 static uintptr_t const kToolMenuTapGestureVma = 0x75a4c;
-static uintptr_t const kToolMenuConstructorVma = 0x74760;
-static uintptr_t const kCreateBrushSizeRowVma = 0x74fcc;
-static uintptr_t const kSetBrushSizeIndexVma = 0x74ba4;
-static uintptr_t const kSetBrushSizeIndexClickReturnVma = 0x74d7c;
-static uintptr_t const kSetBrushSizeIndexLoadReturnVma = 0x75702;
-static uintptr_t const kSetActiveToolVma = 0x62194;
-// stylusTouchBegin's unique hardware-eraser call returns here after loading
-// the saved eraser enum from IInkNotePadWidget+0xb8.
-static uintptr_t const kHardwareEraserSetActiveToolReturnVma = 0x6244e;
 static uintptr_t const kNickelTouchMenuConstructorVma = 0xed6788;
 static uintptr_t const kNickelTouchMenuSetAlignmentVma = 0xed6a68;
 static uintptr_t const kTouchMenuSetCustomPopupPositionOffsetVma = 0x11150a8;

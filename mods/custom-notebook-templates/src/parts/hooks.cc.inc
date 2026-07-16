@@ -85,47 +85,15 @@ void _cnt_tool_menu_constructor_hook(
     QVector<int> const* tools,
     QVector<int> const* brushSections,
     void* themeStorage) {
-    if (!firmwareApi().toolMenuConstructorOriginal)
-        return;
-
-    bool const exactEraserMenu = eraserState().sizeMenuHooksReady
-        && controller
-        && tools
-        && brushSections
-        && tools->size() == 2
-        && tools->at(0) == 1
-        && tools->at(1) == 2
-        && brushSections->isEmpty();
-    if (!exactEraserMenu) {
-        firmwareApi().toolMenuConstructorOriginal(
-            controller, parent, tools, brushSections, themeStorage);
-        return;
-    }
-
-    // IInkToolBrush 0 is Kobo's stock five-button size row. The constructor
-    // copies this QVector into controller+0x24, so the local lifetime ends
-    // safely when the original returns.
-    QVector<int> eraserSections;
-    eraserSections.append(0);
-    firmwareApi().toolMenuConstructorOriginal(
-        controller, parent, tools, &eraserSections, themeStorage);
-
-    try {
-        QObject* const object = reinterpret_cast<QObject*>(controller);
-        object->setProperty("_cnt_eraser_size_controller", true);
-        eraserState().liveSizeController = object;
-        int const index = settingsStore().configuredEraserSizeIndex();
-        // Seed before onToolButtonTapped invokes virtual loadView immediately
-        // after this constructor returns. The empty button vector is handled
-        // by stock setBrushSizeIndex.
-        if (firmwareApi().setBrushSizeIndexOriginal && validEraserSizeIndex(index))
-            firmwareApi().setBrushSizeIndexOriginal(controller, index);
-        trace(QLatin1String(
-            "eraser-size: native eraser controller augmented index=")
-            + QString::number(index));
-    } catch (...) {
-        trace("eraser-size: controller metadata failed; stock controller preserved");
-    }
+    cnt::eraser_menu::constructController(
+        firmwareApi(),
+        eraserState(),
+        settingsStore(),
+        controller,
+        parent,
+        tools,
+        brushSections,
+        themeStorage);
 }
 
 extern "C" __attribute__((visibility("default")))
@@ -133,42 +101,8 @@ void _cnt_create_brush_size_row_hook(
     void* controller,
     NickelTouchMenu* menu,
     QString const& title) {
-    if (!firmwareApi().createBrushSizeRowOriginal)
-        return;
-    bool marked = false;
-    if (eraserState().sizeMenuHooksReady && controller) {
-        marked = reinterpret_cast<QObject*>(controller)
-            ->property("_cnt_eraser_size_controller").toBool();
-    }
-    if (!marked || !menu) {
-        firmwareApi().createBrushSizeRowOriginal(controller, menu, title);
-        return;
-    }
-
-    // Stock createBrushSizeRow uses `title` both for visible/action text and
-    // as the GenericContainerWidget objectName. The latter is a private style
-    // identity: changing it makes the header inherit the active-action
-    // highlight. Keep the desired text, then restore only the newly-created
-    // row widget's objectName to the stock translated title.
-    QObject* const menuObject = reinterpret_cast<QObject*>(menu);
-    QString const eraserTitle = QLatin1String("Eraser Size");
-    QList<QWidget*> const rowsBefore = menuObject->findChildren<QWidget*>(
-        eraserTitle);
-    firmwareApi().createBrushSizeRowOriginal(controller, menu, eraserTitle);
-    QList<QWidget*> const rowsAfter = menuObject->findChildren<QWidget*>(
-        eraserTitle);
-    bool identityRestored = false;
-    for (int i = 0; i < rowsAfter.size(); ++i) {
-        QWidget* const row = rowsAfter.at(i);
-        if (!row || rowsBefore.contains(row))
-            continue;
-        row->setObjectName(title);
-        identityRestored = true;
-        break;
-    }
-    trace(identityRestored
-        ? "eraser-size: native five-button row created with stock style identity"
-        : "eraser-size: native row created; stock style identity was not restored");
+    cnt::eraser_menu::createBrushSizeRow(
+        firmwareApi(), eraserState(), controller, menu, title);
 }
 
 extern "C" __attribute__((visibility("default")))
@@ -178,33 +112,16 @@ void _cnt_set_brush_size_index_hook(void* controller, int index) {
     // Preserve every stock theme/button update first, including unknown future
     // callers. Only the two pinned firmware callsites below have plugin work.
     firmwareApi().setBrushSizeIndexOriginal(controller, index);
-    if (!eraserState().sizeMenuHooksReady || !controller
-            || !validEraserSizeIndex(index)
-            || !reinterpret_cast<QObject*>(controller)
-                ->property("_cnt_eraser_size_controller").toBool()
-            || !firmwareApi().iinknoteBase) {
-        return;
-    }
-
     uintptr_t const caller = reinterpret_cast<uintptr_t>(
         __builtin_return_address(0)) & ~uintptr_t(1);
-    bool const clicked =
-        caller == firmwareApi().iinknoteBase + kSetBrushSizeIndexClickReturnVma;
-    bool const loaded =
-        caller == firmwareApi().iinknoteBase + kSetBrushSizeIndexLoadReturnVma;
-    if (!clicked && !loaded)
-        return;
-    if (clicked)
-        settingsStore().persistEraserSizeIndex(index);
-
-    QObject* const widget = cnt::notebook_widget::findNotebookWidget(
-        reinterpret_cast<QObject*>(controller));
-    if (!widget) {
-        trace("eraser-size: notebook widget missing from native controller");
-        return;
-    }
-    applyConfiguredEraserSizeForWidget(
-        widget, clicked ? "menu-select" : "menu-load");
+    cnt::eraser_menu::afterBrushSizeIndex(
+        firmwareApi(),
+        eraserState(),
+        settingsStore(),
+        caller,
+        controller,
+        index,
+        applyConfiguredEraserSizeForWidget);
 }
 
 extern "C" __attribute__((visibility("default")))
@@ -215,50 +132,14 @@ void _cnt_set_active_tool_hook(void* widget, int tool) {
     uintptr_t const caller = reinterpret_cast<uintptr_t>(
         __builtin_return_address(0)) & ~uintptr_t(1);
     firmwareApi().setActiveToolOriginal(widget, tool);
-
-    // stylusTouchBegin switches the engine to its saved eraser tool without
-    // visiting IInkToolMenuController, and firmware resets the live radius in
-    // that path. The user's configured size remains authoritative: replay it
-    // after stock activation, then mirror the same index into any open popup.
-    // Nothing here persists; only an explicit five-button tap writes JSON.
-    if (!eraserState().sizeMenuHooksReady || !widget || !firmwareApi().iinknoteBase
-            || caller != firmwareApi().iinknoteBase
-                + kHardwareEraserSetActiveToolReturnVma
-            || (tool != 1 && tool != 2)
-            || !cnt::notebook_widget::isNotebookWidget(
-                reinterpret_cast<QObject*>(widget))) {
-        return;
-    }
-
-    try {
-        int const configuredIndex = settingsStore().configuredEraserSizeIndex();
-        bool const engineUpdated = applyConfiguredEraserSizeForWidget(
-            reinterpret_cast<QObject*>(widget), "hardware-eraser");
-        bool uiUpdated = false;
-        QObject* const controller = eraserState().liveSizeController.data();
-        if (engineUpdated && controller && firmwareApi().setBrushSizeIndexOriginal
-                && cnt::notebook_widget::findNotebookWidget(controller)
-                    == reinterpret_cast<QObject*>(widget)
-                && controller->property(
-                    "_cnt_eraser_size_controller").toBool()) {
-            // The stock setter updates controller+0x48 and all five native
-            // BrushButtons but emits no toolSelected signal, so this cannot
-            // recurse into setToolTheme or mutate the engine a second time.
-            firmwareApi().setBrushSizeIndexOriginal(controller, configuredIndex);
-            uiUpdated = true;
-        }
-        trace(QLatin1String(
-            "eraser-size: hardware activation synchronized index=")
-            + QString::number(configuredIndex)
-            + QLatin1String(" engine=")
-            + (engineUpdated ? QLatin1String("applied")
-                             : QLatin1String("unavailable"))
-            + QLatin1String(" popup=")
-            + (uiUpdated ? QLatin1String("updated")
-                         : QLatin1String("not-open")));
-    } catch (...) {
-        trace("eraser-size: hardware activation synchronization threw; last successful state preserved");
-    }
+    cnt::eraser_menu::afterActiveTool(
+        firmwareApi(),
+        eraserState(),
+        settingsStore(),
+        caller,
+        widget,
+        tool,
+        applyConfiguredEraserSizeForWidget);
 }
 
 extern "C" __attribute__((visibility("default")))

@@ -1,13 +1,19 @@
 #pragma once
 
 #include <QPointer>
+#include <QVector>
 
 #include <cstdint>
 
+class NickelTouchMenu;
 class QObject;
+class QString;
+class QWidget;
 struct FirmwareApi;
 
 namespace cnt {
+class SettingsStore;
+
 namespace eraser_menu {
 
 struct RuntimeState {
@@ -16,31 +22,43 @@ struct RuntimeState {
     QPointer<QObject> liveSizeController;
 };
 
-typedef bool (*ResolvePinnedAddress)(
-    void* handle,
-    char const* symbol,
-    uintptr_t expectedVma,
-    void** destination);
-typedef bool (*PointerMatchesVma)(void* pointer, uintptr_t expectedVma);
-
-struct InstallPins {
-    char const* toolMenuConstructorSymbol;
-    uintptr_t toolMenuConstructorVma;
-    char const* createBrushSizeRowSymbol;
-    uintptr_t createBrushSizeRowVma;
-    char const* setBrushSizeIndexSymbol;
-    uintptr_t setBrushSizeIndexVma;
-    char const* setActiveToolSymbol;
-    uintptr_t setActiveToolVma;
-};
+typedef bool (*ApplyConfiguredSize)(QObject* widget, char const* reason);
 
 bool installHooks(
     FirmwareApi& firmware,
     RuntimeState& state,
-    void* handle,
-    InstallPins const& pins,
-    ResolvePinnedAddress resolvePinnedAddress,
-    PointerMatchesVma pointerMatchesVma);
+    void* handle);
+void constructController(
+    FirmwareApi& firmware,
+    RuntimeState& state,
+    SettingsStore& settings,
+    void* controller,
+    QWidget* parent,
+    QVector<int> const* tools,
+    QVector<int> const* brushSections,
+    void* themeStorage);
+void createBrushSizeRow(
+    FirmwareApi& firmware,
+    RuntimeState& state,
+    void* controller,
+    NickelTouchMenu* menu,
+    QString const& title);
+void afterBrushSizeIndex(
+    FirmwareApi& firmware,
+    RuntimeState& state,
+    SettingsStore& settings,
+    uintptr_t caller,
+    void* controller,
+    int index,
+    ApplyConfiguredSize applyConfiguredSize);
+void afterActiveTool(
+    FirmwareApi& firmware,
+    RuntimeState& state,
+    SettingsStore& settings,
+    uintptr_t caller,
+    void* widget,
+    int tool,
+    ApplyConfiguredSize applyConfiguredSize);
 
 } // namespace eraser_menu
 } // namespace cnt
