@@ -13,7 +13,7 @@ void _cnt_remove_common_book_data_hook(
     if (removeBackingFile && firmwareApi().contentGetId && volume) {
         QString const id = firmwareApi().contentGetId(volume);
         cnt::visibility::applyBackingFilePolicy(
-            visibilityState(), removeBackingFile, id);
+            pluginState().visibility, removeBackingFile, id);
     }
 
     firmwareApi().removeCommonBookDataOriginal(
@@ -26,7 +26,7 @@ QString _cnt_exclude_sync_folders_hook(void* featureSettings) {
         return QString();
 
     QString exclusions = firmwareApi().excludeSyncFoldersOriginal(featureSettings);
-    cnt::visibility::applySyncExclusion(visibilityState(), exclusions);
+    cnt::visibility::applySyncExclusion(pluginState().visibility, exclusions);
     return exclusions;
 }
 
@@ -35,7 +35,7 @@ QVector<BackgroundOption> _cnt_background_options_hook() {
     trace("backgroundOptions hook invoked");
     QVector<BackgroundOption> options = firmwareApi().backgroundOptionsOriginal();
     cnt::notebook_hook_services::routeBackgroundOptions(
-        templateState(), coverState(), options);
+        pluginState().templates, coverState(), options);
     return options;
 }
 
@@ -273,7 +273,8 @@ void _cnt_add_widget_action_hook(
         controller, menu, widget, receiver, member,
         closesMenu, enabled, separatorAfter);
 
-    if ((!coverState().hooksReady && !pageState().hooksReady && !layerState().hooksReady)
+    if ((!coverState().hooksReady && !pluginState().pages.hooksReady
+            && !layerState().hooksReady)
             || !controller
             || !menu
             || !firmwareApi().iinknoteBase
@@ -340,7 +341,7 @@ void _cnt_add_widget_action_hook(
         }
     }
 
-    if (pageState().hooksReady) {
+    if (pluginState().pages.hooksReady) {
         cnt::page_actions::Dependencies const pageDependencies = {
             &firmwareApi(),
             &coverState(),

@@ -7,6 +7,14 @@ struct PageRuntimeState {
 struct HookRuntimeState {
     QTimer* timer = nullptr;
     bool notebookLifecycleHooksReady = false;
+
+    void stopTimer() {
+        if (!timer)
+            return;
+        timer->stop();
+        timer->deleteLater();
+        timer = nullptr;
+    }
 };
 
 // Process-lifetime state is published before the first hook mutation. The

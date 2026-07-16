@@ -1,13 +1,5 @@
 #line 7088 "src/customnotebooktemplates.cc"
 
-static void stopHookTimer() {
-    if (!hookState().timer)
-        return;
-    hookState().timer->stop();
-    hookState().timer->deleteLater();
-    hookState().timer = nullptr;
-}
-
 static bool installCustomAssetVisibilityHooks() {
     // This image plugin is loaded by Nickel itself, so libnickel must already
     // be present. Install before waiting for libiinknote: filesystem sync can

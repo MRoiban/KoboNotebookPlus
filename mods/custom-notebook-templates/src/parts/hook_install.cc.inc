@@ -10,7 +10,7 @@ static void installHookAfterNaturalLoad() {
     if (!resolvePinned(handle, kBackgroundOptionsSymbol,
             kBackgroundOptionsVma, &resolvedBackgroundOptions)) {
         trace("delayed backgroundOptions symbol validation failed");
-        stopHookTimer();
+        hookState().stopTimer();
         return;
     }
     firmwareApi().backgroundOptionsOriginal = resolvedBackgroundOptions;
@@ -19,17 +19,17 @@ static void installHookAfterNaturalLoad() {
             nh_symptr(firmwareApi().backgroundOptionsOriginal),
             firmwareApi().rendererMap,
             firmwareApi().iinknoteBase)) {
-        stopHookTimer();
+        hookState().stopTimer();
         return;
     }
 
     // A malformed user manifest is non-fatal: Nickel continues with every
     // built-in template and no custom rows.
     if (!cnt::templates::loadManifest(
-            *firmwareApi().rendererMap, templateState()))
+            *firmwareApi().rendererMap, pluginState().templates))
         nh_log("custom templates disabled because the manifest is invalid");
     cnt::templates::loadAutomaticTemplates(
-        *firmwareApi().rendererMap, templateState());
+        *firmwareApi().rendererMap, pluginState().templates);
     cnt::covers::loadAutomaticCovers(
         *firmwareApi().rendererMap, coverState().customCovers);
 
@@ -41,7 +41,7 @@ static void installHookAfterNaturalLoad() {
         replacement.pointer);
     if (!pointerMatchesVma(original, kBackgroundOptionsVma)) {
         trace("delayed backgroundOptions hook validation failed");
-        stopHookTimer();
+        hookState().stopTimer();
         return;
     }
     firmwareApi().backgroundOptionsOriginal = reinterpret_cast<BackgroundOptions>(original);
@@ -66,7 +66,7 @@ static void installHookAfterNaturalLoad() {
             }
         }
         if (pointerMatchesVma(original, kAddWidgetActionVma)) {
-            pageState().hooksReady = true;
+            pluginState().pages.hooksReady = true;
             trace("pages: guarded notebook-menu hook installed");
         } else {
             layerState().hooksReady = false;
@@ -242,7 +242,7 @@ static void installHookAfterNaturalLoad() {
         trace("pages: pinned notebook APIs did not resolve");
     }
     trace("delayed hook initialization complete");
-    stopHookTimer();
+    hookState().stopTimer();
 }
 
 static int initialize() {

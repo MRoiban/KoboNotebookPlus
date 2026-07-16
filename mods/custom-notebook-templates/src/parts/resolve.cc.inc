@@ -10,16 +10,8 @@ static FirmwareApi& firmwareApi() {
     return pluginState().firmware;
 }
 
-static cnt::templates::TemplateRuntimeState& templateState() {
-    return pluginState().templates;
-}
-
 static cnt::cover_cache::State& coverState() {
     return pluginState().covers;
-}
-
-static PageRuntimeState& pageState() {
-    return pluginState().pages;
 }
 
 static cnt::layers::RuntimeState& layerState() {
@@ -32,10 +24,6 @@ static cnt::eraser_menu::RuntimeState& eraserState() {
 
 static cnt::SettingsStore& settingsStore() {
     return pluginState().settings;
-}
-
-static cnt::visibility::RuntimeState& visibilityState() {
-    return pluginState().visibility;
 }
 
 static HookRuntimeState& hookState() {
