@@ -1,35 +1,45 @@
 # KoboNotebookPlus
 
-KoboNotebookPlus is an experimental, firmware-pinned NickelHook plugin for
-Kobo Advanced Notebooks. It adds custom paper templates and writable covers,
-page operations, native document layers with previews and independent
-writing/erasing, and adjustable eraser size.
+**Native layers, custom paper templates, writable covers, page tools, and a
+configurable eraser for Kobo Advanced Notebooks.**
+
+KoboNotebookPlus is a [NickelHook](https://github.com/pgaskin/NickelHook)
+plugin that extends the stock Advanced Notebook experience on the Kobo
+Elipsa 2E. Instead of overlaying a separate app, it hooks the native notebook
+UI and the MyScript ink engine directly, so layers, previews, and erasing all
+behave like built-in features.
+
+<!-- TODO: add 1–2 photos here — the Layers popup on-device and a custom
+     template/cover. A single picture will sell this better than the list
+     below. -->
 
 > [!CAUTION]
-> This project calls private Kobo and MyScript C++ APIs by firmware address.
-> It has been tested only on a Kobo Elipsa 2E (`condor`) running firmware
-> `4.38.23697`. A mismatched build can crash Nickel, corrupt notebooks, cause
-> data loss, or force device recovery. Back up the Kobo database, settings,
-> and notebooks first, and test only with disposable notebooks.
-
-The latest source includes a fix which keeps plugin support images out of My
-Books while preserving their backing files during Nickel's stale-row cleanup.
-That recovery build has passed its host-side ABI, relocation, packaging, and
-ARM disassembly checks; final reboot/runtime verification is still pending.
-There is no stable binary release yet.
+> This plugin calls private Kobo and MyScript C++ APIs **by firmware
+> address**. It is tested only on a Kobo Elipsa 2E (`condor`) running
+> firmware `4.38.23697`. A mismatched build can crash Nickel, corrupt
+> notebooks, cause data loss, or force a factory reset. Back up your Kobo
+> database, settings, and notebooks first, and test only with disposable
+> notebooks. See [Recovery](#recovery) before installing anything.
 
 ## Features
 
-- Native-style Layers popup below the notebook toolbar.
-- Add, select, and delete native MyScript document layers.
-- Independent pen and eraser routing for the selected layer.
-- Per-layer notebook-ratio preview thumbnails with a bounded cache.
-- Brush/object eraser modes with a five-step eraser-size row.
-- Hardware eraser synchronization with the configured eraser size.
-- Automatic `1404 x 1872` paper templates and notebook covers.
-- Writable first-page covers and notebook page duplication/reordering.
-- Plugin support files excluded from Home/My Books without editing the Kobo
-  database.
+- **Layers** — a native-style Layers popup below the notebook toolbar: add,
+  select, and delete real MyScript document layers, with per-layer preview
+  thumbnails and independent pen/eraser routing per layer.
+- **Eraser controls** — brush and object eraser modes plus a five-step
+  eraser-size row; the hardware (stylus) eraser follows the configured size.
+- **Custom paper templates** — drop in your own full-page PNG templates.
+- **Writable covers** — custom notebook covers you can write on as a first
+  page.
+- **Page operations** — duplicate and reorder notebook pages.
+- **Clean library** — plugin support images stay out of Home/My Books
+  without touching the Kobo database.
+
+## Status
+
+Experimental, source-only — **no stable binary release yet**. The current
+build has passed its host-side ABI, relocation, packaging, and ARM
+disassembly checks; final on-device runtime verification is still pending.
 
 ## Compatibility
 
@@ -39,29 +49,31 @@ There is no stable binary release yet.
 | Firmware | `4.38.23697` |
 | Qt | 5.2.1 |
 | Compiler | NickelTC GCC 4.9.4, ARM hard-float |
-| Status | Experimental, source-only |
 
 Every private symbol, vtable slot, instruction sequence, and hook relocation
-used by the current build is pinned by the verification scripts. Supporting a
-different firmware requires a fresh binary audit; changing only the version
-check is unsafe.
+used by the current build is pinned by the verification scripts in
+`scripts/`. Supporting a different firmware requires a fresh binary audit —
+changing only the version check is unsafe.
 
-## Source-only repository
+## Why source-only
 
-This repository intentionally does not contain Kobo firmware, MyScript
-libraries, Binary Ninja databases, device backups, notebooks, generated
-plugins, or `KoboRoot.tgz`. The install archive embeds a stock
-`libiinknote.so`, which must be extracted from firmware obtained by the user
-and must not be redistributed here.
+This repository intentionally contains no Kobo firmware, MyScript libraries,
+Binary Ninja databases, device backups, notebooks, generated plugins, or
+`KoboRoot.tgz`. The install archive embeds a stock `libiinknote.so`, which
+you must extract from firmware you obtained yourself; it must not be
+redistributed here.
 
-Clone with the NickelHook submodule:
+## Building
+
+Requirements: Docker, Python 3, `objdump`, and matching user-extracted
+firmware libraries.
 
 ```sh
 git clone --recurse-submodules https://github.com/MRoiban/KoboNotebookPlus.git
 cd KoboNotebookPlus
 ```
 
-Place matching, user-extracted firmware libraries at:
+Place the firmware libraries at:
 
 ```text
 extracted/rootfs/usr/local/Kobo/libiink.so
@@ -71,16 +83,13 @@ extracted/rootfs/usr/local/Kobo/libiinkuiref.so.1.0.0
 mods/custom-notebook-templates/package/libiinknote.so
 ```
 
-The expected stock `libiinknote.so` SHA-256 for the supported firmware is:
+Expected stock `libiinknote.so` SHA-256 for the supported firmware:
 
 ```text
 f80a7de7a1c482173a89b18f2bb8164fcfb53b8fab9b2a75bd23998813a528ea
 ```
 
-## Verify and build
-
-Requirements are Docker, Python 3, `objdump`, and the matching firmware files
-listed above. Run the ABI gates before every build:
+Run the ABI gates before every build:
 
 ```sh
 python3 scripts/verify-layer-abi.py
@@ -104,32 +113,41 @@ docker run --rm -v "$PWD:/work" -w /work \
   make -C mods/custom-notebook-templates koboroot
 ```
 
-Before installing, verify that the package contains the compiled ARM plugin
-and the exact stock library—nothing else. Never install a package built for a
-different firmware.
+## Installing
+
+Before installing, inspect the built `KoboRoot.tgz` and confirm it contains
+only the compiled ARM plugin and the exact stock library — nothing else.
+Never install a package built for a different firmware.
+
+1. Back up `/mnt/onboard/.kobo/KoboReader.sqlite`, `Kobo eReader.conf`, and
+   your notebooks.
+2. Copy `KoboRoot.tgz` to `/mnt/onboard/.kobo/` over USB.
+3. Eject the device; Nickel installs the package and reboots.
+
+## Recovery
+
+If Nickel crash-loops or notebooks misbehave after install:
+
+- Remove the plugin: connect over USB (or telnet, if enabled) and delete the
+  plugin `.so` from the NickelHook plugin directory, then reboot.
+- If the device will not boot to USB, a factory reset recovers it — this is
+  why backups and disposable notebooks are non-negotiable.
 
 ## Usage
 
-Copy a full-size paper PNG to:
-
-```text
-/mnt/onboard/.kobo/custom/templates/Example.png
-```
-
-Copy a full-size cover PNG to:
-
-```text
-/mnt/onboard/.kobo/custom/covers/Example.png
-```
-
-Restart the Kobo after changing templates or covers. Inside an Advanced
-Notebook, use the notebook menu for Covers, Layers, and page operations. The
-eraser popup contains the stock mode choices plus the configured size row.
+- **Templates** — copy a full-size (`1404 x 1872`) paper PNG to
+  `/mnt/onboard/.kobo/custom/templates/Example.png`.
+- **Covers** — copy a full-size cover PNG to
+  `/mnt/onboard/.kobo/custom/covers/Example.png`.
+- Restart the Kobo after changing templates or covers.
+- Inside an Advanced Notebook, the notebook menu gains Covers, Layers, and
+  page operations. The eraser popup shows the stock mode choices plus the
+  size row.
 
 Layer metadata and preview caches live under `.kobo/custom/layers/`; native
-ink ownership remains inside the `.nebo` document. Backups created by cover,
-page, and layer operations use `.nebo.backup`, so Nickel does not import them
-as duplicate notebooks.
+ink stays inside the `.nebo` document. Backups created by cover, page, and
+layer operations use the `.nebo.backup` extension so Nickel does not import
+them as duplicate notebooks.
 
 ## Repository layout
 
@@ -144,8 +162,10 @@ third_party/NickelHook/          Upstream NickelHook submodule
 KoboNotebookPlus is not affiliated with or endorsed by Rakuten Kobo or
 MyScript. Kobo and related marks belong to their respective owners.
 
-[NickelHook](https://github.com/pgaskin/NickelHook) is maintained by Patrick
-Gaskin and is included as a separate MIT-licensed submodule. KoboNotebookPlus
-does not yet have a project-specific license; public visibility does not grant
-permission to redistribute or reuse its source. No cover or template artwork
-is included because its publication license has not been established.
+[NickelHook](https://github.com/pgaskin/NickelHook) by Patrick Gaskin is
+included as a separate MIT-licensed submodule.
+
+**License:** this project does not yet have a license. All rights reserved —
+public visibility does not grant permission to redistribute or reuse the
+source. No cover or template artwork is included because its publication
+license has not been established.
