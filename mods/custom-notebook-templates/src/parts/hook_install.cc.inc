@@ -30,7 +30,8 @@ static void installHookAfterNaturalLoad() {
         nh_log("custom templates disabled because the manifest is invalid");
     cnt::templates::loadAutomaticTemplates(
         *firmwareApi().rendererMap, templateState());
-    loadAutomaticCovers();
+    cnt::covers::loadAutomaticCovers(
+        *firmwareApi().rendererMap, coverState().customCovers);
 
     BackgroundOptionsAddress replacement;
     replacement.function = _cnt_background_options_hook;

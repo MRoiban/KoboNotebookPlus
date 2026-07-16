@@ -67,7 +67,6 @@ static size_t const kDiagramPenVtableWords = 152 / sizeof(void*);
 // thumbnail callback, so every access happens under coverCacheMutex. The lock
 // is only ever held for map operations, never across archive scans, PNG
 // decoding, or calls back into Qt or firmware code.
-static char const kCoverRoot[] = "/mnt/onboard/.kobo/custom/covers/";
 static char const kCoverBackupRoot[] = "/mnt/onboard/.kobo/custom/covers/backups/";
 static char const kPageManagerRoot[] = "/mnt/onboard/.kobo/custom/page-manager/";
 static char const kPageBackupRoot[] = "/mnt/onboard/.kobo/custom/page-manager/backups/";
@@ -89,7 +88,6 @@ static char const kCustomAssetSdContentPrefix[] =
     "file:///mnt/sd/.kobo/custom/";
 static char const kCustomAssetSdExternalContentPrefix[] =
     "file:///mnt/sd/koboExtStorage/custom/";
-static int const kMaximumCustomCovers = 32;
 static int const kBackgroundWidth = 1404;
 static int const kBackgroundHeight = 1872;
 static int const kMaximumPageMetadataSize = 256 * 1024;

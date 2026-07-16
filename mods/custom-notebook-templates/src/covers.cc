@@ -1,23 +1,49 @@
-#line 1710 "src/customnotebooktemplates.cc"
+#include "covers.h"
 
-static void loadAutomaticCovers() {
+#include "fs_util.h"
+#include "settings.h"
+
+#include <QByteArray>
+#include <QDir>
+#include <QFileInfo>
+#include <QString>
+#include <QtGlobal>
+
+#include <NickelHook.h>
+
+#include <cstdint>
+
+namespace cnt {
+namespace covers {
+namespace {
+
+char const kCoverRoot[] = "/mnt/onboard/.kobo/custom/covers/";
+int const kMaximumCustomCovers = 32;
+int const kBackgroundWidth = 1404;
+int const kBackgroundHeight = 1872;
+
+} // namespace
+
+void loadAutomaticCovers(
+        QMap<QString, QString>& rendererMap,
+        QVector<templates::CustomTemplate>& customCovers) {
     QDir directory(QString::fromLatin1(kCoverRoot));
     QFileInfoList const files = directory.entryInfoList(
         QDir::Files | QDir::NoSymLinks,
         QDir::Name | QDir::IgnoreCase);
 
     for (int i = 0; i < files.size(); ++i) {
-        if (coverState().customCovers.size() >= kMaximumCustomCovers) {
+        if (customCovers.size() >= kMaximumCustomCovers) {
             trace("covers: cover limit reached");
             break;
         }
 
         QFileInfo const& info = files.at(i);
-        if (!cnt::fs_util::automaticSource(info))
+        if (!fs_util::automaticSource(info))
             continue;
 
         QString const sourcePath = info.absoluteFilePath();
-        if (!cnt::fs_util::hasPngSignature(sourcePath)) {
+        if (!fs_util::hasPngSignature(sourcePath)) {
             trace("covers: invalid PNG skipped");
             continue;
         }
@@ -30,16 +56,16 @@ static void loadAutomaticCovers() {
             continue;
 
         uint32_t const hash =
-            cnt::fs_util::stableFilenameHash(info.fileName().toUtf8());
+            fs_util::stableFilenameHash(info.fileName().toUtf8());
         QString const id = QString::fromLatin1("Custom_Cover_%1")
             .arg(hash, 8, 16, QLatin1Char('0'));
-        if (firmwareApi().rendererMap->contains(id)) {
+        if (rendererMap.contains(id)) {
             trace("covers: identifier collision skipped");
             continue;
         }
 
         QString iconPath;
-        if (!cnt::fs_util::createPickerIcon(sourcePath, &iconPath)) {
+        if (!fs_util::createPickerIcon(sourcePath, &iconPath)) {
             trace("covers: could not generate picker icon");
             nh_log("cover '%s' must be a readable %d x %d PNG",
                 qPrintable(info.fileName()), kBackgroundWidth, kBackgroundHeight);
@@ -47,16 +73,19 @@ static void loadAutomaticCovers() {
         }
 
         QString condorPath;
-        if (!cnt::fs_util::syncCondorVariant(sourcePath, &condorPath)) {
+        if (!fs_util::syncCondorVariant(sourcePath, &condorPath)) {
             trace("covers: could not prepare renderer copy");
             continue;
         }
 
-        firmwareApi().rendererMap->insert(id, sourcePath);
-        coverState().customCovers.append(
-            cnt::templates::CustomTemplate{id, label, iconPath, sourcePath});
+        rendererMap.insert(id, sourcePath);
+        customCovers.append(
+            templates::CustomTemplate{id, label, iconPath, sourcePath});
         trace("covers: PNG cover loaded");
         nh_log("automatically loaded notebook cover '%s' as '%s'",
             qPrintable(info.fileName()), qPrintable(label));
     }
 }
+
+} // namespace covers
+} // namespace cnt

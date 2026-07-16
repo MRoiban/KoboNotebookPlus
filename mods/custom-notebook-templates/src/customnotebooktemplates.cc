@@ -54,6 +54,7 @@
 #include <NickelHook.h>
 
 #include "covermenureceiver.h"
+#include "covers.h"
 #include "fs_util.h"
 #include "settings.h"
 #include "templates.h"
@@ -67,7 +68,6 @@ namespace {
 #include "firmware_api.h"
 #include "plugin_state.h"
 #include "parts/resolve.cc.inc"
-#include "parts/covers.cc.inc"
 #include "parts/cover_cache.cc.inc"
 #include "parts/pages.cc.inc"
 #include "parts/layers_state.cc.inc"
