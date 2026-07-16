@@ -875,7 +875,6 @@ static bool applyConfigurationToExactEraser(
     }
 
     try {
-        float const beforeRadius = firmwareApi(dependencies).eraserRadius(tool);
         int const beforePolicy = firmwareApi(dependencies).eraserPolicy ? firmwareApi(dependencies).eraserPolicy(tool) : -1;
         std::string const beforeLayer = restrictedToolLayer(dependencies, tool);
         firmwareApi(dependencies).eraserSetRadius(tool, desiredRadius);
@@ -892,54 +891,21 @@ static bool applyConfigurationToExactEraser(
             : beforePolicy == afterPolicy;
         bool const layerPreserved = beforeLayer == afterLayer;
         bool const radiusApplied = difference < 0.001f;
-        if (applyPolicy) {
-            trace(QLatin1String("eraser-state: apply reason=")
+        if (!radiusApplied || !policyVerified || !layerPreserved) {
+            trace(QLatin1String(applyPolicy ? "eraser-state" : "eraser-size")
+                + QLatin1String(": verification failed reason=")
                 + QLatin1String(reason)
                 + QLatin1String(" source=") + QLatin1String(source)
                 + QLatin1String(" class=") + QLatin1String(eraserClass)
-                + QLatin1String(" before-policy=")
-                + QString::number(beforePolicy)
-                + QLatin1String(" requested-policy=")
-                + QString::number(desiredPolicy)
-                + QLatin1String(" after-policy=")
-                + QString::number(afterPolicy)
-                + QLatin1String(" before-radius=")
-                + QString::number(beforeRadius, 'f', 3)
-                + QLatin1String(" requested-radius=")
-                + QString::number(desiredRadius, 'f', 3)
-                + QLatin1String(" after-radius=")
-                + QString::number(afterRadius, 'f', 3)
-                + QLatin1String(" before-layer=")
-                + QString::fromUtf8(
-                    beforeLayer.data(), static_cast<int>(beforeLayer.size()))
-                + QLatin1String(" after-layer=")
-                + QString::fromUtf8(
-                    afterLayer.data(), static_cast<int>(afterLayer.size()))
-                + QLatin1String(" verified=")
-                + (policyVerified && radiusApplied && layerPreserved
-                    ? QLatin1String("yes") : QLatin1String("no")));
-            if (!layerPreserved)
-                trace("eraser-state: setters changed restricted layer unexpectedly");
-        } else {
-            trace(QLatin1String("eraser-size: apply reason=")
-                + QLatin1String(reason)
-                + QLatin1String(" source=") + QLatin1String(source)
-                + QLatin1String(" class=") + QLatin1String(eraserClass)
-                + QLatin1String(" before=")
-                + QString::number(beforeRadius, 'f', 3)
-                + QLatin1String(" requested=")
-                + QString::number(desiredRadius, 'f', 3)
-                + QLatin1String(" after=")
-                + QString::number(afterRadius, 'f', 3)
-                + QLatin1String(" policy=") + QString::number(afterPolicy)
+                + QLatin1String(" radius=")
+                + (radiusApplied ? QLatin1String("ok")
+                                 : QLatin1String("mismatch"))
+                + QLatin1String(" policy=")
+                + (policyVerified ? QLatin1String("ok")
+                                  : QLatin1String("mismatch"))
                 + QLatin1String(" layer=")
-                + QString::fromUtf8(
-                    afterLayer.data(), static_cast<int>(afterLayer.size()))
-                + QLatin1String(" policy-layer-preserved=")
-                + (policyVerified && layerPreserved
-                    ? QLatin1String("yes") : QLatin1String("no")));
-            if (!policyVerified || !layerPreserved)
-                trace("eraser-size: setter changed policy/layer unexpectedly");
+                + (layerPreserved ? QLatin1String("preserved")
+                                  : QLatin1String("changed")));
         }
         return radiusApplied && policyVerified && layerPreserved;
     } catch (...) {
@@ -1131,20 +1097,15 @@ static bool applyConfiguredEraserConfigurationForWidgetImpl(
         }
 
         trace(QLatin1String(applyPolicy ? "eraser-state" : "eraser-size")
-            + QLatin1String(": fanout reason=")
+            + QLatin1String(": replay reason=")
             + QLatin1String(reason)
             + (applyPolicy
                 ? QLatin1String(" policy=") + QString::number(desiredPolicy)
                 : QString())
             + QLatin1String(" index=") + QString::number(index)
-            + QLatin1String(" ratio=")
-            + QString::number(firmwarePins(dependencies).eraserSizeRatios[index], 'f', 2)
-            + QLatin1String(" line-gap=")
-            + QString::number(lineGap, 'f', 3)
-            + QLatin1String(" radius=")
-            + QString::number(radius, 'f', 3)
-            + QLatin1String(" exact=") + QString::number(exactCount)
-            + QLatin1String(" applied=") + QString::number(appliedCount));
+            + QLatin1String(" radius=") + QString::number(radius, 'f', 3)
+            + QLatin1String(" tools=") + QString::number(appliedCount)
+            + QLatin1Char('/') + QString::number(exactCount));
         return exactCount > 0 && appliedCount == exactCount;
     } catch (...) {
         trace(QLatin1String(applyPolicy ? "eraser-state" : "eraser-size")
@@ -1242,7 +1203,7 @@ static bool armLayerAwareDrawingEraser(
                 "layers: diagram eraser custom-layer core-only hook unavailable"));
             return false;
         }
-        layerState(dependencies).diagramEraserObserverTraceBudget = 60;
+        layerState(dependencies).diagramEraserObserverTraceBudget = 6;
     }
     if (currentVptr == stockVptr)
         *reinterpret_cast<void**>(tool) = layerVptr;
@@ -1398,7 +1359,7 @@ static bool armLayerAwareDrawingErasersImpl(
     }
 
     if (armedCount > 0)
-        layerState(dependencies).eraserTraceBudget = 8;
+        layerState(dependencies).eraserTraceBudget = 2;
     bool const diagramRoutingReady = diagramEraserCount == 0
         || diagramPenRestrictedCount > 0;
     trace(QLatin1String("layers: eraser adapters backends=")
