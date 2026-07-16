@@ -6,20 +6,14 @@ static void installHookAfterNaturalLoad() {
         return;
 
     trace("libiinknote observed after natural load");
-    BackgroundOptionsAddress replacement;
-    replacement.function = _cnt_background_options_hook;
-    void* const original = nh_dlhook(
-        handle,
-        kBackgroundOptionsSymbol,
-        replacement.pointer);
-    if (!original) {
-        trace("delayed backgroundOptions hook failed");
+    BackgroundOptions resolvedBackgroundOptions = nullptr;
+    if (!resolvePinned(handle, kBackgroundOptionsSymbol,
+            kBackgroundOptionsVma, &resolvedBackgroundOptions)) {
+        trace("delayed backgroundOptions symbol validation failed");
         stopHookTimer();
         return;
     }
-
-    firmwareApi().backgroundOptionsOriginal = reinterpret_cast<BackgroundOptions>(original);
-    trace("delayed backgroundOptions hook installed");
+    firmwareApi().backgroundOptionsOriginal = resolvedBackgroundOptions;
 
     if (!locateRendererMap()) {
         stopHookTimer();
@@ -33,14 +27,38 @@ static void installHookAfterNaturalLoad() {
     loadAutomaticTemplates();
     loadAutomaticCovers();
 
+    BackgroundOptionsAddress replacement;
+    replacement.function = _cnt_background_options_hook;
+    void* const original = nh_dlhook(
+        handle,
+        kBackgroundOptionsSymbol,
+        replacement.pointer);
+    if (!pointerMatchesVma(original, kBackgroundOptionsVma)) {
+        trace("delayed backgroundOptions hook validation failed");
+        stopHookTimer();
+        return;
+    }
+    firmwareApi().backgroundOptionsOriginal = reinterpret_cast<BackgroundOptions>(original);
+    trace("delayed backgroundOptions hook installed");
+
     if (resolveCoverApis(handle)) {
-        AddWidgetActionAddress replacement;
-        replacement.function = _cnt_add_widget_action_hook;
-        void* const original = nh_dlhook(
-            handle,
-            kAddWidgetActionSymbol,
-            replacement.pointer);
-        firmwareApi().addWidgetActionOriginal = reinterpret_cast<AddWidgetAction>(original);
+        AddWidgetAction resolvedAction = nullptr;
+        void* original = nullptr;
+        if (firmwareApi().createIInkMenuItem && firmwareApi().iinknoteBase
+                && resolvePinned(handle, kAddWidgetActionSymbol,
+                    kAddWidgetActionVma, &resolvedAction)) {
+            firmwareApi().addWidgetActionOriginal = resolvedAction;
+            AddWidgetActionAddress actionReplacement;
+            actionReplacement.function = _cnt_add_widget_action_hook;
+            original = nh_dlhook(
+                handle,
+                kAddWidgetActionSymbol,
+                actionReplacement.pointer);
+            if (pointerMatchesVma(original, kAddWidgetActionVma)) {
+                firmwareApi().addWidgetActionOriginal =
+                    reinterpret_cast<AddWidgetAction>(original);
+            }
+        }
         if (pointerMatchesVma(original, kAddWidgetActionVma)) {
             pageState().hooksReady = true;
             trace("pages: guarded notebook-menu hook installed");
@@ -115,72 +133,99 @@ static void installHookAfterNaturalLoad() {
         }
 
         if (!coverState().customCovers.isEmpty() && loadZipApis()) {
-            SetDialogTitleAddress titleReplacement;
-        titleReplacement.function = _cnt_set_dialog_title_hook;
-        void* const originalTitle = nh_dlhook(
-            handle,
-            kSetDialogTitleSymbol,
-            titleReplacement.pointer);
-        firmwareApi().setDialogTitleOriginal = reinterpret_cast<SetDialogTitle>(originalTitle);
+            SetDialogTitle resolvedTitle = nullptr;
+            ParserImageParsed resolvedImageParsed = nullptr;
+            bool const coverHookSymbols =
+                resolvePinned(handle, kSetDialogTitleSymbol,
+                    kSetDialogTitleVma, &resolvedTitle)
+                && resolvePinned(handle, kParserImageParsedSymbol,
+                    kParserImageParsedVma, &resolvedImageParsed);
+            void* originalTitle = nullptr;
+            void* originalImageParsed = nullptr;
+            if (coverHookSymbols) {
+                firmwareApi().setDialogTitleOriginal = resolvedTitle;
+                firmwareApi().parserImageParsedOriginal = resolvedImageParsed;
 
-        ParserImageParsedAddress imageReplacement;
-        imageReplacement.function = _cnt_parser_image_parsed_hook;
-        void* const originalImageParsed = nh_dlhook(
-            handle,
-            kParserImageParsedSymbol,
-            imageReplacement.pointer);
-        firmwareApi().parserImageParsedOriginal = reinterpret_cast<ParserImageParsed>(
-            originalImageParsed);
+                SetDialogTitleAddress titleReplacement;
+                titleReplacement.function = _cnt_set_dialog_title_hook;
+                originalTitle = nh_dlhook(
+                    handle,
+                    kSetDialogTitleSymbol,
+                    titleReplacement.pointer);
+                if (pointerMatchesVma(originalTitle, kSetDialogTitleVma)) {
+                    firmwareApi().setDialogTitleOriginal =
+                        reinterpret_cast<SetDialogTitle>(originalTitle);
+                }
 
-        void* const nickelHandle = dlopen(
-            "libnickel.so.1.0.0", RTLD_LAZY | RTLD_NOLOAD);
-        void* originalLoadCover = nullptr;
-        if (nickelHandle) {
-            bool const gridSymbols =
-                resolvePinned(nickelHandle, kContentGetIdSymbol,
-                    kContentGetIdVma, &firmwareApi().contentGetId)
-                && resolvePinned(nickelHandle, kContentGetImageIdSymbol,
-                    kContentGetImageIdVma, &firmwareApi().contentGetImageId)
-                && resolvePinned(nickelHandle, kPixmapSetImageSymbol,
-                    kPixmapSetImageVma, &firmwareApi().pixmapSetImage);
-            if (gridSymbols) {
-                VolumeLoadCoverAddress loadCoverReplacement;
-                loadCoverReplacement.function = _cnt_volume_load_cover_hook;
-                originalLoadCover = nh_dlhook(
-                    nickelHandle,
-                    kVolumeLoadCoverSymbol,
-                    loadCoverReplacement.pointer);
-                firmwareApi().volumeLoadCoverOriginal = reinterpret_cast<VolumeLoadCover>(
-                    originalLoadCover);
+                ParserImageParsedAddress imageReplacement;
+                imageReplacement.function = _cnt_parser_image_parsed_hook;
+                originalImageParsed = nh_dlhook(
+                    handle,
+                    kParserImageParsedSymbol,
+                    imageReplacement.pointer);
                 if (pointerMatchesVma(
-                        originalLoadCover, kVolumeLoadCoverVma)) {
-                    coverState().gridHookReady = true;
-                    trace("covers: live notebook-card load hook installed");
-                } else {
-                    trace("covers: notebook-card load hook validation failed");
+                        originalImageParsed, kParserImageParsedVma)) {
+                    firmwareApi().parserImageParsedOriginal =
+                        reinterpret_cast<ParserImageParsed>(originalImageParsed);
                 }
             }
-            dlclose(nickelHandle);
-        }
 
-        // All imported functions are pinned in libnickel. Menu calls are
-        // additionally guarded to IInkMenuController::loadView below, while
-        // the title hook requires the one-shot cover-picker flag and exact
-        // stock title text. Thumbnail replacement is restricted to the sole
-        // imageParsed call in the verified parser callback. The notebook-grid
-        // load hook independently checks its exact libnickel VMA, lets Kobo
-        // load first, then reads only the view's own Volume and .nebo path
-        // (including notebook subfolders).
-        if (pointerMatchesVma(original, kAddWidgetActionVma)
-                && pointerMatchesVma(originalTitle, kSetDialogTitleVma)
-                && pointerMatchesVma(
-                    originalImageParsed, kParserImageParsedVma)) {
-            coverState().hooksReady = true;
-            trace("covers: guarded menu, picker-title, and parser-thumbnail hooks installed");
-        } else {
-            trace("covers: hook validation failed");
-            nh_log("custom notebook covers disabled: firmware hook mismatch");
-        }
+            void* const nickelHandle = dlopen(
+                "libnickel.so.1.0.0", RTLD_LAZY | RTLD_NOLOAD);
+            void* originalLoadCover = nullptr;
+            if (nickelHandle) {
+                VolumeLoadCover resolvedLoadCover = nullptr;
+                bool const gridSymbols =
+                    resolvePinned(nickelHandle, kContentGetIdSymbol,
+                        kContentGetIdVma, &firmwareApi().contentGetId)
+                    && resolvePinned(nickelHandle, kContentGetImageIdSymbol,
+                        kContentGetImageIdVma, &firmwareApi().contentGetImageId)
+                    && resolvePinned(nickelHandle, kPixmapSetImageSymbol,
+                        kPixmapSetImageVma, &firmwareApi().pixmapSetImage)
+                    && resolvePinned(nickelHandle, kVolumeLoadCoverSymbol,
+                        kVolumeLoadCoverVma, &resolvedLoadCover);
+                if (gridSymbols) {
+                    firmwareApi().volumeLoadCoverOriginal = resolvedLoadCover;
+                    VolumeLoadCoverAddress loadCoverReplacement;
+                    loadCoverReplacement.function = _cnt_volume_load_cover_hook;
+                    originalLoadCover = nh_dlhook(
+                        nickelHandle,
+                        kVolumeLoadCoverSymbol,
+                        loadCoverReplacement.pointer);
+                    if (pointerMatchesVma(
+                            originalLoadCover, kVolumeLoadCoverVma)) {
+                        firmwareApi().volumeLoadCoverOriginal =
+                            reinterpret_cast<VolumeLoadCover>(originalLoadCover);
+                    }
+                    if (pointerMatchesVma(
+                            originalLoadCover, kVolumeLoadCoverVma)) {
+                        coverState().gridHookReady = true;
+                        trace("covers: live notebook-card load hook installed");
+                    } else {
+                        trace("covers: notebook-card load hook validation failed");
+                    }
+                }
+                dlclose(nickelHandle);
+            }
+
+            // All imported functions are pinned in libnickel. Menu calls are
+            // additionally guarded to IInkMenuController::loadView below, while
+            // the title hook requires the one-shot cover-picker flag and exact
+            // stock title text. Thumbnail replacement is restricted to the sole
+            // imageParsed call in the verified parser callback. The notebook-grid
+            // load hook independently checks its exact libnickel VMA, lets Kobo
+            // load first, then reads only the view's own Volume and .nebo path
+            // (including notebook subfolders).
+            if (pointerMatchesVma(original, kAddWidgetActionVma)
+                    && pointerMatchesVma(originalTitle, kSetDialogTitleVma)
+                    && pointerMatchesVma(
+                        originalImageParsed, kParserImageParsedVma)) {
+                coverState().hooksReady = true;
+                trace("covers: guarded menu, picker-title, and parser-thumbnail hooks installed");
+            } else {
+                trace("covers: hook validation failed");
+                nh_log("custom notebook covers disabled: firmware hook mismatch");
+            }
         } else {
             trace("covers: no cover PNGs found; cover hooks not installed");
         }
