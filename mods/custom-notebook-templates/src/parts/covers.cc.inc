@@ -17,7 +17,7 @@ static void loadAutomaticCovers() {
             continue;
 
         QString const sourcePath = info.absoluteFilePath();
-        if (!hasPngSignature(sourcePath)) {
+        if (!cnt::fs_util::hasPngSignature(sourcePath)) {
             trace("covers: invalid PNG skipped");
             continue;
         }
@@ -38,7 +38,7 @@ static void loadAutomaticCovers() {
         }
 
         QString iconPath;
-        if (!createPickerIcon(sourcePath, &iconPath)) {
+        if (!cnt::fs_util::createPickerIcon(sourcePath, &iconPath)) {
             trace("covers: could not generate picker icon");
             nh_log("cover '%s' must be a readable %d x %d PNG",
                 qPrintable(info.fileName()), kBackgroundWidth, kBackgroundHeight);
@@ -46,7 +46,7 @@ static void loadAutomaticCovers() {
         }
 
         QString condorPath;
-        if (!syncCondorVariant(sourcePath, &condorPath)) {
+        if (!cnt::fs_util::syncCondorVariant(sourcePath, &condorPath)) {
             trace("covers: could not prepare renderer copy");
             continue;
         }

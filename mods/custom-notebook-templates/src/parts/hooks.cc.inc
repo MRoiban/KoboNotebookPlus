@@ -133,7 +133,7 @@ void _cnt_parser_image_parsed_hook(
     QElapsedTimer timer;
     timer.start();
     QString const notebookPath = notebookPathFromVolume(volume);
-    double const pathResolveMs = elapsedMs(timer);
+    double const pathResolveMs = cnt::fs_util::elapsedMs(timer);
     QString type;
     if (notebookPath.isEmpty()
             || !cachedNotebookCoverType(notebookPath, &type, pathResolveMs)) {
@@ -174,7 +174,7 @@ void _cnt_volume_load_cover_hook(void* view) {
     QElapsedTimer timer;
     timer.start();
     QString const notebookPath = notebookPathFromVolume(volume);
-    double const pathResolveMs = elapsedMs(timer);
+    double const pathResolveMs = cnt::fs_util::elapsedMs(timer);
     QString type;
     if (notebookPath.isEmpty()
             || !cachedNotebookCoverType(notebookPath, &type, pathResolveMs)) {
@@ -198,7 +198,7 @@ void _cnt_volume_load_cover_hook(void* view) {
     char line[128];
     snprintf(line, sizeof(line),
         "covers: live notebook card replaced (set-image=%.1fms)",
-        elapsedMs(timer));
+        cnt::fs_util::elapsedMs(timer));
     trace(line);
 }
 

@@ -31,7 +31,7 @@ static bool syncTemplateOverlay(QString const& sourcePath, QString* condorPath) 
                 reinterpret_cast<QRgb const*>(overlay.constScanLine(y));
             for (int x = 0; x < overlay.width(); ++x) {
                 if (qAlpha(row[x]) != 255)
-                    return syncCondorVariant(sourcePath, condorPath);
+                    return cnt::fs_util::syncCondorVariant(sourcePath, condorPath);
             }
         }
     }
@@ -47,7 +47,7 @@ static bool syncTemplateOverlay(QString const& sourcePath, QString* condorPath) 
     if (!buffer.open(QIODevice::WriteOnly) || !overlay.save(&buffer, "PNG"))
         return false;
     buffer.close();
-    if (!writeBytesIfChanged(destination, encoded))
+    if (!cnt::fs_util::writeBytesIfChanged(destination, encoded))
         return false;
     trace("automatic: opaque paper converted to transparent overlay");
     return true;
@@ -149,7 +149,7 @@ static bool loadManifest() {
         QString const icon = item.value(QLatin1String("icon")).toString();
         QString const background = item.value(QLatin1String("background")).toString();
 
-        if (!safeId(id) || label.isEmpty() || label.size() > 64) {
+        if (!cnt::fs_util::safeId(id) || label.isEmpty() || label.size() > 64) {
             trace("manifest: invalid id or label");
             nh_log("manifest entry %d has an invalid id or label", i);
             return false;
@@ -159,12 +159,14 @@ static bool loadManifest() {
             nh_log("manifest entry %d collides with template id '%s'", i, qPrintable(id));
             return false;
         }
-        if (!safeTemplatePath(icon) || !icon.endsWith(QLatin1String(".png"))) {
+        if (!cnt::fs_util::safeTemplatePath(icon)
+                || !icon.endsWith(QLatin1String(".png"))) {
             trace("manifest: invalid icon");
             nh_log("manifest entry %d has an invalid or missing icon", i);
             return false;
         }
-        if (!safeTemplatePath(background) || !background.endsWith(QLatin1String(kCondorSuffix))) {
+        if (!cnt::fs_util::safeTemplatePath(background)
+                || !background.endsWith(QLatin1String(kCondorSuffix))) {
             trace("manifest: invalid background");
             nh_log("manifest entry %d needs an existing *_condor.png background", i);
             return false;
@@ -207,7 +209,7 @@ static void loadAutomaticTemplates() {
             continue;
 
         QString const sourcePath = info.absoluteFilePath();
-        if (!hasPngSignature(sourcePath)) {
+        if (!cnt::fs_util::hasPngSignature(sourcePath)) {
             trace("automatic: invalid PNG skipped");
             nh_log("automatic template '%s' does not have a PNG signature",
                 qPrintable(info.fileName()));
@@ -230,7 +232,7 @@ static void loadAutomaticTemplates() {
         }
 
         QString iconPath;
-        if (!createPickerIcon(sourcePath, &iconPath)) {
+        if (!cnt::fs_util::createPickerIcon(sourcePath, &iconPath)) {
             trace("automatic: could not generate picker icon");
             nh_log("automatic template '%s' must be a readable %d x %d PNG",
                 qPrintable(info.fileName()), kBackgroundWidth, kBackgroundHeight);

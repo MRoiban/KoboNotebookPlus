@@ -1,47 +1,33 @@
-#line 1310 "src/customnotebooktemplates.cc"
+#include "fs_util.h"
 
-static double elapsedMs(QElapsedTimer const& timer) {
-    return static_cast<double>(timer.nsecsElapsed()) / 1e6;
-}
+#include <QBuffer>
+#include <QByteArray>
+#include <QElapsedTimer>
+#include <QFile>
+#include <QFileInfo>
+#include <QImage>
+#include <QIODevice>
+#include <QPainter>
+#include <QString>
+#include <QtGlobal>
 
-static bool safeId(QString const& id) {
-    if (!id.startsWith(QLatin1String("Custom_")) || id.size() > 63)
-        return false;
+#include <cstring>
 
-    for (int i = 0; i < id.size(); ++i) {
-        ushort const c = id.at(i).unicode();
-        bool const asciiLetter = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
-        bool const asciiDigit = c >= '0' && c <= '9';
-        if (!(asciiLetter || asciiDigit || c == '_'))
-            return false;
-    }
-    return true;
-}
+namespace {
 
-static bool safeTemplatePath(QString const& path) {
-    return path.startsWith(QLatin1String(kTemplateRoot))
-        && !path.contains(QLatin1String(".."))
-        && QFileInfo(path).isFile();
-}
+char const kTemplateRoot[] = "/mnt/onboard/.kobo/custom/templates/";
+char const kCondorSuffix[] = "_condor.png";
+int const kBackgroundWidth = 1404;
+int const kBackgroundHeight = 1872;
+int const kPickerIconSize = 280;
 
-static bool hasPngSignature(QString const& path) {
-    static unsigned char const signature[] = {
-        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
-    };
-
-    QFile file(path);
-    if (!file.open(QIODevice::ReadOnly))
-        return false;
-    QByteArray const header = file.read(static_cast<qint64>(sizeof(signature)));
-    return header.size() == static_cast<int>(sizeof(signature))
-        && memcmp(header.constData(), signature, sizeof(signature)) == 0;
-}
-
-static bool filesEqual(QString const& firstPath, QString const& secondPath) {
+bool filesEqual(QString const& firstPath, QString const& secondPath) {
     QFileInfo const firstInfo(firstPath);
     QFileInfo const secondInfo(secondPath);
-    if (!firstInfo.isFile() || !secondInfo.isFile() || firstInfo.size() != secondInfo.size())
+    if (!firstInfo.isFile() || !secondInfo.isFile()
+            || firstInfo.size() != secondInfo.size()) {
         return false;
+    }
 
     QFile first(firstPath);
     QFile second(secondPath);
@@ -57,7 +43,50 @@ static bool filesEqual(QString const& firstPath, QString const& secondPath) {
     return second.atEnd();
 }
 
-static bool syncCondorVariant(QString const& sourcePath, QString* condorPath) {
+} // namespace
+
+namespace cnt {
+namespace fs_util {
+
+double elapsedMs(QElapsedTimer const& timer) {
+    return static_cast<double>(timer.nsecsElapsed()) / 1e6;
+}
+
+bool safeId(QString const& id) {
+    if (!id.startsWith(QLatin1String("Custom_")) || id.size() > 63)
+        return false;
+
+    for (int i = 0; i < id.size(); ++i) {
+        ushort const c = id.at(i).unicode();
+        bool const asciiLetter =
+            (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
+        bool const asciiDigit = c >= '0' && c <= '9';
+        if (!(asciiLetter || asciiDigit || c == '_'))
+            return false;
+    }
+    return true;
+}
+
+bool safeTemplatePath(QString const& path) {
+    return path.startsWith(QLatin1String(kTemplateRoot))
+        && !path.contains(QLatin1String(".."))
+        && QFileInfo(path).isFile();
+}
+
+bool hasPngSignature(QString const& path) {
+    static unsigned char const signature[] = {
+        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+    };
+
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly))
+        return false;
+    QByteArray const header = file.read(static_cast<qint64>(sizeof(signature)));
+    return header.size() == static_cast<int>(sizeof(signature))
+        && memcmp(header.constData(), signature, sizeof(signature)) == 0;
+}
+
+bool syncCondorVariant(QString const& sourcePath, QString* condorPath) {
     QString destination = sourcePath;
     destination.chop(4);
     destination.append(QLatin1String(kCondorSuffix));
@@ -81,7 +110,7 @@ static bool syncCondorVariant(QString const& sourcePath, QString* condorPath) {
     return true;
 }
 
-static bool writeBytesIfChanged(QString const& destination, QByteArray const& contents) {
+bool writeBytesIfChanged(QString const& destination, QByteArray const& contents) {
     QFile existing(destination);
     if (existing.open(QIODevice::ReadOnly)) {
         bool const unchanged = existing.readAll() == contents;
@@ -113,7 +142,7 @@ static bool writeBytesIfChanged(QString const& destination, QByteArray const& co
     return true;
 }
 
-static bool createPickerIcon(QString const& sourcePath, QString* iconPath) {
+bool createPickerIcon(QString const& sourcePath, QString* iconPath) {
     QString destination = sourcePath;
     destination.chop(4);
     destination.append(QLatin1String("-icon.png"));
@@ -147,3 +176,6 @@ static bool createPickerIcon(QString const& sourcePath, QString* iconPath) {
     buffer.close();
     return writeBytesIfChanged(destination, encoded);
 }
+
+} // namespace fs_util
+} // namespace cnt

@@ -150,8 +150,8 @@ class RepositoryGlobalsBudgetTests(unittest.TestCase):
         self.assertEqual(VERIFIER.validation_errors(audit), [])
         self.assertEqual(audit.names("mutable"), {"gPluginState", "info"})
         self.assertEqual(audit.count("mutex"), 0)
-        self.assertEqual(audit.count("immutable"), 297)
-        self.assertEqual(audit.count("function"), 146)
+        self.assertEqual(audit.count("immutable"), 296)
+        self.assertEqual(audit.count("function"), 138)
         self.assertEqual(audit.framework_globals, ("NickelHook",))
 
     def test_cli_reports_verified_inventory(self) -> None:
@@ -164,7 +164,7 @@ class RepositoryGlobalsBudgetTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("mutable namespace statics: 2 (gPluginState, info)", result.stdout)
-        self.assertIn("immutable namespace statics: 297", result.stdout)
+        self.assertIn("immutable namespace statics: 296", result.stdout)
         self.assertIn("framework global descriptors: 1 (NickelHook)", result.stdout)
         self.assertIn("Globals budget verified", result.stdout)
 

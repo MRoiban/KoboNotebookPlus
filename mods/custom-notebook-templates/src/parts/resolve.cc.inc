@@ -96,7 +96,6 @@ static int const kMaximumCustomCovers = 32;
 static qint64 const kMaximumAutomaticPngSize = 32 * 1024 * 1024;
 static int const kBackgroundWidth = 1404;
 static int const kBackgroundHeight = 1872;
-static int const kPickerIconSize = 280;
 static int const kMaximumPageMetadataSize = 256 * 1024;
 static int const kMaximumScanCacheEntries = 2048;
 static int const kMaximumNotebookPages = 4096;

@@ -3,7 +3,7 @@ NICKELHOOK ?= ../../third_party/NickelHook/
 include $(NICKELHOOK)/NickelHook.mk
 
 override LIBRARY  := libcustomnotebooktemplates.so
-override SOURCES  += src/customnotebooktemplates.cc
+override SOURCES  += src/customnotebooktemplates.cc src/fs_util.cc
 override MOCS     += src/covermenureceiver.h
 override PKGCONF  += Qt5Widgets
 override CXXFLAGS += -Wall -Wextra -Werror -Wno-missing-field-initializers \

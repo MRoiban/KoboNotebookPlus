@@ -181,7 +181,7 @@ static bool scanNotebookCoverType(
     // ZIP_RDONLY. A notebook being saved or otherwise unreadable simply uses
     // Kobo's original preview for this pass, and the verdict is not cached.
     ZipArchiveOpaque* const archive = zipApi().open(encodedPath.constData(), 16, &openError);
-    timing->zipOpenMs = elapsedMs(timer);
+    timing->zipOpenMs = cnt::fs_util::elapsedMs(timer);
     if (!archive)
         return false;
 
@@ -217,7 +217,7 @@ static bool scanNotebookCoverType(
         }
     }
     zipApi().discard(archive);
-    timing->scanMs = elapsedMs(timer);
+    timing->scanMs = cnt::fs_util::elapsedMs(timer);
 
     // An unreadable page entry may be a save in progress; keep this pass's
     // verdict out of the cache so the next pass rescans.
