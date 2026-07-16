@@ -1,5 +1,13 @@
 #pragma once
 
+#include "abi_types.h"
+
+#include <QMap>
+#include <QString>
+
+#include <cstdint>
+#include <string>
+
 // Resolved firmware entry points and image-derived addresses. This stays a
 // plain, value-initialized aggregate: resolution remains explicit and feature
 // gates continue to decide which independently optional groups are usable.

@@ -1,3 +1,6 @@
+#include "abi_types.h"
+#include "firmware_api.h"
+
 #include <QAction>
 #include <QBuffer>
 #include <QCoreApplication>
@@ -64,8 +67,6 @@ using cnt::validEraserSizeIndex;
 
 namespace {
 
-#include "abi_types.h"
-#include "firmware_api.h"
 #include "plugin_state.h"
 #include "parts/resolve.cc.inc"
 #include "parts/cover_cache.cc.inc"

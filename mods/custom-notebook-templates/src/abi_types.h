@@ -1,6 +1,22 @@
 #pragma once
 
-#line 60 "src/customnotebooktemplates.cc"
+#include <QImage>
+#include <QPoint>
+#include <QString>
+#include <QVector>
+#include <QtGlobal>
+
+#include <cstdint>
+#include <map>
+#include <memory>
+#include <string>
+#include <vector>
+
+class QMenu;
+class QObject;
+class QPixmap;
+class QWidget;
+
 // Recovered from libnickel.so.1.0.0 on firmware 4.38.23697. The three
 // accessors read QString fields at offsets 0, 4, and 8 respectively.
 struct BackgroundOption {
