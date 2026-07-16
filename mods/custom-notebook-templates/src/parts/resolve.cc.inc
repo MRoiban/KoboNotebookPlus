@@ -26,7 +26,7 @@ static LayerRuntimeState& layerState() {
     return pluginState().layers;
 }
 
-static EraserRuntimeState& eraserState() {
+static cnt::eraser_menu::RuntimeState& eraserState() {
     return pluginState().eraser;
 }
 

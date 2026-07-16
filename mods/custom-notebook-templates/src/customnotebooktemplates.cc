@@ -60,6 +60,7 @@
 #include "covermenureceiver.h"
 #include "cover_editor.h"
 #include "covers.h"
+#include "eraser_menu.h"
 #include "fs_util.h"
 #include "notebook_widget.h"
 #include "notebook_hook_services.h"
@@ -86,7 +87,6 @@ namespace {
 #include "parts/layers_preview.cc.inc"
 #include "parts/menus.cc.inc"
 #include "parts/visibility.cc.inc"
-#include "parts/eraser_menu.cc.inc"
 #include "parts/hook_install.cc.inc"
 
 } // namespace

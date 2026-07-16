@@ -1,5 +1,33 @@
 #line 7283 "src/customnotebooktemplates.cc"
 
+static bool installEraserSizeMenuHooks(void* handle) {
+    cnt::eraser_menu::ResolvePinnedAddress const resolveAddress = [](
+            void* sourceHandle,
+            char const* symbol,
+            uintptr_t expectedVma,
+            void** destination) -> bool {
+        return resolvePinned(
+            sourceHandle, symbol, expectedVma, destination);
+    };
+    cnt::eraser_menu::InstallPins const pins = {
+        kToolMenuConstructorSymbol,
+        kToolMenuConstructorVma,
+        kCreateBrushSizeRowSymbol,
+        kCreateBrushSizeRowVma,
+        kSetBrushSizeIndexSymbol,
+        kSetBrushSizeIndexVma,
+        kSetActiveToolSymbol,
+        kSetActiveToolVma,
+    };
+    return cnt::eraser_menu::installHooks(
+        firmwareApi(),
+        eraserState(),
+        handle,
+        pins,
+        resolveAddress,
+        pointerMatchesVma);
+}
+
 static void installHookAfterNaturalLoad() {
     void* const handle = dlopen("libiinknote.so", RTLD_LAZY | RTLD_NOLOAD);
     if (!handle)

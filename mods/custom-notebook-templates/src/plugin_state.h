@@ -28,12 +28,6 @@ struct LayerRuntimeState {
     bool previewApisReady = false;
 };
 
-struct EraserRuntimeState {
-    bool sizeApisReady = false;
-    bool sizeMenuHooksReady = false;
-    QPointer<QObject> liveSizeController;
-};
-
 struct HookRuntimeState {
     QTimer* timer = nullptr;
     bool notebookLifecycleHooksReady = false;
@@ -48,7 +42,7 @@ struct PluginState {
     cnt::cover_cache::State covers;
     PageRuntimeState pages;
     LayerRuntimeState layers;
-    EraserRuntimeState eraser;
+    cnt::eraser_menu::RuntimeState eraser;
     cnt::SettingsStore settings;
     cnt::visibility::RuntimeState visibility;
     HookRuntimeState hooks;
