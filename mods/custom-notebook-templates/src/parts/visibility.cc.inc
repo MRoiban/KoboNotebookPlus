@@ -97,21 +97,3 @@ static bool installCustomAssetVisibilityHooks() {
     trace("asset-visibility: backing-file guard and scanner exclusion installed");
     return true;
 }
-
-static void hideLegacyNotebookBackups() {
-    QDir directory = QDir(QLatin1String(kCoverBackupRoot));
-    QFileInfoList const files = directory.entryInfoList(
-        QDir::Files | QDir::NoSymLinks,
-        QDir::Name | QDir::IgnoreCase);
-    for (int i = 0; i < files.size(); ++i) {
-        QFileInfo const& info = files.at(i);
-        if (!info.fileName().endsWith(QLatin1String(".nebo"), Qt::CaseInsensitive))
-            continue;
-        QString const hiddenPath = info.absoluteFilePath()
-            + QLatin1String(".backup");
-        if (QFileInfo(hiddenPath).exists())
-            continue;
-        if (QFile::rename(info.absoluteFilePath(), hiddenPath))
-            trace("covers: legacy notebook backup hidden from library scanner");
-    }
-}

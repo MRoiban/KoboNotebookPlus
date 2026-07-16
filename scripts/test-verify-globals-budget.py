@@ -275,7 +275,7 @@ class RepositoryGlobalsBudgetTests(unittest.TestCase):
         self.assertEqual(audit.names("mutable"), {"gPluginState", "info"})
         self.assertEqual(audit.count("mutex"), 0)
         self.assertEqual(audit.count("immutable"), 278)
-        self.assertEqual(audit.count("function"), 94)
+        self.assertEqual(audit.count("function"), 93)
         self.assertEqual(audit.framework_globals, ("NickelHook",))
 
         promoted = VERIFIER.audit_promoted_sources(VERIFIER.DEFAULT_SOURCE_ROOT)

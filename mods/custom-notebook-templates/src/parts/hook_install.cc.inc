@@ -249,7 +249,7 @@ static int initialize() {
         gPluginState = new PluginState();
     trace("NickelHook init entered");
     installCustomAssetVisibilityHooks();
-    hideLegacyNotebookBackups();
+    cnt::visibility::hideLegacyNotebookBackups(kCoverBackupRoot);
     hookState().timer = new QTimer(QCoreApplication::instance());
     hookState().timer->setInterval(100);
     QObject::connect(hookState().timer, &QTimer::timeout, installHookAfterNaturalLoad);

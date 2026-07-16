@@ -65,6 +65,7 @@
 #include "pages.h"
 #include "settings.h"
 #include "templates.h"
+#include "visibility.h"
 
 using cnt::trace;
 using cnt::validEraserSizeIndex;
