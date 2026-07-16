@@ -136,7 +136,7 @@ void function() {
         )
         self.assertTrue(
             any(
-                "expected {gPluginState, info}" in error
+                "expected {none}" in error
                 and "replacementGlobal" in error
                 for error in errors
             ),
@@ -272,17 +272,19 @@ class RepositoryGlobalsBudgetTests(unittest.TestCase):
     def test_repository_inventory_matches_phase_two_budget(self) -> None:
         audit = VERIFIER.audit_plugin(VERIFIER.DEFAULT_SOURCE_ROOT)
         self.assertEqual(VERIFIER.validation_errors(audit), [])
-        self.assertEqual(audit.names("mutable"), {"gPluginState", "info"})
+        self.assertEqual(audit.names("mutable"), frozenset())
         self.assertEqual(audit.count("mutex"), 0)
-        self.assertEqual(audit.count("immutable"), 214)
-        self.assertEqual(audit.count("function"), 29)
+        self.assertEqual(audit.count("immutable"), 175)
+        self.assertEqual(audit.count("function"), 0)
         self.assertEqual(audit.framework_globals, ("NickelHook",))
 
         promoted = VERIFIER.audit_promoted_sources(VERIFIER.DEFAULT_SOURCE_ROOT)
         self.assertEqual(VERIFIER.promoted_validation_errors(promoted), [])
-        self.assertEqual(promoted.count("mutable"), 0)
+        self.assertEqual(
+            promoted.names("mutable"), frozenset(("gPluginState", "info"))
+        )
         self.assertEqual(promoted.count("mutex"), 0)
-        self.assertEqual(promoted.count("immutable"), 46)
+        self.assertEqual(promoted.count("immutable"), 88)
         self.assertEqual(
             {
                 (declaration.path.name, declaration.name)
@@ -336,6 +338,48 @@ class RepositoryGlobalsBudgetTests(unittest.TestCase):
                 ("eraser_menu.cc", "kSetActiveToolVma"),
                 ("eraser_menu.cc", "kHardwareEraserSetActiveToolReturnVma"),
                 ("layers_state.cc", "kLayerRoot"),
+                ("plugin_runtime.cc", "kMapDestructorParityAnchor"),
+                ("plugin_runtime.cc", "kCoverBackupRoot"),
+                ("plugin_runtime.cc", "kPageBackupRoot"),
+                ("plugin_runtime.cc", "kPageTransactionRoot"),
+                ("plugin_runtime.cc", "kMaximumNotebookPages"),
+                ("plugin_runtime.cc", "kMaximumDestinationNotebooks"),
+                ("plugin_runtime.cc", "kMaximumNotebookLayers"),
+                ("plugin_runtime.cc", "kMenuLoadViewVma"),
+                ("plugin_runtime.cc", "kMenuLoadViewSize"),
+                ("plugin_runtime.cc", "kVolumeInPixmapViewOffset"),
+                ("plugin_runtime.cc", "kThumbnailCallbackReturnVma"),
+                ("plugin_runtime.cc", "kNeboBackendPageControllerOffset"),
+                ("plugin_runtime.cc", "kLayerPreviewPins"),
+                ("plugin_runtime.cc", "kLayerMenuPins"),
+                ("plugin_runtime.cc", "kLayerEraserPins"),
+                ("plugin_runtime.cc", "kLayerToolRoutingOperations"),
+                ("plugin_entry.cc", "kBackgroundOptionsSymbol"),
+                ("plugin_entry.cc", "kBackgroundOptionsVma"),
+                ("plugin_entry.cc", "kAddWidgetActionSymbol"),
+                ("plugin_entry.cc", "kAddWidgetActionVma"),
+                ("plugin_entry.cc", "kSetToolThemeSymbol"),
+                ("plugin_entry.cc", "kSetToolThemeVma"),
+                ("plugin_entry.cc", "kRenderVolumeSymbol"),
+                ("plugin_entry.cc", "kRenderVolumeVma"),
+                ("plugin_entry.cc", "kSetDialogTitleSymbol"),
+                ("plugin_entry.cc", "kSetDialogTitleVma"),
+                ("plugin_entry.cc", "kParserImageParsedSymbol"),
+                ("plugin_entry.cc", "kParserImageParsedVma"),
+                ("plugin_entry.cc", "kContentGetIdSymbol"),
+                ("plugin_entry.cc", "kContentGetIdVma"),
+                ("plugin_entry.cc", "kContentGetImageIdSymbol"),
+                ("plugin_entry.cc", "kContentGetImageIdVma"),
+                ("plugin_entry.cc", "kPixmapSetImageSymbol"),
+                ("plugin_entry.cc", "kPixmapSetImageVma"),
+                ("plugin_entry.cc", "kVolumeLoadCoverSymbol"),
+                ("plugin_entry.cc", "kVolumeLoadCoverVma"),
+                ("visibility_hooks.cc", "kExcludeSyncFoldersSymbol"),
+                ("visibility_hooks.cc", "kExcludeSyncFoldersVma"),
+                ("visibility_hooks.cc", "kContentGetIdSymbol"),
+                ("visibility_hooks.cc", "kContentGetIdVma"),
+                ("visibility_hooks.cc", "kRemoveCommonBookDataSymbol"),
+                ("visibility_hooks.cc", "kRemoveCommonBookDataVma"),
             },
         )
 
@@ -348,11 +392,11 @@ class RepositoryGlobalsBudgetTests(unittest.TestCase):
             stderr=subprocess.PIPE,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("mutable namespace statics: 2 (gPluginState, info)", result.stdout)
-        self.assertIn("immutable namespace statics: 214", result.stdout)
+        self.assertIn("mutable namespace statics: 0 (none)", result.stdout)
+        self.assertIn("immutable namespace statics: 175", result.stdout)
         self.assertIn("framework global descriptors: 1 (NickelHook)", result.stdout)
         self.assertIn(
-            "promoted-TU mutable namespace objects: 0 (none)",
+            "promoted-TU mutable namespace objects: 2 (gPluginState, info)",
             result.stdout,
         )
         self.assertIn(
@@ -360,7 +404,7 @@ class RepositoryGlobalsBudgetTests(unittest.TestCase):
             result.stdout,
         )
         self.assertIn(
-            "promoted-TU immutable namespace objects: 46",
+            "promoted-TU immutable namespace objects: 88",
             result.stdout,
         )
         self.assertIn("Globals budget verified", result.stdout)

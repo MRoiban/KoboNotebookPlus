@@ -1,6 +1,32 @@
-#line 7088 "src/customnotebooktemplates.cc"
+#include "visibility_hooks.h"
 
-static bool installCustomAssetVisibilityHooks() {
+#include "abi_types.h"
+#include "firmware_api.h"
+#include "firmware_resolver.h"
+#include "plugin_runtime.h"
+#include "settings.h"
+
+#include <NickelHook.h>
+
+#include <dlfcn.h>
+
+namespace {
+
+char const kExcludeSyncFoldersSymbol[] =
+    "_ZN15FeatureSettings18excludeSyncFoldersEv";
+uintptr_t const kExcludeSyncFoldersVma = 0xa04650;
+char const kContentGetIdSymbol[] = "_ZNK7Content5getIdEv";
+uintptr_t const kContentGetIdVma = 0x953d84;
+char const kRemoveCommonBookDataSymbol[] =
+    "_ZN13VolumeManager20removeCommonBookDataERK6DeviceR6Volumeb";
+uintptr_t const kRemoveCommonBookDataVma = 0xa6ec74;
+
+} // namespace
+
+namespace cnt {
+namespace visibility_hooks {
+
+bool install() {
     // This image plugin is loaded by Nickel itself, so libnickel must already
     // be present. Install before waiting for libiinknote: filesystem sync can
     // begin before the notebook UI library is naturally loaded. Excluding a
@@ -89,3 +115,6 @@ static bool installCustomAssetVisibilityHooks() {
     trace("asset-visibility: backing-file guard and scanner exclusion installed");
     return true;
 }
+
+} // namespace visibility_hooks
+} // namespace cnt

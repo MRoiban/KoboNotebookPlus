@@ -1,35 +1,21 @@
 
-template <typename Function>
-static bool resolvePinned(
-    void* handle,
-    char const* symbolName,
-    uintptr_t expectedVma,
-    Function* destination) {
-    void* const symbol = dlsym(handle, symbolName);
-    Dl_info image = {};
-    if (!symbol || !dladdr(symbol, &image) || !image.dli_fbase) {
-        nh_log("cover API symbol missing: %s", symbolName);
-        return false;
-    }
+#include "firmware_resolver.h"
 
-    uintptr_t const base = reinterpret_cast<uintptr_t>(image.dli_fbase);
-    uintptr_t const address = reinterpret_cast<uintptr_t>(symbol) & ~uintptr_t(1);
-    if (address - base != expectedVma) {
-        nh_log("cover API VMA mismatch for %s: 0x%lx, expected 0x%lx",
-            symbolName,
-            static_cast<unsigned long>(address - base),
-            static_cast<unsigned long>(expectedVma));
-        return false;
-    }
+#include "abi_types.h"
+#include "firmware_api.h"
+#include "firmware_pins.h"
+#include "plugin_runtime.h"
+#include "plugin_state.h"
+#include "settings.h"
 
-    union {
-        void* pointer;
-        Function function;
-    } converter;
-    converter.pointer = symbol;
-    *destination = converter.function;
-    return true;
-}
+#include <NickelHook.h>
+
+#include <QLabel>
+
+#include <cstdint>
+#include <dlfcn.h>
+
+using cnt::trace;
 
 template <typename Function>
 static bool resolvePinnedThumbVma(
@@ -64,7 +50,7 @@ static bool resolvePinnedThumbVma(
     return true;
 }
 
-static bool resolveCoverApis(void* iinknoteHandle) {
+bool resolveFirmwareApis(void* iinknoteHandle) {
     void* const iinkHandle = dlopen("libiink.so", RTLD_LAZY | RTLD_NOLOAD);
     void* const iinkUiRefHandle = dlopen(
         "libiinkuiref.so.1", RTLD_LAZY | RTLD_NOLOAD);
@@ -350,13 +336,4 @@ static bool resolveCoverApis(void* iinknoteHandle) {
 
     trace("covers: pinned APIs verified");
     return true;
-}
-
-static bool pointerMatchesVma(void* pointer, uintptr_t expectedVma) {
-    Dl_info image = {};
-    if (!pointer || !dladdr(pointer, &image) || !image.dli_fbase)
-        return false;
-    uintptr_t const base = reinterpret_cast<uintptr_t>(image.dli_fbase);
-    uintptr_t const address = reinterpret_cast<uintptr_t>(pointer) & ~uintptr_t(1);
-    return address - base == expectedVma;
 }

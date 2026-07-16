@@ -1,5 +1,15 @@
 #pragma once
 
+#include "cover_cache.h"
+#include "eraser_menu.h"
+#include "firmware_api.h"
+#include "layers.h"
+#include "settings.h"
+#include "templates.h"
+#include "visibility.h"
+
+#include <QTimer>
+
 struct PageRuntimeState {
     bool hooksReady = false;
 };

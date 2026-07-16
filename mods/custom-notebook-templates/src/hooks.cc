@@ -1,5 +1,30 @@
-#line 7501 "src/customnotebooktemplates.cc"
-NickelHook(initialize, &info, nullptr, nullptr, nullptr)
+#include "abi_types.h"
+#include "cover_cache.h"
+#include "covermenureceiver.h"
+#include "eraser_menu.h"
+#include "firmware_api.h"
+#include "layers_menu.h"
+#include "layers_preview.h"
+#include "layers_service.h"
+#include "layers_state.h"
+#include "notebook_hook_services.h"
+#include "notebook_menu.h"
+#include "notebook_widget.h"
+#include "page_actions.h"
+#include "plugin_runtime.h"
+#include "plugin_state.h"
+
+#include <QImage>
+#include <QMenu>
+#include <QObject>
+#include <QPixmap>
+#include <QString>
+#include <QVector>
+#include <QWidget>
+
+#include <cstdint>
+
+using cnt::trace;
 
 extern "C" __attribute__((visibility("default")))
 void _cnt_remove_common_book_data_hook(
@@ -61,7 +86,7 @@ void _cnt_parser_image_parsed_hook(
         firmwareApi(),
         coverState(),
         caller,
-        kThumbnailCallbackReturnVma,
+        thumbnailCallbackReturnVma(),
         parser,
         volume,
         image);
@@ -75,7 +100,7 @@ void _cnt_volume_load_cover_hook(void* view) {
     // Preserve Kobo's normal cache/download/default-cover behavior first.
     firmwareApi().volumeLoadCoverOriginal(view);
     cnt::notebook_hook_services::augmentNotebookGridCover(
-        firmwareApi(), coverState(), view, kVolumeInPixmapViewOffset);
+        firmwareApi(), coverState(), view, volumeInPixmapViewOffset());
 }
 
 extern "C" __attribute__((visibility("default")))
@@ -172,13 +197,13 @@ void _cnt_render_volume_hook(void* widget, void const* volume) {
 
     try {
         trace("layers: notebook render complete; restoring saved active layer");
-        LayerContext context;
+        cnt::layers::LayerContext context;
         QString error;
         if (!cnt::layers_state::loadLayerContext(
                 firmwareApi(),
                 layerState(),
                 object,
-                kMaximumNotebookLayers,
+                maximumNotebookLayers(),
                 &context,
                 &error)) {
             trace(QLatin1String(
@@ -188,8 +213,8 @@ void _cnt_render_volume_hook(void* widget, void const* volume) {
         }
         if (!cnt::layers_service::synchronizeSavedActiveLayer(
                 firmwareApi(),
-                kNeboBackendPageControllerOffset,
-                kLayerToolRoutingOperations,
+                neboBackendPageControllerOffset(),
+                layerToolRoutingOperations(),
                 context,
                 "notebook-open",
                 &error)) {
@@ -227,13 +252,13 @@ void _cnt_set_tool_theme_hook(void* widget, void* theme) {
     if (!layerState().hooksReady)
         return;
     trace("layers: setToolTheme hook invoked for notebook");
-    LayerContext context;
+    cnt::layers::LayerContext context;
     QString error;
     if (!cnt::layers_state::loadLayerContext(
             firmwareApi(),
             layerState(),
             object,
-            kMaximumNotebookLayers,
+            maximumNotebookLayers(),
             &context,
             &error)) {
         trace(QLatin1String("layers: setToolTheme context unavailable: ") + error);
@@ -241,8 +266,8 @@ void _cnt_set_tool_theme_hook(void* widget, void* theme) {
     }
     if (!cnt::layers_service::applyActiveLayer(
             firmwareApi(),
-            kNeboBackendPageControllerOffset,
-            kLayerToolRoutingOperations,
+            neboBackendPageControllerOffset(),
+            layerToolRoutingOperations(),
             context,
             context.state.activeId,
             &error)) {
@@ -282,8 +307,9 @@ void _cnt_add_widget_action_hook(
             || !controller
             || !menu
             || !firmwareApi().iinknoteBase
-            || caller < firmwareApi().iinknoteBase + kMenuLoadViewVma
-            || caller >= firmwareApi().iinknoteBase + kMenuLoadViewVma + kMenuLoadViewSize
+            || caller < firmwareApi().iinknoteBase + menuLoadViewVma()
+            || caller >= firmwareApi().iinknoteBase
+                + menuLoadViewVma() + menuLoadViewSize()
             || menu->property("_cnt_notebook_actions_added").toBool()) {
         return;
     }
@@ -299,19 +325,19 @@ void _cnt_add_widget_action_hook(
         controllerObject,
         menu,
         noIcon,
-        kCoverBackupRoot);
+        coverBackupRoot());
 
     if (layerState().hooksReady) {
         cnt::layers_preview::Dependencies const previewDependencies = {
             &firmwareApi(),
             &layerState(),
             &coverState(),
-            kLayerToolRoutingOperations,
-            kLayerPreviewPins
+            layerToolRoutingOperations(),
+            layerPreviewPins()
         };
         cnt::layers_menu::Dependencies const menuDependencies = {
             previewDependencies,
-            kLayerMenuPins
+            layerMenuPins()
         };
         CoverMenuReceiver* const layerReceiver = new CoverMenuReceiver(
             controllerObject, menu);
@@ -349,8 +375,8 @@ void _cnt_add_widget_action_hook(
         cnt::page_actions::Dependencies const pageDependencies = {
             &firmwareApi(),
             &coverState(),
-            kMaximumNotebookPages,
-            kPageBackupRoot
+            maximumNotebookPages(),
+            pageBackupRoot()
         };
         cnt::notebook_menu::addPageContribution(
             firmwareApi(),

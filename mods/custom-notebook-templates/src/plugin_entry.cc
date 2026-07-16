@@ -1,4 +1,55 @@
-#line 7283 "src/customnotebooktemplates.cc"
+#include "abi_types.h"
+#include "cover_cache.h"
+#include "covers.h"
+#include "eraser_menu.h"
+#include "firmware_api.h"
+#include "firmware_resolver.h"
+#include "plugin_runtime.h"
+#include "plugin_state.h"
+#include "settings.h"
+#include "templates.h"
+#include "visibility.h"
+#include "visibility_hooks.h"
+
+#include <NickelHook.h>
+
+#include <QCoreApplication>
+#include <QObject>
+#include <QTimer>
+
+#include <cstdint>
+#include <dlfcn.h>
+
+using cnt::trace;
+
+namespace {
+
+char const kBackgroundOptionsSymbol[] =
+    "_ZN23BackgroundOptionsWidget17backgroundOptionsEv";
+uintptr_t const kBackgroundOptionsVma = 0x78c9c;
+char const kAddWidgetActionSymbol[] =
+    "_ZN22AbstractMenuController15addWidgetActionEP5QMenuP7QWidgetP7QObjectPKcbbb";
+uintptr_t const kAddWidgetActionVma = 0xb3ce80;
+char const kSetToolThemeSymbol[] =
+    "_ZN17IInkNotePadWidget12setToolThemeER13IInkToolTheme";
+uintptr_t const kSetToolThemeVma = 0x62200;
+char const kRenderVolumeSymbol[] =
+    "_ZN17IInkNotePadWidget12renderVolumeERK6Volume";
+uintptr_t const kRenderVolumeVma = 0x66720;
+char const kSetDialogTitleSymbol[] = "_ZN8N3Dialog8setTitleERK7QString";
+uintptr_t const kSetDialogTitleVma = 0x10e4168;
+char const kParserImageParsedSymbol[] =
+    "_ZN15ParserInterface11imageParsedERK6VolumeRK6QImage";
+uintptr_t const kParserImageParsedVma = 0x118f714;
+char const kContentGetIdSymbol[] = "_ZNK7Content5getIdEv";
+uintptr_t const kContentGetIdVma = 0x953d84;
+char const kContentGetImageIdSymbol[] = "_ZNK7Content10getImageIdEv";
+uintptr_t const kContentGetImageIdVma = 0x957628;
+char const kPixmapSetImageSymbol[] =
+    "_ZN10PixmapView8setImageERK6QImageRK7QString";
+uintptr_t const kPixmapSetImageVma = 0x10fa084;
+char const kVolumeLoadCoverSymbol[] = "_ZN16VolumePixmapView9loadCoverEv";
+uintptr_t const kVolumeLoadCoverVma = 0xc73388;
 
 static void installHookAfterNaturalLoad() {
     void* const handle = dlopen("libiinknote.so", RTLD_LAZY | RTLD_NOLOAD);
@@ -47,7 +98,7 @@ static void installHookAfterNaturalLoad() {
     firmwareApi().backgroundOptionsOriginal = reinterpret_cast<BackgroundOptions>(original);
     trace("delayed backgroundOptions hook installed");
 
-    if (resolveCoverApis(handle)) {
+    if (resolveFirmwareApis(handle)) {
         AddWidgetAction resolvedAction = nullptr;
         void* original = nullptr;
         if (firmwareApi().createIInkMenuItem && firmwareApi().iinknoteBase
@@ -246,11 +297,10 @@ static void installHookAfterNaturalLoad() {
 }
 
 static int initialize() {
-    if (!gPluginState)
-        gPluginState = new PluginState();
+    publishPluginState(new PluginState());
     trace("NickelHook init entered");
-    installCustomAssetVisibilityHooks();
-    cnt::visibility::hideLegacyNotebookBackups(kCoverBackupRoot);
+    cnt::visibility_hooks::install();
+    cnt::visibility::hideLegacyNotebookBackups(coverBackupRoot());
     hookState().timer = new QTimer(QCoreApplication::instance());
     hookState().timer->setInterval(100);
     QObject::connect(hookState().timer, &QTimer::timeout, installHookAfterNaturalLoad);
@@ -270,3 +320,7 @@ static struct nh_info info = {
     // follow-up restart.
     30,
 };
+
+} // namespace
+
+NickelHook(initialize, &info, nullptr, nullptr, nullptr)

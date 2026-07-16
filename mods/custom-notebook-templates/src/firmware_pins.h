@@ -1,56 +1,8 @@
-#line 528 "src/customnotebooktemplates.cc"
+#pragma once
 
-static PluginState* gPluginState = nullptr;
-
-static PluginState& pluginState() {
-    return *gPluginState;
-}
-
-static FirmwareApi& firmwareApi() {
-    return pluginState().firmware;
-}
-
-static cnt::cover_cache::State& coverState() {
-    return pluginState().covers;
-}
-
-static cnt::layers::RuntimeState& layerState() {
-    return pluginState().layers;
-}
-
-static cnt::eraser_menu::RuntimeState& eraserState() {
-    return pluginState().eraser;
-}
-
-static cnt::SettingsStore& settingsStore() {
-    return pluginState().settings;
-}
-
-static HookRuntimeState& hookState() {
-    return pluginState().hooks;
-}
-
-// The alpha's file-scope diagram-pen map emitted two weak std::map destructor
-// symbols. Preserve that dynamic ABI surface with an immutable empty anchor;
-// all live routing data remains owned by PluginState.
-static std::map<void*, std::string> const kMapDestructorParityAnchor;
-// Both caches are shared between the UI-thread loadCover hook and the parser
-// thumbnail callback, so every access happens under coverCacheMutex. The lock
-// is only ever held for map operations, never across archive scans, PNG
-// decoding, or calls back into Qt or firmware code.
-static char const kCoverBackupRoot[] = "/mnt/onboard/.kobo/custom/covers/backups/";
-static char const kPageManagerRoot[] = "/mnt/onboard/.kobo/custom/page-manager/";
-static char const kPageBackupRoot[] = "/mnt/onboard/.kobo/custom/page-manager/backups/";
-static char const kPageTransactionRoot[] = "/mnt/onboard/.kobo/custom/page-manager/transactions/";
-static int const kMaximumNotebookPages = 4096;
-static int const kMaximumDestinationNotebooks = 512;
-static int const kMaximumNotebookLayers = 16;
+#include <cstdint>
 
 // Binary Ninja image addresses minus its 0x10000 analysis base.
-static uintptr_t const kBackgroundOptionsVma = 0x78c9c;
-static char const kBackgroundOptionsSymbol[] = "_ZN23BackgroundOptionsWidget17backgroundOptionsEv";
-static char const kAddWidgetActionSymbol[] =
-    "_ZN22AbstractMenuController15addWidgetActionEP5QMenuP7QWidgetP7QObjectPKcbbb";
 static char const kCreateIInkMenuItemSymbol[] =
     "_ZN26IInkDropdownMenuController18createIInkMenuItemEP5QMenuRK7QStringRK7QPixmapb";
 static char const kToolMenuTapGestureSymbol[] =
@@ -73,31 +25,15 @@ static char const kAbstractMenuControllerGrabTapGestureSymbol[] =
     "_ZN22AbstractMenuController14grabTapGestureEP15GestureReceiver";
 static char const kAbstractMenuControllerTapGestureSymbol[] =
     "_ZN22AbstractMenuController10tapGestureEP15GestureReceiverP10TapGesture";
-static char const kSetDialogTitleSymbol[] =
-    "_ZN8N3Dialog8setTitleERK7QString";
 static char const kMenuSelectBackgroundSymbol[] = "_ZN18IInkMenuController16selectBackgroundEv";
 static char const kSetBackgroundTypeSymbol[] = "_ZN17IInkNotePadWidget17setBackgroundTypeERK7QString";
-static char const kSetToolThemeSymbol[] =
-    "_ZN17IInkNotePadWidget12setToolThemeER13IInkToolTheme";
-static char const kRenderVolumeSymbol[] =
-    "_ZN17IInkNotePadWidget12renderVolumeERK6Volume";
 static char const kWidgetSaveSymbol[] = "_ZN17IInkNotePadWidget4saveEv";
 static char const kWidgetFilePathSymbol[] = "_ZNK17IInkNotePadWidget8filePathEv";
 static char const kWidgetRefreshSymbol[] = "_ZN17IInkNotePadWidget7refreshEv";
 static char const kShowErrorPopupSymbol[] = "_ZN17IInkNotePadWidget14showErrorPopupERK7QString";
 static char const kBackgroundTypeSymbol[] = "_ZN16BackgroundWidget14backgroundTypeEv";
-static char const kParserImageParsedSymbol[] =
-    "_ZN15ParserInterface11imageParsedERK6VolumeRK6QImage";
-static char const kVolumeLoadCoverSymbol[] =
-    "_ZN16VolumePixmapView9loadCoverEv";
-static char const kPixmapSetImageSymbol[] =
-    "_ZN10PixmapView8setImageERK6QImageRK7QString";
 static char const kContentGetIdSymbol[] = "_ZNK7Content5getIdEv";
-static char const kContentGetImageIdSymbol[] = "_ZNK7Content10getImageIdEv";
 
-static uintptr_t const kMenuLoadViewVma = 0x4984c;
-static uintptr_t const kMenuLoadViewSize = 0xe5e;
-static uintptr_t const kAddWidgetActionVma = 0xb3ce80;
 static uintptr_t const kCreateIInkMenuItemVma = 0x46bc4;
 static uintptr_t const kToolMenuTapGestureVma = 0x75a4c;
 static uintptr_t const kNickelTouchMenuConstructorVma = 0xed6788;
@@ -110,29 +46,14 @@ static uintptr_t const kIInkToolMenuWidgetConstructorVma = 0x761ac;
 static uintptr_t const kIInkToolMenuWidgetSetSelectedVma = 0x76580;
 static uintptr_t const kAbstractMenuControllerGrabTapGestureVma = 0xb3cfac;
 static uintptr_t const kAbstractMenuControllerTapGestureVma = 0xb3d00c;
-static uintptr_t const kSetDialogTitleVma = 0x10e4168;
 static uintptr_t const kMenuSelectBackgroundVma = 0x49438;
 static uintptr_t const kSetBackgroundTypeVma = 0x5b9fc;
-static uintptr_t const kSetToolThemeVma = 0x62200;
-static uintptr_t const kRenderVolumeVma = 0x66720;
 static uintptr_t const kWidgetSaveVma = 0x5f780;
 static uintptr_t const kWidgetFilePathVma = 0x58da8;
 static uintptr_t const kWidgetRefreshVma = 0x57fec;
 static uintptr_t const kShowErrorPopupVma = 0x58b64;
 static uintptr_t const kBackgroundTypeVma = 0x41c64;
-static uintptr_t const kParserImageParsedVma = 0x118f714;
-static uintptr_t const kVolumeLoadCoverVma = 0xc73388;
-static char const kExcludeSyncFoldersSymbol[] =
-    "_ZN15FeatureSettings18excludeSyncFoldersEv";
-static uintptr_t const kExcludeSyncFoldersVma = 0xa04650;
-static char const kRemoveCommonBookDataSymbol[] =
-    "_ZN13VolumeManager20removeCommonBookDataERK6DeviceR6Volumeb";
-static uintptr_t const kRemoveCommonBookDataVma = 0xa6ec74;
-static uintptr_t const kPixmapSetImageVma = 0x10fa084;
 static uintptr_t const kContentGetIdVma = 0x953d84;
-static uintptr_t const kContentGetImageIdVma = 0x957628;
-static uintptr_t const kVolumeInPixmapViewOffset = 0xac;
-static uintptr_t const kThumbnailCallbackReturnVma = 0x5433e;
 
 static char const kEditorGetPartSymbol[] = "_ZN8myscript4iink10EditorImpl7getPartEv";
 static char const kEditorGetEngineSymbol[] = "_ZN8myscript4iink10EditorImpl9getEngineEv";
@@ -312,94 +233,6 @@ static uintptr_t const kIInkStringToStdStringVma = 0x3e52a8;
 static uintptr_t const kDocumentLayerNameVma = 0x21cb994;
 static uintptr_t const kBackgroundObjectLayerNameVma = 0x21cb998;
 static uintptr_t const kNeboBackendVtableVma = 0xd871a0;
-static uintptr_t const kNeboBackendPageControllerOffset = 0x14;
-// IInkNotePadWidget owns a guarded uireference EditorWidget. That live
-// EditorWidget owns the configured ImageLoader used by every stock canvas.
-// These offsets are pinned against both libraries before the preview feature
-// gate is enabled; the guarded object and its live editor identity are checked
-// again before copying the shared loader owner.
-// Match the physical notebook page/background ratio (1404 x 1872 = 3:4)
-// while preserving the 72-pixel height proven inside Kobo's native tool row.
-// Rendered previews are normally card-sized, but retain the 8 MiB hard bound
-// in case the firmware callback supplies a full-resolution image.
-// The automatic renderer budget remains one synchronous export per popup;
-// later rows are carried over to subsequent opens or the explicit refresh.
-// This aggregate is constant-initialized and copied into deferred work, so it
-// introduces neither a global constructor nor a borrowed stack reference.
-static cnt::layers_preview::Pins const kLayerPreviewPins = {
-    /* layerBackupRoot */
-    "/mnt/onboard/.kobo/custom/layers/backups/",
-    /* layerPreviewRoot */
-    "/mnt/onboard/.kobo/custom/layers/previews/",
-    /* maximumNotebookLayers */ kMaximumNotebookLayers,
-    /* maximumLayerPreviewBytes */ qint64(8) * 1024 * 1024,
-    /* layerPreviewCardWidth */ 54,
-    /* layerPreviewCardHeight */ 72,
-    /* deferredStartMs */ 350,
-    /* deferredNextMs */ 50,
-    /* deferredBudget */ 1,
-    /* maximumCardCacheEntries */ 64,
-    /* neboBackendPageControllerOffset */ kNeboBackendPageControllerOffset,
-    /* stockPreviewDrawerOffset */ 0x4,
-    /* stockPreviewBackendOffset */ 0x24,
-    /* stockPreviewContextBytes */ 0x28,
-    /* imagePainterObjectBytes */ 64,
-    /* notePadEditorWidgetGuardOffset */ 0x44,
-    /* notePadEditorWidgetObjectOffset */ 0x48,
-    /* editorWidgetEditorObjectOffset */ 0x18,
-    /* editorWidgetEditorControlOffset */ 0x1c,
-    /* editorWidgetImageLoaderObjectOffset */ 0x20,
-    /* editorWidgetImageLoaderControlOffset */ 0x24
-};
-// Native layer-menu storage sizes and base offsets recovered from the pinned
-// 4.38.23697 menu implementations. Keeping them in one inert aggregate makes
-// the promoted menu service's firmware-private inputs explicit.
-static cnt::layers_menu::Pins const kLayerMenuPins = {
-    /* nickelTouchMenuBytes */ 0x90,
-    /* toolRowBytes */ 0x58,
-    /* rowGestureReceiverOffset */ 0x44,
-    /* controllerViewOffset */ 0x10
-};
-// Every layer/eraser vtable slot, object offset, stock implementation VMA,
-// selection mode, and size bucket enters the promoted implementation through
-// this inert aggregate. The values are unchanged from the verified umbrella.
-// In particular: Tool restrict/restricted are +0x54/+0x58; DrawingEraser
-// selection is +0x78; Diagram update/remove are +0x7c/+0x80; PID owns its box
-// factory at +0x24; and the active backend tool getter is +0x2c.
-static cnt::layers_eraser::Pins const kLayerEraserPins = {
-    /* drawingEraserVtableWords */ 148 / sizeof(void*),
-    /* diagramPenVtableWords */ 152 / sizeof(void*),
-    /* toolRestrictToLayerVtableSlot */ 0x54,
-    /* toolRestrictedLayerVtableSlot */ 0x58,
-    /* drawingBackendRestrictedToolOffsets */ { 0x44, 0x54, 0x5c },
-    /* drawingBackendRestrictedToolNames */ {
-        "pen(kinds0-2)", "selector(kind3)", "brush(kind6)"
-    },
-    /* drawingBackendEraserToolOffset */ 0x4c,
-    /* drawingEraserSelectionFromPointsVtableSlot */ 0x78,
-    /* diagramPenPenDownVtableSlot */ 0x3c,
-    /* diagramPenPenDownVma */ 0x7af1e4,
-    /* drawingEraserSelectionFromPointsVma */ 0x562838,
-    /* plainDrawingEraserSelectionFromPointsVma */ 0x421314,
-    /* coreEraserSelectionFromPointsVma */ 0xa77470,
-    /* eraserWidthOffset */ 0xcc,
-    /* eraserViewScaleOffset */ 0x110,
-    /* diagramEraserUpdateSelectionVtableSlot */ 0x7c,
-    /* diagramEraserEraseSelectionVtableSlot */ 0x80,
-    /* diagramEraserUpdateSelectionVma */ 0x75b73c,
-    /* diagramEraserEraseSelectionVma */ 0x75c224,
-    /* eraserFinalSelectionOffset */ 0xd0,
-    /* customLayerIdPrefix */ "cnt.layer.",
-    /* customLayerIdPrefixLength */ sizeof("cnt.layer.") - 1,
-    /* selectionModeReplace */ 0,
-    /* selectionModeIntersect */ 2,
-    /* eraserPolicyStroke */ 0,
-    /* pidBoxFactoryOffset */ 0x24,
-    /* activeBackendGetToolVtableSlot */ 0x2c,
-    /* neboBackendPageControllerOffset */ 0x14,
-    /* pageControllerLayoutGridOffset */ 0xe4,
-    /* eraserSizeRatios */ { 0.0f, 0.25f, 0.35f, 0.70f, 1.0f }
-};
 static uintptr_t const kCoreEraserUpdateSelectionVma = 0xa75ce4;
 static uintptr_t const kPackagePartCountVma = 0x3eeb40;
 static uintptr_t const kPackageGetPartVma = 0x3f4850;

@@ -2,13 +2,9 @@
 """Verify the plugin's namespace-scope storage budget.
 
 The old ``grep '^static '`` metric mixed functions, immutable constants, and
-mutable storage.  This verifier performs a deliberately small, fail-closed
-lexical analysis of the umbrella translation unit's ``.cc.inc`` fragments.
-It does not need Qt headers or a host C++ compiler.
-
-Only declarations at fragment depth zero are considered.  The umbrella
-includes those fragments directly inside its anonymous namespace, so depth
-zero in a fragment is namespace scope in the effective translation unit.
+mutable storage. This verifier performs a deliberately small, fail-closed
+lexical analysis of the private firmware pin inventory and every real
+translation unit. It does not need Qt headers or a host C++ compiler.
 
 Promoted real translation units are audited separately.  Their namespace
 objects do not need an explicit ``static`` keyword (an anonymous namespace
@@ -33,18 +29,16 @@ DEFAULT_SOURCE_ROOT = (
     / "custom-notebook-templates"
     / "src"
 )
-UMBRELLA_NAME = "customnotebooktemplates.cc"
+STATIC_INVENTORY_NAMES = ("firmware_pins.h",)
 
-EXPECTED_MUTABLE = frozenset(("gPluginState", "info"))
+EXPECTED_MUTABLE = frozenset()
 EXPECTED_MUTEXES = frozenset()
-EXPECTED_IMMUTABLE_COUNT = 214
-EXPECTED_FUNCTION_COUNT = 29
+EXPECTED_IMMUTABLE_COUNT = 175
+EXPECTED_FUNCTION_COUNT = 0
 EXPECTED_FRAMEWORK_GLOBALS = ("NickelHook",)
+EXPECTED_PROMOTED_MUTABLE = frozenset(("gPluginState", "info"))
 
 IDENTIFIER = re.compile(r"[A-Za-z_]\w*")
-INCLUDE_FRAGMENT = re.compile(
-    r'^\s*#\s*include\s+"(?P<path>[^"]+\.cc\.inc)"\s*$', re.MULTILINE
-)
 MUTEX_TYPES = frozenset(("QMutex",))
 
 
@@ -665,24 +659,12 @@ def top_level_invocation_count(source: str, name: str) -> int:
 
 
 def fragment_paths(source_root: pathlib.Path) -> tuple[pathlib.Path, ...]:
-    umbrella = source_root / UMBRELLA_NAME
-    try:
-        contents = umbrella.read_text(encoding="utf-8")
-    except OSError as exc:
-        raise VerificationError(f"cannot read umbrella {umbrella}: {exc}") from exc
-    paths: list[pathlib.Path] = []
-    seen: set[pathlib.Path] = set()
-    for match in INCLUDE_FRAGMENT.finditer(contents):
-        path = (source_root / match.group("path")).resolve()
-        if path in seen:
-            raise VerificationError(f"duplicate fragment include: {path}")
+    paths = tuple((source_root / name).resolve()
+                  for name in STATIC_INVENTORY_NAMES)
+    for path in paths:
         if not path.is_file():
-            raise VerificationError(f"included fragment does not exist: {path}")
-        seen.add(path)
-        paths.append(path)
-    if not paths:
-        raise VerificationError(f"umbrella includes no .cc.inc fragments: {umbrella}")
-    return tuple(paths)
+            raise VerificationError(f"static inventory does not exist: {path}")
+    return paths
 
 
 def audit_plugin(source_root: pathlib.Path) -> Audit:
@@ -699,15 +681,23 @@ def audit_plugin(source_root: pathlib.Path) -> Audit:
                 framework_name
                 for _ in range(top_level_invocation_count(source, framework_name))
             )
+    for path in promoted_source_paths(source_root):
+        try:
+            promoted_source = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            raise VerificationError(f"cannot read {path}: {exc}") from exc
+        for framework_name in EXPECTED_FRAMEWORK_GLOBALS:
+            framework_globals.extend(
+                framework_name
+                for _ in range(
+                    top_level_invocation_count(promoted_source, framework_name)
+                )
+            )
     return Audit(tuple(declarations), tuple(framework_globals))
 
 
 def promoted_source_paths(source_root: pathlib.Path) -> tuple[pathlib.Path, ...]:
-    return tuple(
-        path
-        for path in sorted(source_root.rglob("*.cc"))
-        if path.name != UMBRELLA_NAME
-    )
+    return tuple(sorted(source_root.rglob("*.cc")))
 
 
 def audit_promoted_sources(source_root: pathlib.Path) -> Audit:
@@ -717,7 +707,17 @@ def audit_promoted_sources(source_root: pathlib.Path) -> Audit:
             source = path.read_text(encoding="utf-8")
         except OSError as exc:
             raise VerificationError(f"cannot read {path}: {exc}") from exc
-        declarations.extend(analyze_translation_unit_source(source, path))
+        declaration_source = source
+        for framework_name in EXPECTED_FRAMEWORK_GLOBALS:
+            pattern = re.compile(
+                r"^\s*" + re.escape(framework_name)
+                + r"\s*\([^\n]*\)\s*$",
+                re.MULTILINE,
+            )
+            declaration_source = pattern.sub("", declaration_source)
+        declarations.extend(
+            analyze_translation_unit_source(declaration_source, path)
+        )
     return Audit(tuple(declarations), ())
 
 
@@ -766,6 +766,9 @@ def validation_errors(audit: Audit) -> list[str]:
 def promoted_validation_errors(audit: Audit) -> list[str]:
     errors: list[str] = []
     for declaration in audit.declarations:
+        if declaration.category == "mutable" \
+                and declaration.name in EXPECTED_PROMOTED_MUTABLE:
+            continue
         if declaration.category not in ("mutable", "mutex"):
             continue
         errors.append(
