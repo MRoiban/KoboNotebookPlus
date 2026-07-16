@@ -13,13 +13,7 @@ void _cnt_remove_common_book_data_hook(
     bool preserveBackingFile = false;
     if (removeBackingFile && firmwareApi().contentGetId && volume) {
         QString const id = firmwareApi().contentGetId(volume);
-        preserveBackingFile =
-            id.startsWith(QLatin1String(kCustomAssetOnboardContentPrefix))
-            || id.startsWith(QLatin1String(
-                kCustomAssetOnboardExternalContentPrefix))
-            || id.startsWith(QLatin1String(kCustomAssetSdContentPrefix))
-            || id.startsWith(QLatin1String(
-                kCustomAssetSdExternalContentPrefix));
+        preserveBackingFile = cnt::visibility::isCustomAssetContentId(id);
     }
 
     if (preserveBackingFile) {
@@ -47,14 +41,7 @@ QString _cnt_exclude_sync_folders_hook(void* featureSettings) {
         return QString();
 
     QString exclusions = firmwareApi().excludeSyncFoldersOriginal(featureSettings);
-    QString const pattern = QLatin1String(kCustomAssetExcludePattern);
-    QStringList const entries = exclusions.split(
-        QLatin1Char(';'), QString::SkipEmptyParts);
-    if (!entries.contains(pattern)) {
-        if (!exclusions.isEmpty() && !exclusions.endsWith(QLatin1Char(';')))
-            exclusions.append(QLatin1Char(';'));
-        exclusions.append(pattern);
-    }
+    cnt::visibility::ensureCustomAssetSyncExclusion(exclusions);
 
     // One observation proves that the live scanner reached the interposed
     // PLT/GOT seam. Avoid logging every recursive directory visit.

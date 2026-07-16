@@ -70,19 +70,6 @@ static char const kPageTransactionRoot[] = "/mnt/onboard/.kobo/custom/page-manag
 static char const kLayerRoot[] = "/mnt/onboard/.kobo/custom/layers/";
 static char const kLayerBackupRoot[] = "/mnt/onboard/.kobo/custom/layers/backups/";
 static char const kLayerPreviewRoot[] = "/mnt/onboard/.kobo/custom/layers/previews/";
-// SyncFileSystemCommand anchors each semicolon-separated expression beneath
-// /mnt/(sd|onboard). Hide the plugin's entire support tree from content import
-// while preserving its existing paths for direct QFile/MyScript access.
-static char const kCustomAssetExcludePattern[] =
-    "(\\.kobo|koboExtStorage)/custom";
-static char const kCustomAssetOnboardContentPrefix[] =
-    "file:///mnt/onboard/.kobo/custom/";
-static char const kCustomAssetOnboardExternalContentPrefix[] =
-    "file:///mnt/onboard/koboExtStorage/custom/";
-static char const kCustomAssetSdContentPrefix[] =
-    "file:///mnt/sd/.kobo/custom/";
-static char const kCustomAssetSdExternalContentPrefix[] =
-    "file:///mnt/sd/koboExtStorage/custom/";
 static int const kMaximumNotebookPages = 4096;
 static int const kMaximumDestinationNotebooks = 512;
 static int const kMaximumNotebookLayers = 16;
