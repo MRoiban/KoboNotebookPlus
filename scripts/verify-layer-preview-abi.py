@@ -34,7 +34,12 @@ def find_objdump(explicit: str | None) -> str:
         xcrun = ""
     candidates.append(xcrun)
     for candidate in candidates:
-        if candidate and pathlib.Path(candidate).is_file():
+        if not candidate:
+            continue
+        resolved = shutil.which(candidate)
+        if resolved:
+            return resolved
+        if pathlib.Path(candidate).is_file():
             return candidate
     raise RuntimeError("llvm-objdump not found; pass --objdump")
 
