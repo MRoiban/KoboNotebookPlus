@@ -535,9 +535,9 @@ static void beginCoverPicker(QObject* controller) {
         return;
 
     void* const widget = widgetObject;
-    void* const editor = notePadEditor(widget);
-    void* const editorControl = notePadEditorControl(widget);
-    void* const backgroundWidget = notePadBackgroundWidget(widget);
+    void* const editor = cnt::notebook_widget::notePadEditor(widget);
+    void* const editorControl = cnt::notebook_widget::notePadEditorControl(widget);
+    void* const backgroundWidget = cnt::notebook_widget::notePadBackgroundWidget(widget);
     if (!editor || !editorControl || !backgroundWidget) {
         trace("covers: notebook editor not ready for picker");
         return;
@@ -576,7 +576,7 @@ static void beginCoverPicker(QObject* controller) {
             return;
 
         QObject* const object = state->widgetObject.data();
-        void* const backgroundWidget = notePadBackgroundWidget(state->widget);
+        void* const backgroundWidget = cnt::notebook_widget::notePadBackgroundWidget(state->widget);
         QString const selected = backgroundWidget
             ? firmwareApi().backgroundType(backgroundWidget) : QString();
 

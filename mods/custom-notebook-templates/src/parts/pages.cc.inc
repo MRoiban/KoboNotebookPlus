@@ -121,28 +121,9 @@ static SharedDocument documentForPart(SharedPart const& part) {
     return firmwareApi().pageDocument(page.bytes);
 }
 
-// Verified IInkNotePadWidget offsets on firmware 4.38.23697: the guarded
-// MyScript Editor object/control identity is mirrored at 0x3c/0x40, and
-// BackgroundWidget is at 0x90. The plugin does not manufacture ownership from
-// these raw words; live firmware owners remain in scope for every call.
-static void* notePadEditor(void* widget) {
-    char* const bytes = static_cast<char*>(widget);
-    return *reinterpret_cast<void**>(bytes + 0x3c);
-}
-
-static void* notePadEditorControl(void* widget) {
-    char* const bytes = static_cast<char*>(widget);
-    return *reinterpret_cast<void**>(bytes + 0x40);
-}
-
-static void* notePadBackgroundWidget(void* widget) {
-    char* const bytes = static_cast<char*>(widget);
-    return *reinterpret_cast<void**>(bytes + 0x90);
-}
-
 static bool applyNotebookCover(void* widget, QString const& type, QString* error) {
-    void* const editor = notePadEditor(widget);
-    void* const editorControl = notePadEditorControl(widget);
+    void* const editor = cnt::notebook_widget::notePadEditor(widget);
+    void* const editorControl = cnt::notebook_widget::notePadEditorControl(widget);
     if (!editor || !editorControl) {
         *error = QLatin1String("Cover not changed: notebook editor is not ready.");
         return false;
@@ -174,7 +155,7 @@ static bool applyNotebookCover(void* widget, QString const& type, QString* error
     }
 
     firmwareApi().editorSetPart(editor, firstPart);
-    void* const backgroundWidget = notePadBackgroundWidget(widget);
+    void* const backgroundWidget = cnt::notebook_widget::notePadBackgroundWidget(widget);
     if (!backgroundWidget) {
         firmwareApi().editorSetPart(editor, originalPart);
         *error = QLatin1String("Cover not changed: page background is not ready.");
@@ -275,8 +256,8 @@ static bool loadPageContext(void* widget, PageContext* context, QString* error) 
         return false;
     }
 
-    void* const editor = notePadEditor(widget);
-    void* const editorControl = notePadEditorControl(widget);
+    void* const editor = cnt::notebook_widget::notePadEditor(widget);
+    void* const editorControl = cnt::notebook_widget::notePadEditorControl(widget);
     if (!editor || !editorControl) {
         *error = QLatin1String("Page operation failed: notebook editor is not ready.");
         return false;

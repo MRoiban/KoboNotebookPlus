@@ -420,6 +420,11 @@ PINNED_IINKNOTE_INSTRUCTIONS = {
     # EditorWidget at +0x48. The stock constructor checks the guard's live
     # strong reference before loading +0x48 and calling EditorWidget::setEngine
     # through vslot +0xd0.
+    # The same constructor stores the owned BackgroundWidget at +0x90, and
+    # setBackgroundType loads that exact field before forwarding to it. These
+    # two sites pin the borrowed accessor used by cover editing and its menu.
+    0x60ABA: bytes.fromhex("c4f89060"),
+    0x5BA08: bytes.fromhex("d0f89000"),
     0x60FD6: bytes.fromhex("c4f84490c4f84880"),
     0x61004: bytes.fromhex(
         "636c002b00f051855b68002b00f04d85a06c9be80a000268d2f8d020"

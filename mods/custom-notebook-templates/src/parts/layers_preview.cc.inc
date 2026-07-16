@@ -50,7 +50,7 @@ static bool copyLiveLayerPreviewImageLoader(
     void* const liveEditorControl = *reinterpret_cast<void**>(
         editorWidgetBytes + kEditorWidgetEditorControlOffset);
     if (!liveEditorControl || liveEditor != context.editor
-            || liveEditorControl != notePadEditorControl(context.widget)) {
+            || liveEditorControl != cnt::notebook_widget::notePadEditorControl(context.widget)) {
         if (error) {
             *error = QLatin1String(
                 "Layer preview unavailable: notebook canvas is out of sync.");

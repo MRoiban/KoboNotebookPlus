@@ -374,7 +374,7 @@ static bool loadLayerContext(
 
     context->widgetObject = widgetObject;
     context->widget = widgetObject;
-    context->editor = notePadEditor(context->widget);
+    context->editor = cnt::notebook_widget::notePadEditor(context->widget);
     if (!context->editor) {
         if (error)
             *error = QLatin1String("Layers unavailable: notebook editor is not ready.");

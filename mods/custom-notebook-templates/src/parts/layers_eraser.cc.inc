@@ -773,7 +773,7 @@ static bool applyConfiguredEraserSizeForWidget(
     int const index = settingsStore().configuredEraserSizeIndex();
     if (!validEraserSizeIndex(index))
         return false;
-    void* const editor = notePadEditor(widgetObject);
+    void* const editor = cnt::notebook_widget::notePadEditor(widgetObject);
     if (!editor || !firmwareApi().editorGetRenderer || !firmwareApi().rendererGetBackend)
         return false;
 
