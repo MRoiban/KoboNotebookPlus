@@ -15,16 +15,21 @@ static void installHookAfterNaturalLoad() {
     }
     firmwareApi().backgroundOptionsOriginal = resolvedBackgroundOptions;
 
-    if (!locateRendererMap()) {
+    if (!cnt::templates::locateRendererMap(
+            nh_symptr(firmwareApi().backgroundOptionsOriginal),
+            firmwareApi().rendererMap,
+            firmwareApi().iinknoteBase)) {
         stopHookTimer();
         return;
     }
 
     // A malformed user manifest is non-fatal: Nickel continues with every
     // built-in template and no custom rows.
-    if (!loadManifest())
+    if (!cnt::templates::loadManifest(
+            *firmwareApi().rendererMap, templateState()))
         nh_log("custom templates disabled because the manifest is invalid");
-    loadAutomaticTemplates();
+    cnt::templates::loadAutomaticTemplates(
+        *firmwareApi().rendererMap, templateState());
     loadAutomaticCovers();
 
     BackgroundOptionsAddress replacement;

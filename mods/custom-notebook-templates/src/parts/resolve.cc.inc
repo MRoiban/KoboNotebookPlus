@@ -14,7 +14,7 @@ static ZipApi& zipApi() {
     return pluginState().zip;
 }
 
-static TemplateRuntimeState& templateState() {
+static cnt::templates::TemplateRuntimeState& templateState() {
     return pluginState().templates;
 }
 
@@ -67,8 +67,6 @@ static size_t const kDiagramPenVtableWords = 152 / sizeof(void*);
 // thumbnail callback, so every access happens under coverCacheMutex. The lock
 // is only ever held for map operations, never across archive scans, PNG
 // decoding, or calls back into Qt or firmware code.
-static char const kManifest[] = "/mnt/onboard/.kobo/custom/templates/templates.json";
-static char const kTemplateRoot[] = "/mnt/onboard/.kobo/custom/templates/";
 static char const kCoverRoot[] = "/mnt/onboard/.kobo/custom/covers/";
 static char const kCoverBackupRoot[] = "/mnt/onboard/.kobo/custom/covers/backups/";
 static char const kPageManagerRoot[] = "/mnt/onboard/.kobo/custom/page-manager/";
@@ -91,10 +89,7 @@ static char const kCustomAssetSdContentPrefix[] =
     "file:///mnt/sd/.kobo/custom/";
 static char const kCustomAssetSdExternalContentPrefix[] =
     "file:///mnt/sd/koboExtStorage/custom/";
-static char const kCondorSuffix[] = "_condor.png";
-static int const kMaximumCustomTemplates = 32;
 static int const kMaximumCustomCovers = 32;
-static qint64 const kMaximumAutomaticPngSize = 32 * 1024 * 1024;
 static int const kBackgroundWidth = 1404;
 static int const kBackgroundHeight = 1872;
 static int const kMaximumPageMetadataSize = 256 * 1024;
@@ -128,8 +123,6 @@ static int const kMaximumPersistedPreviews = 128;
 
 // Binary Ninja image addresses minus its 0x10000 analysis base.
 static uintptr_t const kBackgroundOptionsVma = 0x78c9c;
-static uintptr_t const kRendererMapVma = 0xa8b54;
-static int const kExpectedBuiltinMapSize = 36;
 static char const kBackgroundOptionsSymbol[] = "_ZN23BackgroundOptionsWidget17backgroundOptionsEv";
 static char const kAddWidgetActionSymbol[] =
     "_ZN22AbstractMenuController15addWidgetActionEP5QMenuP7QWidgetP7QObjectPKcbbb";

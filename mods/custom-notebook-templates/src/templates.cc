@@ -1,4 +1,42 @@
-#line 1458 "src/customnotebooktemplates.cc"
+#include "templates.h"
+
+#include "fs_util.h"
+#include "settings.h"
+
+#include <QBuffer>
+#include <QByteArray>
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
+#include <QImage>
+#include <QIODevice>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonParseError>
+#include <QString>
+#include <QtGlobal>
+
+#include <NickelHook.h>
+
+#include <dlfcn.h>
+
+namespace cnt {
+namespace templates {
+namespace {
+
+char const kManifest[] =
+    "/mnt/onboard/.kobo/custom/templates/templates.json";
+char const kTemplateRoot[] = "/mnt/onboard/.kobo/custom/templates/";
+char const kCondorSuffix[] = "_condor.png";
+int const kMaximumCustomTemplates = 32;
+int const kBackgroundWidth = 1404;
+int const kBackgroundHeight = 1872;
+
+// Binary Ninja image addresses minus its 0x10000 analysis base.
+uintptr_t const kBackgroundOptionsVma = 0x78c9c;
+uintptr_t const kRendererMapVma = 0xa8b54;
+int const kExpectedBuiltinMapSize = 36;
 
 // Kobo composites the page template above the live pen layer: every built-in
 // *_condor.png paper is transparent except for its line work, so fresh ink
@@ -9,7 +47,7 @@
 // and darkness becomes black at matching opacity. Composited over the white
 // page this is pixel-identical to the source. A source that already carries
 // transparency is copied verbatim, exactly as before.
-static bool syncTemplateOverlay(QString const& sourcePath, QString* condorPath) {
+bool syncTemplateOverlay(QString const& sourcePath, QString* condorPath) {
     QString destination = sourcePath;
     destination.chop(4);
     destination.append(QLatin1String(kCondorSuffix));
@@ -31,7 +69,7 @@ static bool syncTemplateOverlay(QString const& sourcePath, QString* condorPath) 
                 reinterpret_cast<QRgb const*>(overlay.constScanLine(y));
             for (int x = 0; x < overlay.width(); ++x) {
                 if (qAlpha(row[x]) != 255)
-                    return cnt::fs_util::syncCondorVariant(sourcePath, condorPath);
+                    return fs_util::syncCondorVariant(sourcePath, condorPath);
             }
         }
     }
@@ -47,45 +85,31 @@ static bool syncTemplateOverlay(QString const& sourcePath, QString* condorPath) 
     if (!buffer.open(QIODevice::WriteOnly) || !overlay.save(&buffer, "PNG"))
         return false;
     buffer.close();
-    if (!cnt::fs_util::writeBytesIfChanged(destination, encoded))
+    if (!fs_util::writeBytesIfChanged(destination, encoded))
         return false;
     trace("automatic: opaque paper converted to transparent overlay");
     return true;
 }
 
-static uint32_t stableFilenameHash(QByteArray const& value) {
-    uint32_t hash = UINT32_C(2166136261);
-    for (int i = 0; i < value.size(); ++i) {
-        hash ^= static_cast<unsigned char>(value.at(i));
-        hash *= UINT32_C(16777619);
-    }
-    return hash;
-}
+} // namespace
 
-static bool automaticSource(QFileInfo const& info) {
-    QString const name = info.fileName();
-    QString const lower = name.toLower();
-    return info.isFile()
-        && info.size() >= 8
-        && info.size() <= kMaximumAutomaticPngSize
-        && name.endsWith(QLatin1String(".png"))
-        && !lower.endsWith(QLatin1String(kCondorSuffix))
-        && !lower.endsWith(QLatin1String("-icon.png"))
-        && !lower.endsWith(QLatin1String("_icon.png"));
-}
-
-static bool locateRendererMap() {
-    void* const original = nh_symptr(firmwareApi().backgroundOptionsOriginal);
+bool locateRendererMap(
+        void* backgroundOptionsOriginal,
+        QMap<QString, QString>*& rendererMap,
+        uintptr_t& iinknoteBase) {
     Dl_info image = {};
 
-    if (!original || !dladdr(original, &image) || !image.dli_fbase) {
+    if (!backgroundOptionsOriginal
+            || !dladdr(backgroundOptionsOriginal, &image)
+            || !image.dli_fbase) {
         trace("renderer map: could not locate libiinknote");
         nh_log("could not locate libiinknote image base");
         return false;
     }
 
     uintptr_t const base = reinterpret_cast<uintptr_t>(image.dli_fbase);
-    uintptr_t const function = reinterpret_cast<uintptr_t>(original) & ~uintptr_t(1);
+    uintptr_t const function =
+        reinterpret_cast<uintptr_t>(backgroundOptionsOriginal) & ~uintptr_t(1);
     if (function - base != kBackgroundOptionsVma) {
         trace("renderer map: backgroundOptions VMA mismatch");
         nh_log("unsupported libiinknote: backgroundOptions offset is 0x%lx, expected 0x%lx",
@@ -94,20 +118,23 @@ static bool locateRendererMap() {
         return false;
     }
 
-    firmwareApi().rendererMap = reinterpret_cast<QMap<QString, QString>*>(base + kRendererMapVma);
-    if (firmwareApi().rendererMap->size() != kExpectedBuiltinMapSize) {
+    rendererMap = reinterpret_cast<QMap<QString, QString>*>(
+        base + kRendererMapVma);
+    if (rendererMap->size() != kExpectedBuiltinMapSize) {
         trace("renderer map: built-in count mismatch");
         nh_log("unsupported libiinknote: renderer map has %d entries, expected %d",
-            firmwareApi().rendererMap->size(), kExpectedBuiltinMapSize);
-        firmwareApi().rendererMap = nullptr;
+            rendererMap->size(), kExpectedBuiltinMapSize);
+        rendererMap = nullptr;
         return false;
     }
-    firmwareApi().iinknoteBase = base;
+    iinknoteBase = base;
     trace("renderer map: verified");
     return true;
 }
 
-static bool loadManifest() {
+bool loadManifest(
+        QMap<QString, QString>& rendererMap,
+        TemplateRuntimeState& state) {
     QFile file;
     file.setFileName(QLatin1String(kManifest));
     if (!file.exists()) {
@@ -132,7 +159,8 @@ static bool loadManifest() {
         return false;
     }
 
-    QJsonArray const entries = document.object().value(QLatin1String("templates")).toArray();
+    QJsonArray const entries =
+        document.object().value(QLatin1String("templates")).toArray();
     if (entries.size() > kMaximumCustomTemplates) {
         trace("manifest: too many entries");
         nh_log("manifest has %d entries; maximum is %d",
@@ -147,25 +175,26 @@ static bool loadManifest() {
         QString const id = item.value(QLatin1String("id")).toString();
         QString const label = item.value(QLatin1String("label")).toString();
         QString const icon = item.value(QLatin1String("icon")).toString();
-        QString const background = item.value(QLatin1String("background")).toString();
+        QString const background =
+            item.value(QLatin1String("background")).toString();
 
-        if (!cnt::fs_util::safeId(id) || label.isEmpty() || label.size() > 64) {
+        if (!fs_util::safeId(id) || label.isEmpty() || label.size() > 64) {
             trace("manifest: invalid id or label");
             nh_log("manifest entry %d has an invalid id or label", i);
             return false;
         }
-        if (seen.contains(id) || firmwareApi().rendererMap->contains(id)) {
+        if (seen.contains(id) || rendererMap.contains(id)) {
             trace("manifest: identifier collision");
             nh_log("manifest entry %d collides with template id '%s'", i, qPrintable(id));
             return false;
         }
-        if (!cnt::fs_util::safeTemplatePath(icon)
+        if (!fs_util::safeTemplatePath(icon)
                 || !icon.endsWith(QLatin1String(".png"))) {
             trace("manifest: invalid icon");
             nh_log("manifest entry %d has an invalid or missing icon", i);
             return false;
         }
-        if (!cnt::fs_util::safeTemplatePath(background)
+        if (!fs_util::safeTemplatePath(background)
                 || !background.endsWith(QLatin1String(kCondorSuffix))) {
             trace("manifest: invalid background");
             nh_log("manifest entry %d needs an existing *_condor.png background", i);
@@ -183,8 +212,8 @@ static bool loadManifest() {
 
     for (int i = 0; i < parsed.size(); ++i) {
         CustomTemplate const& value = parsed.at(i);
-        firmwareApi().rendererMap->insert(value.id, value.backgroundBase);
-        templateState().customTemplates.append(value);
+        rendererMap.insert(value.id, value.backgroundBase);
+        state.customTemplates.append(value);
         nh_log("loaded custom notebook template '%s' as '%s'",
             qPrintable(value.id), qPrintable(value.label));
     }
@@ -192,24 +221,26 @@ static bool loadManifest() {
     return true;
 }
 
-static void loadAutomaticTemplates() {
+void loadAutomaticTemplates(
+        QMap<QString, QString>& rendererMap,
+        TemplateRuntimeState& state) {
     QDir directory(QString::fromLatin1(kTemplateRoot));
     QFileInfoList const files = directory.entryInfoList(
         QDir::Files | QDir::NoSymLinks,
         QDir::Name | QDir::IgnoreCase);
 
     for (int i = 0; i < files.size(); ++i) {
-        if (templateState().customTemplates.size() >= kMaximumCustomTemplates) {
+        if (state.customTemplates.size() >= kMaximumCustomTemplates) {
             trace("automatic: template limit reached");
             break;
         }
 
         QFileInfo const& info = files.at(i);
-        if (!automaticSource(info))
+        if (!fs_util::automaticSource(info))
             continue;
 
         QString const sourcePath = info.absoluteFilePath();
-        if (!cnt::fs_util::hasPngSignature(sourcePath)) {
+        if (!fs_util::hasPngSignature(sourcePath)) {
             trace("automatic: invalid PNG skipped");
             nh_log("automatic template '%s' does not have a PNG signature",
                 qPrintable(info.fileName()));
@@ -223,16 +254,16 @@ static void loadAutomaticTemplates() {
         if (label.isEmpty())
             continue;
 
-        uint32_t const hash = stableFilenameHash(info.fileName().toUtf8());
+        uint32_t const hash = fs_util::stableFilenameHash(info.fileName().toUtf8());
         QString const id = QString::fromLatin1("Custom_Auto_%1")
             .arg(hash, 8, 16, QLatin1Char('0'));
-        if (firmwareApi().rendererMap->contains(id)) {
+        if (rendererMap.contains(id)) {
             trace("automatic: identifier collision skipped");
             continue;
         }
 
         QString iconPath;
-        if (!cnt::fs_util::createPickerIcon(sourcePath, &iconPath)) {
+        if (!fs_util::createPickerIcon(sourcePath, &iconPath)) {
             trace("automatic: could not generate picker icon");
             nh_log("automatic template '%s' must be a readable %d x %d PNG",
                 qPrintable(info.fileName()), kBackgroundWidth, kBackgroundHeight);
@@ -246,10 +277,14 @@ static void loadAutomaticTemplates() {
             continue;
         }
 
-        firmwareApi().rendererMap->insert(id, sourcePath);
-        templateState().customTemplates.append(CustomTemplate{id, label, iconPath, sourcePath});
+        rendererMap.insert(id, sourcePath);
+        state.customTemplates.append(
+            CustomTemplate{id, label, iconPath, sourcePath});
         trace("automatic: PNG template loaded");
         nh_log("automatically loaded notebook template '%s' as '%s'",
             qPrintable(info.fileName()), qPrintable(label));
     }
 }
+
+} // namespace templates
+} // namespace cnt

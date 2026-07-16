@@ -1,13 +1,18 @@
 #pragma once
 
+#include <cstdint>
+
 class QByteArray;
 class QElapsedTimer;
+class QFileInfo;
 class QString;
 
 namespace cnt {
 namespace fs_util {
 
 double elapsedMs(QElapsedTimer const& timer);
+uint32_t stableFilenameHash(QByteArray const& value);
+bool automaticSource(QFileInfo const& info);
 bool safeId(QString const& id);
 bool safeTemplatePath(QString const& path);
 bool hasPngSignature(QString const& path);

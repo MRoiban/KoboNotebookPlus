@@ -11,12 +11,8 @@ struct ZipApi {
     void* libraryHandle = nullptr;
 };
 
-struct TemplateRuntimeState {
-    QVector<CustomTemplate> customTemplates;
-};
-
 struct CoverRuntimeState {
-    QVector<CustomTemplate> customCovers;
+    QVector<cnt::templates::CustomTemplate> customCovers;
     QHash<QString, CoverScanEntry> scanCache;
     QHash<QString, RenderedCoverEntry> renderedCache;
     quint64 renderedSequence = 0;
@@ -80,7 +76,7 @@ struct HookRuntimeState {
 struct PluginState {
     FirmwareApi firmware = {};
     ZipApi zip;
-    TemplateRuntimeState templates;
+    cnt::templates::TemplateRuntimeState templates;
     CoverRuntimeState covers;
     PageRuntimeState pages;
     LayerRuntimeState layers;

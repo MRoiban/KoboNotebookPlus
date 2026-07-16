@@ -434,7 +434,8 @@ static void invalidateNotebookScanEntry(QString const& notebookPath) {
     coverState().renderedCache.remove(key);
 }
 
-static CustomTemplate const* customCoverForType(QString const& type) {
+static cnt::templates::CustomTemplate const* customCoverForType(
+        QString const& type) {
     for (int i = 0; i < coverState().customCovers.size(); ++i) {
         if (coverState().customCovers.at(i).id == type)
             return &coverState().customCovers.at(i);
@@ -450,7 +451,7 @@ static CustomTemplate const* customCoverForType(QString const& type) {
 static QImage composeCoverWithRenderedInk(
     QString const& type,
     QImage const& renderedInk) {
-    CustomTemplate const* const cover = customCoverForType(type);
+    cnt::templates::CustomTemplate const* const cover = customCoverForType(type);
     if (!cover || renderedInk.isNull())
         return QImage();
 
@@ -515,7 +516,7 @@ static void evictCleanCoverImagesLocked() {
 }
 
 static QImage cleanCustomCoverImage(QString const& type) {
-    CustomTemplate const* const cover = customCoverForType(type);
+    cnt::templates::CustomTemplate const* const cover = customCoverForType(type);
     if (!cover)
         return QImage();
 

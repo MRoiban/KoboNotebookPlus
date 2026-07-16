@@ -81,7 +81,8 @@ QVector<BackgroundOption> _cnt_background_options_hook() {
         coverState().pickerPending = false;
         options.clear();
         for (int i = 0; i < coverState().customCovers.size(); ++i) {
-            CustomTemplate const& value = coverState().customCovers.at(i);
+            cnt::templates::CustomTemplate const& value =
+                coverState().customCovers.at(i);
             options.append(BackgroundOption(value.id, value.icon, value.label));
         }
         trace("backgroundOptions hook returned cover-only rows");
@@ -89,7 +90,8 @@ QVector<BackgroundOption> _cnt_background_options_hook() {
     }
 
     for (int i = 0; i < templateState().customTemplates.size(); ++i) {
-        CustomTemplate const& value = templateState().customTemplates.at(i);
+        cnt::templates::CustomTemplate const& value =
+            templateState().customTemplates.at(i);
         options.append(BackgroundOption(value.id, value.icon, value.label));
     }
     trace("backgroundOptions hook appended custom rows");

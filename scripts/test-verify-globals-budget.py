@@ -274,15 +274,15 @@ class RepositoryGlobalsBudgetTests(unittest.TestCase):
         self.assertEqual(VERIFIER.validation_errors(audit), [])
         self.assertEqual(audit.names("mutable"), {"gPluginState", "info"})
         self.assertEqual(audit.count("mutex"), 0)
-        self.assertEqual(audit.count("immutable"), 294)
-        self.assertEqual(audit.count("function"), 132)
+        self.assertEqual(audit.count("immutable"), 287)
+        self.assertEqual(audit.count("function"), 126)
         self.assertEqual(audit.framework_globals, ("NickelHook",))
 
         promoted = VERIFIER.audit_promoted_sources(VERIFIER.DEFAULT_SOURCE_ROOT)
         self.assertEqual(VERIFIER.promoted_validation_errors(promoted), [])
         self.assertEqual(promoted.count("mutable"), 0)
         self.assertEqual(promoted.count("mutex"), 0)
-        self.assertEqual(promoted.count("immutable"), 8)
+        self.assertEqual(promoted.count("immutable"), 18)
         self.assertEqual(
             {
                 (declaration.path.name, declaration.name)
@@ -292,12 +292,22 @@ class RepositoryGlobalsBudgetTests(unittest.TestCase):
             {
                 ("fs_util.cc", "kTemplateRoot"),
                 ("fs_util.cc", "kCondorSuffix"),
+                ("fs_util.cc", "kMaximumAutomaticPngSize"),
                 ("fs_util.cc", "kBackgroundWidth"),
                 ("fs_util.cc", "kBackgroundHeight"),
                 ("fs_util.cc", "kPickerIconSize"),
                 ("settings.cc", "kTrace"),
                 ("settings.cc", "kTemplateRoot"),
                 ("settings.cc", "kEraserSizeSettings"),
+                ("templates.cc", "kManifest"),
+                ("templates.cc", "kTemplateRoot"),
+                ("templates.cc", "kCondorSuffix"),
+                ("templates.cc", "kMaximumCustomTemplates"),
+                ("templates.cc", "kBackgroundWidth"),
+                ("templates.cc", "kBackgroundHeight"),
+                ("templates.cc", "kBackgroundOptionsVma"),
+                ("templates.cc", "kRendererMapVma"),
+                ("templates.cc", "kExpectedBuiltinMapSize"),
             },
         )
 
@@ -311,7 +321,7 @@ class RepositoryGlobalsBudgetTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("mutable namespace statics: 2 (gPluginState, info)", result.stdout)
-        self.assertIn("immutable namespace statics: 294", result.stdout)
+        self.assertIn("immutable namespace statics: 287", result.stdout)
         self.assertIn("framework global descriptors: 1 (NickelHook)", result.stdout)
         self.assertIn(
             "promoted-TU mutable namespace objects: 0 (none)",
@@ -322,7 +332,7 @@ class RepositoryGlobalsBudgetTests(unittest.TestCase):
             result.stdout,
         )
         self.assertIn(
-            "promoted-TU immutable namespace objects: 8",
+            "promoted-TU immutable namespace objects: 18",
             result.stdout,
         )
         self.assertIn("Globals budget verified", result.stdout)

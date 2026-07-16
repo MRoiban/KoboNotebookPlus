@@ -13,13 +13,6 @@ struct BackgroundOption {
         : type(type_), path(path_), text(text_) {}
 };
 
-struct CustomTemplate {
-    QString id;
-    QString label;
-    QString icon;
-    QString backgroundBase;
-};
-
 // One archive-scan verdict per canonical onboard .nebo path. Negative results
 // (no custom cover, or an ambiguous marker count) are cached too, so uncovered
 // notebooks stop paying the ZIP scan on every tile reload. Entries are reused

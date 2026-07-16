@@ -13,7 +13,7 @@ static void loadAutomaticCovers() {
         }
 
         QFileInfo const& info = files.at(i);
-        if (!automaticSource(info))
+        if (!cnt::fs_util::automaticSource(info))
             continue;
 
         QString const sourcePath = info.absoluteFilePath();
@@ -29,7 +29,8 @@ static void loadAutomaticCovers() {
         if (label.isEmpty())
             continue;
 
-        uint32_t const hash = stableFilenameHash(info.fileName().toUtf8());
+        uint32_t const hash =
+            cnt::fs_util::stableFilenameHash(info.fileName().toUtf8());
         QString const id = QString::fromLatin1("Custom_Cover_%1")
             .arg(hash, 8, 16, QLatin1Char('0'));
         if (firmwareApi().rendererMap->contains(id)) {
@@ -52,7 +53,8 @@ static void loadAutomaticCovers() {
         }
 
         firmwareApi().rendererMap->insert(id, sourcePath);
-        coverState().customCovers.append(CustomTemplate{id, label, iconPath, sourcePath});
+        coverState().customCovers.append(
+            cnt::templates::CustomTemplate{id, label, iconPath, sourcePath});
         trace("covers: PNG cover loaded");
         nh_log("automatically loaded notebook cover '%s' as '%s'",
             qPrintable(info.fileName()), qPrintable(label));

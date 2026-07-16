@@ -17,6 +17,7 @@ namespace {
 
 char const kTemplateRoot[] = "/mnt/onboard/.kobo/custom/templates/";
 char const kCondorSuffix[] = "_condor.png";
+qint64 const kMaximumAutomaticPngSize = 32 * 1024 * 1024;
 int const kBackgroundWidth = 1404;
 int const kBackgroundHeight = 1872;
 int const kPickerIconSize = 280;
@@ -50,6 +51,27 @@ namespace fs_util {
 
 double elapsedMs(QElapsedTimer const& timer) {
     return static_cast<double>(timer.nsecsElapsed()) / 1e6;
+}
+
+uint32_t stableFilenameHash(QByteArray const& value) {
+    uint32_t hash = UINT32_C(2166136261);
+    for (int i = 0; i < value.size(); ++i) {
+        hash ^= static_cast<unsigned char>(value.at(i));
+        hash *= UINT32_C(16777619);
+    }
+    return hash;
+}
+
+bool automaticSource(QFileInfo const& info) {
+    QString const name = info.fileName();
+    QString const lower = name.toLower();
+    return info.isFile()
+        && info.size() >= 8
+        && info.size() <= kMaximumAutomaticPngSize
+        && name.endsWith(QLatin1String(".png"))
+        && !lower.endsWith(QLatin1String(kCondorSuffix))
+        && !lower.endsWith(QLatin1String("-icon.png"))
+        && !lower.endsWith(QLatin1String("_icon.png"));
 }
 
 bool safeId(QString const& id) {
