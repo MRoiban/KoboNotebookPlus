@@ -62,6 +62,7 @@
 #include "fs_util.h"
 #include "notebook_widget.h"
 #include "page_io.h"
+#include "pages.h"
 #include "settings.h"
 #include "templates.h"
 

@@ -114,13 +114,6 @@ static bool layoutForPart(
     return true;
 }
 
-static SharedDocument documentForPart(SharedPart const& part) {
-    PageStorage page;
-    firmwareApi().partGetPage(page.bytes, part.get());
-    page.constructed = true;
-    return firmwareApi().pageDocument(page.bytes);
-}
-
 static bool applyNotebookCover(void* widget, QString const& type, QString* error) {
     void* const editor = cnt::notebook_widget::notePadEditor(widget);
     void* const editorControl = cnt::notebook_widget::notePadEditorControl(widget);
@@ -206,7 +199,8 @@ static bool applyNotebookCover(void* widget, QString const& type, QString* error
     cnt::cover_cache::invalidateNotebookScanEntry(
         coverState(), firmwareApi().widgetFilePath(widget));
 
-    SharedDocument const document = documentForPart(coverPart);
+    SharedDocument const document = cnt::pages::documentForPart(
+        firmwareApi(), coverPart);
     int const appendedIndex = firmwareApi().packageIndexOfPart(package.get(), coverPart);
     if (!document
             || firmwareApi().documentPageCount(document.get()) != oldCount + 1
@@ -234,59 +228,6 @@ static bool applyNotebookCover(void* widget, QString const& type, QString* error
     cnt::cover_cache::invalidateNotebookScanEntry(
         coverState(), firmwareApi().widgetFilePath(widget));
     trace("covers: new writable cover inserted as page zero");
-    return true;
-}
-
-struct PageContext {
-    void* widget;
-    void* editor;
-    SharedPart part;
-    SharedPackage package;
-    SharedDocument document;
-    int index;
-    int count;
-
-    PageContext()
-        : widget(nullptr), editor(nullptr), index(-1), count(0) {}
-};
-
-static bool loadPageContext(void* widget, PageContext* context, QString* error) {
-    if (!widget || !context) {
-        *error = QLatin1String("Page operation failed: notebook is not ready.");
-        return false;
-    }
-
-    void* const editor = cnt::notebook_widget::notePadEditor(widget);
-    void* const editorControl = cnt::notebook_widget::notePadEditorControl(widget);
-    if (!editor || !editorControl) {
-        *error = QLatin1String("Page operation failed: notebook editor is not ready.");
-        return false;
-    }
-
-    SharedPart const part = firmwareApi().editorGetPart(editor);
-    SharedPackage const package = part ? firmwareApi().partGetPackage(part.get()) : SharedPackage();
-    int const count = package ? firmwareApi().packagePartCount(package.get()) : 0;
-    int const index = package ? firmwareApi().packageIndexOfPart(package.get(), part) : -1;
-    SharedDocument const document = part ? documentForPart(part) : SharedDocument();
-    if (!part
-            || !package
-            || !document
-            || count < 1
-            || count > kMaximumNotebookPages
-            || index < 0
-            || index >= count
-            || firmwareApi().documentPageCount(document.get()) != count) {
-        *error = QLatin1String("Page operation failed: current page could not be verified.");
-        return false;
-    }
-
-    context->widget = widget;
-    context->editor = editor;
-    context->part = part;
-    context->package = package;
-    context->document = document;
-    context->index = index;
-    context->count = count;
     return true;
 }
 
@@ -318,170 +259,6 @@ static bool writePageTransaction(
         return false;
     }
     return file.commit();
-}
-
-static bool reorderCurrentPage(void* widget, int target, QString* error) {
-    try {
-        firmwareApi().widgetSave(widget);
-        PageContext context;
-        if (!loadPageContext(widget, &context, error))
-            return false;
-        if (target < 0 || target >= context.count) {
-            *error = QLatin1String("Page not reordered: destination position is invalid.");
-            return false;
-        }
-        bool hasCover = false;
-        if (!cnt::cover_cache::openNotebookHasPluginCover(
-                coverState(), firmwareApi().widgetFilePath(widget), &hasCover)) {
-            *error = QLatin1String(
-                "Page not reordered: the notebook cover could not be checked.");
-            return false;
-        }
-        if (hasCover && (context.index == 0 || target == 0)) {
-            *error = QLatin1String(
-                "Page not reordered: the notebook cover must stay the first page.");
-            return false;
-        }
-        if (target == context.index)
-            return true;
-
-        QString backupPath;
-        if (!cnt::page_io::backupNotebookPath(
-                firmwareApi().widgetFilePath(widget),
-                QLatin1String(kPageBackupRoot),
-                QLatin1String("Page not reordered"),
-                &backupPath,
-                error)) {
-            return false;
-        }
-
-        firmwareApi().documentMovePage(context.document.get(), context.index, target);
-        firmwareApi().packageSave(context.package.get());
-        if (firmwareApi().packagePartCount(context.package.get()) != context.count
-                || firmwareApi().packageIndexOfPart(context.package.get(), context.part) != target) {
-            // Best-effort in-memory rollback. The hidden archive backup is the
-            // authoritative recovery copy if this validation itself failed.
-            int const actual = firmwareApi().packageIndexOfPart(context.package.get(), context.part);
-            if (actual >= 0 && actual < context.count) {
-                firmwareApi().documentMovePage(context.document.get(), actual, context.index);
-                firmwareApi().packageSave(context.package.get());
-            }
-            *error = QLatin1String(
-                "Page reorder could not be verified. The original notebook "
-                "is preserved in the page-manager backup folder.");
-            return false;
-        }
-
-        firmwareApi().widgetSave(widget);
-        cnt::cover_cache::invalidateNotebookScanEntry(
-            coverState(), firmwareApi().widgetFilePath(widget));
-        firmwareApi().editorSetPart(context.editor, context.part);
-        firmwareApi().widgetRefresh(widget);
-        trace("pages: current page reordered");
-        return true;
-    } catch (std::exception const&) {
-        *error = QLatin1String(
-            "Page not reordered: the notebook engine rejected the operation.");
-    } catch (...) {
-        *error = QLatin1String("Page not reordered: unexpected notebook error.");
-    }
-    trace("pages: reorder threw and was contained");
-    return false;
-}
-
-static bool duplicateCurrentPage(void* widget, QString* error) {
-    SharedPackage package;
-    SharedPart clone;
-    int oldCount = 0;
-    bool cloneAttached = false;
-    try {
-        firmwareApi().widgetSave(widget);
-        PageContext context;
-        if (!loadPageContext(widget, &context, error))
-            return false;
-        bool hasCover = false;
-        if (!cnt::cover_cache::openNotebookHasPluginCover(
-                coverState(), firmwareApi().widgetFilePath(widget), &hasCover)) {
-            *error = QLatin1String(
-                "Page not duplicated: the notebook cover could not be checked.");
-            return false;
-        }
-        if (hasCover && context.index == 0) {
-            *error = QLatin1String(
-                "Page not duplicated: the notebook cover cannot be duplicated.");
-            return false;
-        }
-        if (context.count >= kMaximumNotebookPages) {
-            *error = QLatin1String("Page not duplicated: notebook has too many pages.");
-            return false;
-        }
-
-        QString backupPath;
-        if (!cnt::page_io::backupNotebookPath(
-                firmwareApi().widgetFilePath(widget),
-                QLatin1String(kPageBackupRoot),
-                QLatin1String("Page not duplicated"),
-                &backupPath,
-                error)) {
-            return false;
-        }
-
-        package = context.package;
-        oldCount = context.count;
-        clone = firmwareApi().packageClonePart(package.get(), context.part);
-        cloneAttached = bool(clone);
-        if (!clone
-                || firmwareApi().packagePartCount(package.get()) != oldCount + 1
-                || firmwareApi().packageIndexOfPart(package.get(), clone) != oldCount) {
-            *error = QLatin1String("Page not duplicated: cloned page could not be verified.");
-            throw std::runtime_error("clone validation failed");
-        }
-
-        SharedDocument const document = documentForPart(clone);
-        int const target = context.index + 1;
-        if (!document || firmwareApi().documentPageCount(document.get()) != oldCount + 1) {
-            *error = QLatin1String("Page not duplicated: cloned document could not be verified.");
-            throw std::runtime_error("clone document validation failed");
-        }
-        if (target != oldCount)
-            firmwareApi().documentMovePage(document.get(), oldCount, target);
-        firmwareApi().packageSave(package.get());
-
-        if (firmwareApi().packagePartCount(package.get()) != oldCount + 1
-                || firmwareApi().packageIndexOfPart(package.get(), clone) != target) {
-            *error = QLatin1String(
-                "Duplicate could not be verified. The original notebook is "
-                "preserved in the page-manager backup folder.");
-            throw std::runtime_error("clone commit validation failed");
-        }
-
-        firmwareApi().widgetSave(widget);
-        cnt::cover_cache::invalidateNotebookScanEntry(
-            coverState(), firmwareApi().widgetFilePath(widget));
-        firmwareApi().editorSetPart(context.editor, clone);
-        firmwareApi().widgetRefresh(widget);
-        trace("pages: current page duplicated");
-        return true;
-    } catch (...) {
-        if (package && clone && cloneAttached) {
-            try {
-                firmwareApi().packageRemovePart(package.get(), clone);
-                firmwareApi().packageSave(package.get());
-                if (firmwareApi().packagePartCount(package.get()) == oldCount) {
-                    trace("pages: failed duplicate rolled back");
-                } else {
-                    trace("pages: failed duplicate rollback also failed; backup retained");
-                }
-            } catch (...) {
-                trace("pages: failed duplicate rollback also failed; backup retained");
-            }
-        }
-        if (error->isEmpty()) {
-            *error = QLatin1String(
-                "Page not duplicated: the notebook engine rejected the operation.");
-        }
-        return false;
-    }
 }
 
 struct NotebookDestination {
@@ -528,11 +305,17 @@ static bool moveCurrentPageToNotebook(
     QString* error) {
     bool destinationVerified = false;
     bool sourceRemoved = false;
-    PageContext source;
+    cnt::pages::PageContext source;
     try {
         firmwareApi().widgetSave(widget);
-        if (!loadPageContext(widget, &source, error))
+        if (!cnt::pages::loadPageContext(
+                firmwareApi(),
+                widget,
+                kMaximumNotebookPages,
+                &source,
+                error)) {
             return false;
+        }
         if (source.count <= 1) {
             *error = QLatin1String(
                 "Page not moved: a notebook must keep at least one page.");

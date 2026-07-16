@@ -475,11 +475,22 @@ static void runPageOperation(QObject* controller, PageOperation operation) {
     try {
         bool succeeded = false;
         if (operation == DuplicatePageOperation) {
-            succeeded = duplicateCurrentPage(widget, &error);
+            succeeded = cnt::pages::duplicateCurrentPage(
+                firmwareApi(),
+                coverState(),
+                widget,
+                kMaximumNotebookPages,
+                kPageBackupRoot,
+                &error);
         } else {
             firmwareApi().widgetSave(widget);
-            PageContext context;
-            if (!loadPageContext(widget, &context, &error)) {
+            cnt::pages::PageContext context;
+            if (!cnt::pages::loadPageContext(
+                    firmwareApi(),
+                    widget,
+                    kMaximumNotebookPages,
+                    &context,
+                    &error)) {
                 showPageOperationError(widget, error);
                 return;
             }
@@ -496,7 +507,14 @@ static void runPageOperation(QObject* controller, PageOperation operation) {
                 }
                 return;
             }
-            succeeded = reorderCurrentPage(widget, target, &error);
+            succeeded = cnt::pages::reorderCurrentPage(
+                firmwareApi(),
+                coverState(),
+                widget,
+                target,
+                kMaximumNotebookPages,
+                kPageBackupRoot,
+                &error);
         }
 
         if (!succeeded)
