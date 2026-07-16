@@ -57,7 +57,7 @@
 
 namespace {
 
-#include "parts/abi_types.cc.inc"
+#include "abi_types.h"
 #include "parts/resolve.cc.inc"
 #include "parts/settings.cc.inc"
 #include "parts/fs_util.cc.inc"

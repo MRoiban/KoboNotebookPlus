@@ -1,3 +1,5 @@
+#pragma once
+
 #line 60 "src/customnotebooktemplates.cc"
 // Recovered from libnickel.so.1.0.0 on firmware 4.38.23697. The three
 // accessors read QString fields at offsets 0, 4, and 8 respectively.
