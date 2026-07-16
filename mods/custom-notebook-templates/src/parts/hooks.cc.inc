@@ -63,25 +63,8 @@ extern "C" __attribute__((visibility("default")))
 QVector<BackgroundOption> _cnt_background_options_hook() {
     trace("backgroundOptions hook invoked");
     QVector<BackgroundOption> options = firmwareApi().backgroundOptionsOriginal();
-
-    if (coverState().pickerPending) {
-        coverState().pickerPending = false;
-        options.clear();
-        for (int i = 0; i < coverState().customCovers.size(); ++i) {
-            cnt::templates::CustomTemplate const& value =
-                coverState().customCovers.at(i);
-            options.append(BackgroundOption(value.id, value.icon, value.label));
-        }
-        trace("backgroundOptions hook returned cover-only rows");
-        return options;
-    }
-
-    for (int i = 0; i < templateState().customTemplates.size(); ++i) {
-        cnt::templates::CustomTemplate const& value =
-            templateState().customTemplates.at(i);
-        options.append(BackgroundOption(value.id, value.icon, value.label));
-    }
-    trace("backgroundOptions hook appended custom rows");
+    cnt::notebook_hook_services::routeBackgroundOptions(
+        templateState(), coverState(), options);
     return options;
 }
 
@@ -89,15 +72,8 @@ extern "C" __attribute__((visibility("default")))
 void _cnt_set_dialog_title_hook(void* dialog, QString const& title) {
     if (!firmwareApi().setDialogTitleOriginal)
         return;
-    if (coverState().hooksReady
-            && coverState().titlePending
-            && title == QLatin1String("Notebook Templates")) {
-        coverState().titlePending = false;
-        firmwareApi().setDialogTitleOriginal(dialog, QLatin1String("Notebook Covers"));
-        trace("covers: picker title changed to Notebook Covers");
-        return;
-    }
-    firmwareApi().setDialogTitleOriginal(dialog, title);
+    cnt::notebook_hook_services::routeCoverDialogTitle(
+        firmwareApi(), coverState(), dialog, title);
 }
 
 extern "C" __attribute__((visibility("default")))
@@ -110,40 +86,14 @@ void _cnt_parser_image_parsed_hook(
 
     uintptr_t const caller = reinterpret_cast<uintptr_t>(
         __builtin_return_address(0)) & ~uintptr_t(1);
-    if (!coverState().hooksReady
-            || !firmwareApi().contentGetId
-            || !cnt::cover_cache::zipApisReady(coverState())
-            || !firmwareApi().iinknoteBase
-            || caller != firmwareApi().iinknoteBase + kThumbnailCallbackReturnVma) {
-        firmwareApi().parserImageParsedOriginal(parser, volume, image);
-        return;
-    }
-
-    QElapsedTimer timer;
-    timer.start();
-    QString const notebookPath = cnt::cover_cache::notebookPathFromContentId(
-        firmwareApi().contentGetId(volume));
-    double const pathResolveMs = cnt::fs_util::elapsedMs(timer);
-    QString type;
-    if (notebookPath.isEmpty()
-            || !cnt::cover_cache::cachedNotebookCoverType(
-                coverState(), notebookPath, &type, pathResolveMs)) {
-        firmwareApi().parserImageParsedOriginal(parser, volume, image);
-        return;
-    }
-
-    QImage const composed = cnt::cover_cache::composeCoverWithRenderedInk(
-        coverState(), type, image);
-    if (composed.isNull()) {
-        firmwareApi().parserImageParsedOriginal(parser, volume, image);
-        trace("covers: cover-and-ink composition failed; stock preview preserved");
-        return;
-    }
-
-    cnt::cover_cache::cacheRenderedCoverImage(
-        coverState(), notebookPath, type, composed);
-    firmwareApi().parserImageParsedOriginal(parser, volume, composed);
-    trace("covers: custom cover composed with rendered page ink");
+    cnt::notebook_hook_services::routeParserImage(
+        firmwareApi(),
+        coverState(),
+        caller,
+        kThumbnailCallbackReturnVma,
+        parser,
+        volume,
+        image);
 }
 
 extern "C" __attribute__((visibility("default")))
@@ -153,49 +103,8 @@ void _cnt_volume_load_cover_hook(void* view) {
 
     // Preserve Kobo's normal cache/download/default-cover behavior first.
     firmwareApi().volumeLoadCoverOriginal(view);
-    if (!coverState().gridHookReady
-            || !view
-            || !firmwareApi().contentGetId
-            || !firmwareApi().contentGetImageId
-            || !firmwareApi().pixmapSetImage
-            || !cnt::cover_cache::zipApisReady(coverState())) {
-        return;
-    }
-
-    void const* const volume = static_cast<char const*>(view)
-        + kVolumeInPixmapViewOffset;
-    QElapsedTimer timer;
-    timer.start();
-    QString const notebookPath = cnt::cover_cache::notebookPathFromContentId(
-        firmwareApi().contentGetId(volume));
-    double const pathResolveMs = cnt::fs_util::elapsedMs(timer);
-    QString type;
-    if (notebookPath.isEmpty()
-            || !cnt::cover_cache::cachedNotebookCoverType(
-                coverState(), notebookPath, &type, pathResolveMs)) {
-        return;
-    }
-
-    QImage preview = cnt::cover_cache::cachedRenderedCoverImage(
-        coverState(), notebookPath, type);
-    if (preview.isNull()) {
-        preview = cnt::cover_cache::cleanCustomCoverImage(coverState(), type);
-        if (!preview.isNull())
-            trace("covers: clean cover used until ink preview is rendered");
-    }
-    if (preview.isNull()) {
-        trace("covers: no rendered or clean preview; stock card preserved");
-        return;
-    }
-
-    QString const imageId = firmwareApi().contentGetImageId(volume);
-    timer.restart();
-    firmwareApi().pixmapSetImage(view, preview, imageId);
-    char line[128];
-    snprintf(line, sizeof(line),
-        "covers: live notebook card replaced (set-image=%.1fms)",
-        cnt::fs_util::elapsedMs(timer));
-    trace(line);
+    cnt::notebook_hook_services::augmentNotebookGridCover(
+        firmwareApi(), coverState(), view, kVolumeInPixmapViewOffset);
 }
 
 extern "C" __attribute__((visibility("default")))

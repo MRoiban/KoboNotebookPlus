@@ -62,6 +62,7 @@
 #include "covers.h"
 #include "fs_util.h"
 #include "notebook_widget.h"
+#include "notebook_hook_services.h"
 #include "page_actions.h"
 #include "page_io.h"
 #include "pages.h"
