@@ -43,7 +43,13 @@ static void runLayerOperation(
 
     LayerContext context;
     QString error;
-    if (!loadLayerContext(controller, &context, &error)) {
+    if (!cnt::layers_state::loadLayerContext(
+            firmwareApi(),
+            layerState(),
+            controller,
+            kMaximumNotebookLayers,
+            &context,
+            &error)) {
         QObject* const widgetObject =
             cnt::notebook_widget::findNotebookWidget(controller);
         showLayerError(widgetObject, error);
@@ -230,7 +236,13 @@ static void showLayerPopup(QObject* controller) {
     popupOpenTimer.start();
     LayerContext context;
     QString error;
-    if (!loadLayerContext(controller, &context, &error)) {
+    if (!cnt::layers_state::loadLayerContext(
+            firmwareApi(),
+            layerState(),
+            controller,
+            kMaximumNotebookLayers,
+            &context,
+            &error)) {
         QObject* const widgetObject =
             cnt::notebook_widget::findNotebookWidget(controller);
         showLayerError(widgetObject, error);
@@ -336,7 +348,8 @@ static void showLayerPopup(QObject* controller) {
         addLayerRow(record.id, record.name, active, false);
     }
 
-    QString const baseId = nativeDocumentLayerId();
+    QString const baseId =
+        cnt::layers_state::nativeDocumentLayerId(firmwareApi());
     bool const baseActive = context.state.activeId == baseId;
     addLayerRow(baseId, QLatin1String("Layer 1"), baseActive, true);
 

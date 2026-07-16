@@ -67,7 +67,6 @@ static char const kCoverBackupRoot[] = "/mnt/onboard/.kobo/custom/covers/backups
 static char const kPageManagerRoot[] = "/mnt/onboard/.kobo/custom/page-manager/";
 static char const kPageBackupRoot[] = "/mnt/onboard/.kobo/custom/page-manager/backups/";
 static char const kPageTransactionRoot[] = "/mnt/onboard/.kobo/custom/page-manager/transactions/";
-static char const kLayerRoot[] = "/mnt/onboard/.kobo/custom/layers/";
 static char const kLayerBackupRoot[] = "/mnt/onboard/.kobo/custom/layers/backups/";
 static char const kLayerPreviewRoot[] = "/mnt/onboard/.kobo/custom/layers/previews/";
 static int const kMaximumNotebookPages = 4096;

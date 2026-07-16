@@ -1,19 +1,5 @@
 #line 2847 "src/customnotebooktemplates.cc"
 
-struct PageStorage {
-    alignas(8) unsigned char bytes[64];
-    bool constructed;
-
-    PageStorage() : constructed(false) {
-        memset(bytes, 0, sizeof(bytes));
-    }
-
-    ~PageStorage() {
-        if (constructed)
-            firmwareApi().pageDestructor(bytes);
-    }
-};
-
 struct ScopedIInkString {
     IInkStringStorage value;
 
@@ -26,84 +12,6 @@ struct ScopedIInkString {
         delete value.impl;
     }
 };
-
-struct LayoutStorage {
-    // atk::core::Layout contains a shared document-layout pointer followed by
-    // an atk::core::Page. The pinned destructor accesses the Page at +0x8.
-    // Keep generous aligned storage so the firmware owns every construction
-    // and destruction detail.
-    alignas(8) unsigned char bytes[128];
-    bool constructed;
-
-    LayoutStorage() : constructed(false) {
-        memset(bytes, 0, sizeof(bytes));
-    }
-
-    ~LayoutStorage() {
-        if (constructed)
-            firmwareApi().layoutDestructor(bytes);
-    }
-};
-
-struct ManagedObjectStorage {
-    // myscript::engine::ManagedObject and its document wrappers are one
-    // acquired _voReference pointer on this 32-bit SDK.
-    alignas(4) unsigned char bytes[4];
-    bool constructed;
-
-    ManagedObjectStorage() : constructed(false) {
-        memset(bytes, 0, sizeof(bytes));
-    }
-
-    ~ManagedObjectStorage() {
-        if (constructed && firmwareApi().managedObjectDestructor)
-            firmwareApi().managedObjectDestructor(bytes);
-    }
-
-    bool hasObject() const {
-        void* object = nullptr;
-        memcpy(&object, bytes, sizeof(object));
-        return object != nullptr;
-    }
-};
-static_assert(sizeof(void*) == 4,
-    "MyScript managed-object ABI requires the 32-bit Kobo target");
-
-static QString iinkStringValue(IInkStringStorage* value) {
-    if (!value || !value->impl || !firmwareApi().iinkStringToStdString)
-        return QString();
-    std::string utf8;
-    firmwareApi().iinkStringToStdString(&utf8, value);
-    return QString::fromUtf8(utf8.data(), static_cast<int>(utf8.size()));
-}
-
-static QString partStableId(SharedPart const& part) {
-    if (!part || !firmwareApi().partGetId)
-        return QString();
-    IInkStringStorage value = {nullptr};
-    firmwareApi().partGetId(&value, part.get());
-    QString const id = iinkStringValue(&value);
-    delete value.impl;
-    return id;
-}
-
-static bool layoutForPart(
-    SharedPart const& part,
-    LayoutStorage* layout,
-    QString* error) {
-    if (!part || !layout || !firmwareApi().partGetPage || !firmwareApi().pageLayout || !firmwareApi().layoutDestructor) {
-        if (error)
-            *error = QLatin1String("Layers unavailable: page layout API is not ready.");
-        return false;
-    }
-
-    PageStorage page;
-    firmwareApi().partGetPage(page.bytes, part.get());
-    page.constructed = true;
-    firmwareApi().pageLayout(layout->bytes, page.bytes);
-    layout->constructed = true;
-    return true;
-}
 
 static bool writePageTransaction(
     QString const& path,

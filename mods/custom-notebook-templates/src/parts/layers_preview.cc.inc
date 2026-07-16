@@ -645,8 +645,9 @@ static bool addNotebookLayer(LayerContext* context, QString* error) {
         return false;
     }
 
-    LayoutStorage layout;
-    if (!layoutForPart(context->part, &layout, error))
+    cnt::layers_state::LayoutStorage layout(firmwareApi());
+    if (!cnt::layers_state::loadLayoutForPart(
+            firmwareApi(), context->part, &layout, error))
         return false;
     LayerRecord record;
     record.id = QLatin1String("cnt.layer.")
@@ -660,7 +661,8 @@ static bool addNotebookLayer(LayerContext* context, QString* error) {
         return false;
     }
     bool addedExists = false;
-    if (!nativeLayerExists(layout, record.id, &addedExists, error)
+    if (!cnt::layers_state::nativeLayerExists(
+            firmwareApi(), layout, record.id, &addedExists, error)
             || !addedExists) {
         try {
             firmwareApi().layoutRemoveLayer(layout.bytes, nativeId);
@@ -679,10 +681,10 @@ static bool addNotebookLayer(LayerContext* context, QString* error) {
     context->state.customLayers.append(record);
     context->state.activeId = record.id;
     if (!applyActiveLayer(*context, record.id, error)
-            || !saveLayerState(context->state, error)) {
+            || !cnt::layers_state::saveLayerState(context->state, error)) {
         firmwareApi().layoutRemoveLayer(layout.bytes, nativeId);
         context->state = previous;
-        saveLayerState(previous, nullptr);
+        cnt::layers_state::saveLayerState(previous, nullptr);
         applyActiveLayer(*context, previous.activeId, nullptr);
         return false;
     }
@@ -692,7 +694,8 @@ static bool addNotebookLayer(LayerContext* context, QString* error) {
     trace("layers: package save complete after native add");
     firmwareApi().widgetSave(context->widget);
     trace("layers: widget save complete after native add");
-    traceSerializedLayerProbe(context->state, record.id, "after-add-save");
+    cnt::layers_state::traceSerializedLayerProbe(
+        coverState(), context->state, record.id, "after-add-save");
     firmwareApi().widgetRefresh(context->widget);
     trace("layers: native layer added and selected");
     return true;
@@ -704,7 +707,8 @@ static bool activateNotebookLayer(
     QString* error) {
     if (!context)
         return false;
-    bool known = id == nativeDocumentLayerId();
+    bool known = id
+        == cnt::layers_state::nativeDocumentLayerId(firmwareApi());
     for (int i = 0; !known && i < context->state.customLayers.size(); ++i)
         known = context->state.customLayers.at(i).id == id;
     if (!known) {
@@ -717,7 +721,7 @@ static bool activateNotebookLayer(
     if (!applyActiveLayer(*context, id, error))
         return false;
     context->state.activeId = id;
-    if (!saveLayerState(context->state, error)) {
+    if (!cnt::layers_state::saveLayerState(context->state, error)) {
         context->state.activeId = previous;
         applyActiveLayer(*context, previous, nullptr);
         return false;
@@ -732,7 +736,8 @@ static bool activateNotebookLayer(
 }
 
 static bool deleteActiveNotebookLayer(LayerContext* context, QString* error) {
-    if (!context || context->state.activeId == nativeDocumentLayerId()) {
+    if (!context || context->state.activeId
+            == cnt::layers_state::nativeDocumentLayerId(firmwareApi())) {
         if (error)
             *error = QLatin1String("Layer not deleted: the base layer is protected.");
         return false;
@@ -762,8 +767,9 @@ static bool deleteActiveNotebookLayer(LayerContext* context, QString* error) {
         return false;
     }
 
-    LayoutStorage layout;
-    if (!layoutForPart(context->part, &layout, error))
+    cnt::layers_state::LayoutStorage layout(firmwareApi());
+    if (!cnt::layers_state::loadLayoutForPart(
+            firmwareApi(), context->part, &layout, error))
         return false;
     QString const deletedId = context->state.activeId;
     std::string const nativeId = deletedId.toUtf8().constData();
@@ -771,8 +777,12 @@ static bool deleteActiveNotebookLayer(LayerContext* context, QString* error) {
         context->state, context->state.activeId);
     firmwareApi().layoutRemoveLayer(layout.bytes, nativeId);
     bool stillExists = true;
-    if (!nativeLayerExists(
-            layout, context->state.activeId, &stillExists, error)) {
+    if (!cnt::layers_state::nativeLayerExists(
+            firmwareApi(),
+            layout,
+            context->state.activeId,
+            &stillExists,
+            error)) {
         if (error && error->isEmpty()) {
             *error = QLatin1String(
                 "Layer removal could not be verified. The notebook backup "
@@ -789,9 +799,10 @@ static bool deleteActiveNotebookLayer(LayerContext* context, QString* error) {
         return false;
     }
     context->state.customLayers.remove(index);
-    context->state.activeId = nativeDocumentLayerId();
+    context->state.activeId =
+        cnt::layers_state::nativeDocumentLayerId(firmwareApi());
     if (!applyActiveLayer(*context, context->state.activeId, error)
-            || !saveLayerState(context->state, error)) {
+            || !cnt::layers_state::saveLayerState(context->state, error)) {
         if (error && error->isEmpty()) {
             *error = QLatin1String(
                 "Layer was removed, but its UI state could not be finalized. "
@@ -804,7 +815,8 @@ static bool deleteActiveNotebookLayer(LayerContext* context, QString* error) {
     trace("layers: package save complete after native delete");
     firmwareApi().widgetSave(context->widget);
     trace("layers: widget save complete after native delete");
-    traceSerializedLayerProbe(context->state, deletedId, "after-delete-save");
+    cnt::layers_state::traceSerializedLayerProbe(
+        coverState(), context->state, deletedId, "after-delete-save");
     QFile::remove(previewPath);
     layerState().previewCardCache.remove(previewPath);
     firmwareApi().widgetRefresh(context->widget);
@@ -818,7 +830,7 @@ static bool refreshLayerPreviews(LayerContext* context, QString* error) {
     firmwareApi().widgetSave(context->widget);
 
     QVector<QString> ids;
-    ids.append(nativeDocumentLayerId());
+    ids.append(cnt::layers_state::nativeDocumentLayerId(firmwareApi()));
     for (int i = 0; i < context->state.customLayers.size(); ++i)
         ids.append(context->state.customLayers.at(i).id);
 
@@ -907,7 +919,13 @@ static void continueDeferredLayerPreviewRefresh(
     // exact page for which this work was queued before touching MyScript.
     LayerContext context;
     QString contextError;
-    if (!loadLayerContext(state->controller, &context, &contextError)
+    if (!cnt::layers_state::loadLayerContext(
+            firmwareApi(),
+            layerState(),
+            state->controller,
+            kMaximumNotebookLayers,
+            &context,
+            &contextError)
             || context.state.notebookPath != state->expectedState.notebookPath
             || context.state.partId != state->expectedState.partId) {
         trace(QLatin1String("layers: deferred popup preview cancelled context=")
@@ -920,7 +938,8 @@ static void continueDeferredLayerPreviewRefresh(
         state->timer->start(kLayerPreviewDeferredNextMs);
         return;
     }
-    bool knownLayer = row.id == nativeDocumentLayerId();
+    bool knownLayer = row.id
+        == cnt::layers_state::nativeDocumentLayerId(firmwareApi());
     for (int i = 0; !knownLayer && i < context.state.customLayers.size(); ++i)
         knownLayer = context.state.customLayers.at(i).id == row.id;
     if (!knownLayer) {

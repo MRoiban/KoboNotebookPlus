@@ -172,7 +172,13 @@ void _cnt_render_volume_hook(void* widget, void const* volume) {
         trace("layers: notebook render complete; restoring saved active layer");
         LayerContext context;
         QString error;
-        if (!loadLayerContext(object, &context, &error)) {
+        if (!cnt::layers_state::loadLayerContext(
+                firmwareApi(),
+                layerState(),
+                object,
+                kMaximumNotebookLayers,
+                &context,
+                &error)) {
             trace(QLatin1String(
                 "layers: notebook-open context unavailable; metadata preserved: ")
                 + error);
@@ -214,7 +220,13 @@ void _cnt_set_tool_theme_hook(void* widget, void* theme) {
     trace("layers: setToolTheme hook invoked for notebook");
     LayerContext context;
     QString error;
-    if (!loadLayerContext(object, &context, &error)) {
+    if (!cnt::layers_state::loadLayerContext(
+            firmwareApi(),
+            layerState(),
+            object,
+            kMaximumNotebookLayers,
+            &context,
+            &error)) {
         trace(QLatin1String("layers: setToolTheme context unavailable: ") + error);
         return;
     }
@@ -224,7 +236,8 @@ void _cnt_set_tool_theme_hook(void* widget, void* theme) {
             + error);
         return;
     }
-    if (context.state.activeId != nativeDocumentLayerId())
+    if (context.state.activeId
+            != cnt::layers_state::nativeDocumentLayerId(firmwareApi()))
         trace("layers: custom active layer reapplied after tool change");
     else
         trace("layers: base layer reapplied after tool change");

@@ -274,15 +274,15 @@ class RepositoryGlobalsBudgetTests(unittest.TestCase):
         self.assertEqual(VERIFIER.validation_errors(audit), [])
         self.assertEqual(audit.names("mutable"), {"gPluginState", "info"})
         self.assertEqual(audit.count("mutex"), 0)
-        self.assertEqual(audit.count("immutable"), 262)
-        self.assertEqual(audit.count("function"), 86)
+        self.assertEqual(audit.count("immutable"), 261)
+        self.assertEqual(audit.count("function"), 71)
         self.assertEqual(audit.framework_globals, ("NickelHook",))
 
         promoted = VERIFIER.audit_promoted_sources(VERIFIER.DEFAULT_SOURCE_ROOT)
         self.assertEqual(VERIFIER.promoted_validation_errors(promoted), [])
         self.assertEqual(promoted.count("mutable"), 0)
         self.assertEqual(promoted.count("mutex"), 0)
-        self.assertEqual(promoted.count("immutable"), 45)
+        self.assertEqual(promoted.count("immutable"), 46)
         self.assertEqual(
             {
                 (declaration.path.name, declaration.name)
@@ -335,6 +335,7 @@ class RepositoryGlobalsBudgetTests(unittest.TestCase):
                 ("eraser_menu.cc", "kSetBrushSizeIndexLoadReturnVma"),
                 ("eraser_menu.cc", "kSetActiveToolVma"),
                 ("eraser_menu.cc", "kHardwareEraserSetActiveToolReturnVma"),
+                ("layers_state.cc", "kLayerRoot"),
             },
         )
 
@@ -348,7 +349,7 @@ class RepositoryGlobalsBudgetTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("mutable namespace statics: 2 (gPluginState, info)", result.stdout)
-        self.assertIn("immutable namespace statics: 262", result.stdout)
+        self.assertIn("immutable namespace statics: 261", result.stdout)
         self.assertIn("framework global descriptors: 1 (NickelHook)", result.stdout)
         self.assertIn(
             "promoted-TU mutable namespace objects: 0 (none)",
@@ -359,7 +360,7 @@ class RepositoryGlobalsBudgetTests(unittest.TestCase):
             result.stdout,
         )
         self.assertIn(
-            "promoted-TU immutable namespace objects: 45",
+            "promoted-TU immutable namespace objects: 46",
             result.stdout,
         )
         self.assertIn("Globals budget verified", result.stdout)
