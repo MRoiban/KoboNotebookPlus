@@ -13,6 +13,9 @@ struct FirmwareApi;
 
 namespace cnt {
 class SettingsStore;
+namespace layers_eraser {
+struct Dependencies;
+}
 
 namespace eraser_menu {
 
@@ -58,7 +61,11 @@ void afterActiveTool(
     uintptr_t caller,
     void* widget,
     int tool,
-    ApplyConfiguredSize applyConfiguredSize);
+    layers_eraser::Dependencies const& stateDependencies);
+bool queueActiveEraserReplay(
+    RuntimeState& state,
+    QObject* widget,
+    layers_eraser::Dependencies const& stateDependencies);
 
 } // namespace eraser_menu
 } // namespace cnt

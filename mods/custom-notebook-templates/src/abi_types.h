@@ -273,6 +273,7 @@ typedef bool (*SelectionIsEmpty)(void const* selection);
 typedef void* (*SelectionAdjustToStrokeBoundaries)(
     void* selection,
     float ratio);
+typedef void (*EraserSetPolicy)(void* eraser, int policy);
 typedef int (*EraserPolicy)(void const* eraser);
 typedef void (*EraserSetRadius)(void* eraser, float radius);
 typedef float (*EraserRadius)(void const* eraser);

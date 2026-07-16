@@ -139,7 +139,7 @@ void _cnt_set_active_tool_hook(void* widget, int tool) {
         caller,
         widget,
         tool,
-        applyConfiguredEraserSizeForWidget);
+        layerEraserDependencies());
 }
 
 extern "C" __attribute__((visibility("default")))
@@ -161,6 +161,8 @@ void _cnt_render_volume_hook(void* widget, void const* volume) {
     if (eraserState().sizeApisReady) {
         try {
             applyConfiguredEraserSizeForWidget(object, "notebook-open");
+            cnt::eraser_menu::queueActiveEraserReplay(
+                eraserState(), object, layerEraserDependencies());
         } catch (...) {
             trace("eraser-size: notebook-open replay threw; stock radius preserved");
         }
@@ -216,6 +218,8 @@ void _cnt_set_tool_theme_hook(void* widget, void* theme) {
     if (eraserState().sizeApisReady) {
         try {
             applyConfiguredEraserSizeForWidget(object, "tool-theme");
+            cnt::eraser_menu::queueActiveEraserReplay(
+                eraserState(), object, layerEraserDependencies());
         } catch (...) {
             trace("eraser-size: tool-theme replay threw; stock radius preserved");
         }

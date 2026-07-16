@@ -146,6 +146,11 @@ bool applyConfiguredEraserSizeForWidget(
     Dependencies const& dependencies,
     QObject* widgetObject,
     char const* reason);
+bool applyConfiguredEraserStateForWidget(
+    Dependencies const& dependencies,
+    QObject* widgetObject,
+    int desiredPolicy,
+    char const* reason);
 
 } // namespace layers_eraser
 } // namespace cnt

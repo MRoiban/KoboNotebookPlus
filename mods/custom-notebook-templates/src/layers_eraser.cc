@@ -856,67 +856,119 @@ static char const* exactEraserSizeClass(
     return nullptr;
 }
 
-static bool applyRadiusToExactEraser(
+static bool applyConfigurationToExactEraser(
     Dependencies const& dependencies,
     void* tool,
     float desiredRadius,
+    bool applyPolicy,
+    int desiredPolicy,
     char const* reason,
     char const* source) {
     char const* const eraserClass =
         exactEraserSizeClass(dependencies, tool);
-    if (!eraserClass || !firmwareApi(dependencies).eraserSetRadius || !firmwareApi(dependencies).eraserRadius)
+    if (!eraserClass || !firmwareApi(dependencies).eraserSetRadius
+            || !firmwareApi(dependencies).eraserRadius
+            || (applyPolicy
+                && (!firmwareApi(dependencies).eraserSetPolicy
+                    || !firmwareApi(dependencies).eraserPolicy))) {
         return false;
+    }
 
     try {
         float const beforeRadius = firmwareApi(dependencies).eraserRadius(tool);
         int const beforePolicy = firmwareApi(dependencies).eraserPolicy ? firmwareApi(dependencies).eraserPolicy(tool) : -1;
         std::string const beforeLayer = restrictedToolLayer(dependencies, tool);
         firmwareApi(dependencies).eraserSetRadius(tool, desiredRadius);
+        if (applyPolicy)
+            firmwareApi(dependencies).eraserSetPolicy(tool, desiredPolicy);
         float const afterRadius = firmwareApi(dependencies).eraserRadius(tool);
         int const afterPolicy = firmwareApi(dependencies).eraserPolicy ? firmwareApi(dependencies).eraserPolicy(tool) : -1;
         std::string const afterLayer = restrictedToolLayer(dependencies, tool);
         float difference = afterRadius - desiredRadius;
         if (difference < 0.0f)
             difference = -difference;
-        bool const preserved = beforePolicy == afterPolicy
-            && beforeLayer == afterLayer;
+        bool const policyVerified = applyPolicy
+            ? afterPolicy == desiredPolicy
+            : beforePolicy == afterPolicy;
+        bool const layerPreserved = beforeLayer == afterLayer;
         bool const radiusApplied = difference < 0.001f;
-        trace(QLatin1String("eraser-size: apply reason=")
-            + QLatin1String(reason)
-            + QLatin1String(" source=") + QLatin1String(source)
-            + QLatin1String(" class=") + QLatin1String(eraserClass)
-            + QLatin1String(" before=")
-            + QString::number(beforeRadius, 'f', 3)
-            + QLatin1String(" requested=")
-            + QString::number(desiredRadius, 'f', 3)
-            + QLatin1String(" after=")
-            + QString::number(afterRadius, 'f', 3)
-            + QLatin1String(" policy=") + QString::number(afterPolicy)
-            + QLatin1String(" layer=")
-            + QString::fromUtf8(
-                afterLayer.data(), static_cast<int>(afterLayer.size()))
-            + QLatin1String(" policy-layer-preserved=")
-            + (preserved ? QLatin1String("yes") : QLatin1String("no")));
-        if (!preserved)
-            trace("eraser-size: setter changed policy/layer unexpectedly");
-        return radiusApplied && preserved;
+        if (applyPolicy) {
+            trace(QLatin1String("eraser-state: apply reason=")
+                + QLatin1String(reason)
+                + QLatin1String(" source=") + QLatin1String(source)
+                + QLatin1String(" class=") + QLatin1String(eraserClass)
+                + QLatin1String(" before-policy=")
+                + QString::number(beforePolicy)
+                + QLatin1String(" requested-policy=")
+                + QString::number(desiredPolicy)
+                + QLatin1String(" after-policy=")
+                + QString::number(afterPolicy)
+                + QLatin1String(" before-radius=")
+                + QString::number(beforeRadius, 'f', 3)
+                + QLatin1String(" requested-radius=")
+                + QString::number(desiredRadius, 'f', 3)
+                + QLatin1String(" after-radius=")
+                + QString::number(afterRadius, 'f', 3)
+                + QLatin1String(" before-layer=")
+                + QString::fromUtf8(
+                    beforeLayer.data(), static_cast<int>(beforeLayer.size()))
+                + QLatin1String(" after-layer=")
+                + QString::fromUtf8(
+                    afterLayer.data(), static_cast<int>(afterLayer.size()))
+                + QLatin1String(" verified=")
+                + (policyVerified && radiusApplied && layerPreserved
+                    ? QLatin1String("yes") : QLatin1String("no")));
+            if (!layerPreserved)
+                trace("eraser-state: setters changed restricted layer unexpectedly");
+        } else {
+            trace(QLatin1String("eraser-size: apply reason=")
+                + QLatin1String(reason)
+                + QLatin1String(" source=") + QLatin1String(source)
+                + QLatin1String(" class=") + QLatin1String(eraserClass)
+                + QLatin1String(" before=")
+                + QString::number(beforeRadius, 'f', 3)
+                + QLatin1String(" requested=")
+                + QString::number(desiredRadius, 'f', 3)
+                + QLatin1String(" after=")
+                + QString::number(afterRadius, 'f', 3)
+                + QLatin1String(" policy=") + QString::number(afterPolicy)
+                + QLatin1String(" layer=")
+                + QString::fromUtf8(
+                    afterLayer.data(), static_cast<int>(afterLayer.size()))
+                + QLatin1String(" policy-layer-preserved=")
+                + (policyVerified && layerPreserved
+                    ? QLatin1String("yes") : QLatin1String("no")));
+            if (!policyVerified || !layerPreserved)
+                trace("eraser-size: setter changed policy/layer unexpectedly");
+        }
+        return radiusApplied && policyVerified && layerPreserved;
     } catch (...) {
-        trace(QLatin1String("eraser-size: exact eraser rejected radius reason=")
+        trace(QLatin1String(applyPolicy ? "eraser-state" : "eraser-size")
+            + QLatin1String(": exact eraser rejected configuration reason=")
             + QLatin1String(reason));
         return false;
     }
 }
 
-// Apply one plugin-owned size to every exact live core-Eraser subclass. This
-// deliberately duplicates the already-proven backend map traversal instead of
-// changing the working layer adapters. All shared_ptr owners remain in scope
-// while their raw firmware objects are inspected or called.
-static bool applyConfiguredEraserSizeForWidgetImpl(
+// Apply plugin-owned eraser state to every exact live core-Eraser subclass.
+// The size-only entry leaves policy untouched; the state entry verifies an
+// exact policy/radius readback. All shared_ptr owners remain in scope while
+// their raw firmware objects are inspected or called.
+static bool applyConfiguredEraserConfigurationForWidgetImpl(
     Dependencies const& dependencies,
     QObject* widgetObject,
+    bool applyPolicy,
+    int desiredPolicy,
     char const* reason) {
     if (!eraserState(dependencies).sizeApisReady || !widgetObject
             || !cnt::notebook_widget::isNotebookWidget(widgetObject)) {
+        return false;
+    }
+    if (applyPolicy && (desiredPolicy < 0 || desiredPolicy > 1
+            || !firmwareApi(dependencies).eraserSetPolicy
+            || !firmwareApi(dependencies).eraserPolicy)) {
+        trace(QLatin1String("eraser-state: invalid or unavailable policy reason=")
+            + QLatin1String(reason));
         return false;
     }
 
@@ -934,7 +986,8 @@ static bool applyConfiguredEraserSizeForWidgetImpl(
         void* const expectedNeboVptr = firmwareApi(dependencies).neboBackendVtable
             ? static_cast<char*>(firmwareApi(dependencies).neboBackendVtable) + 8 : nullptr;
         if (!backend || *reinterpret_cast<void**>(backend) != expectedNeboVptr) {
-            trace(QLatin1String("eraser-size: unsupported backend reason=")
+            trace(QLatin1String(applyPolicy ? "eraser-state" : "eraser-size")
+                + QLatin1String(": unsupported backend reason=")
                 + QLatin1String(reason));
             return false;
         }
@@ -947,13 +1000,15 @@ static bool applyConfiguredEraserSizeForWidgetImpl(
             : nullptr;
         if (!pageController || !layoutGrid || !firmwareApi(dependencies).layoutGridLineGap
                 || !firmwareApi(dependencies).eraserWidthFromThicknessRatio) {
-            trace(QLatin1String("eraser-size: page grid unavailable reason=")
+            trace(QLatin1String(applyPolicy ? "eraser-state" : "eraser-size")
+                + QLatin1String(": page grid unavailable reason=")
                 + QLatin1String(reason));
             return false;
         }
         float const lineGap = firmwareApi(dependencies).layoutGridLineGap(layoutGrid);
         if (!(lineGap > 0.0f) || lineGap > 10000.0f) {
-            trace(QLatin1String("eraser-size: invalid line gap reason=")
+            trace(QLatin1String(applyPolicy ? "eraser-state" : "eraser-size")
+                + QLatin1String(": invalid line gap reason=")
                 + QLatin1String(reason));
             return false;
         }
@@ -961,7 +1016,8 @@ static bool applyConfiguredEraserSizeForWidgetImpl(
             firmwarePins(dependencies).eraserSizeRatios[index], lineGap);
         float const radius = width * 0.5f;
         if (!(radius > 0.0f) || radius > 10000.0f) {
-            trace(QLatin1String("eraser-size: invalid converted radius reason=")
+            trace(QLatin1String(applyPolicy ? "eraser-state" : "eraser-size")
+                + QLatin1String(": invalid converted radius reason=")
                 + QLatin1String(reason));
             return false;
         }
@@ -980,10 +1036,12 @@ static bool applyConfiguredEraserSizeForWidgetImpl(
         if (exactEraserSizeClass(dependencies, currentRaw)) {
             seen.push_back(currentRaw);
             ++exactCount;
-            if (applyRadiusToExactEraser(
+            if (applyConfigurationToExactEraser(
                     dependencies,
                     currentRaw,
                     radius,
+                    applyPolicy,
+                    desiredPolicy,
                     reason,
                     "current")) {
                 ++appliedCount;
@@ -1025,10 +1083,12 @@ static bool applyConfiguredEraserSizeForWidgetImpl(
                 QByteArray const source = QByteArray("backend:")
                     + QByteArray(
                         it->first.data(), static_cast<int>(it->first.size()));
-                if (applyRadiusToExactEraser(
+                if (applyConfigurationToExactEraser(
                         dependencies,
                         raw,
                         radius,
+                        applyPolicy,
+                        desiredPolicy,
                         reason,
                         source.constData())) {
                     ++appliedCount;
@@ -1056,10 +1116,12 @@ static bool applyConfiguredEraserSizeForWidgetImpl(
                             == seen.end()) {
                     seen.push_back(rawEraser);
                     ++exactCount;
-                    if (applyRadiusToExactEraser(
+                    if (applyConfigurationToExactEraser(
                             dependencies,
                             rawEraser,
                             radius,
+                            applyPolicy,
+                            desiredPolicy,
                             reason,
                             "main-fallback")) {
                         ++appliedCount;
@@ -1068,8 +1130,12 @@ static bool applyConfiguredEraserSizeForWidgetImpl(
             }
         }
 
-        trace(QLatin1String("eraser-size: fanout reason=")
+        trace(QLatin1String(applyPolicy ? "eraser-state" : "eraser-size")
+            + QLatin1String(": fanout reason=")
             + QLatin1String(reason)
+            + (applyPolicy
+                ? QLatin1String(" policy=") + QString::number(desiredPolicy)
+                : QString())
             + QLatin1String(" index=") + QString::number(index)
             + QLatin1String(" ratio=")
             + QString::number(firmwarePins(dependencies).eraserSizeRatios[index], 'f', 2)
@@ -1081,10 +1147,28 @@ static bool applyConfiguredEraserSizeForWidgetImpl(
             + QLatin1String(" applied=") + QString::number(appliedCount));
         return exactCount > 0 && appliedCount == exactCount;
     } catch (...) {
-        trace(QLatin1String("eraser-size: live fanout threw reason=")
+        trace(QLatin1String(applyPolicy ? "eraser-state" : "eraser-size")
+            + QLatin1String(": live fanout threw reason=")
             + QLatin1String(reason));
         return false;
     }
+}
+
+static bool applyConfiguredEraserSizeForWidgetImpl(
+        Dependencies const& dependencies,
+        QObject* widgetObject,
+        char const* reason) {
+    return applyConfiguredEraserConfigurationForWidgetImpl(
+        dependencies, widgetObject, false, -1, reason);
+}
+
+static bool applyConfiguredEraserStateForWidgetImpl(
+        Dependencies const& dependencies,
+        QObject* widgetObject,
+        int desiredPolicy,
+        char const* reason) {
+    return applyConfiguredEraserConfigurationForWidgetImpl(
+        dependencies, widgetObject, true, desiredPolicy, reason);
 }
 
 static bool armLayerAwareDrawingEraser(
@@ -1526,6 +1610,15 @@ bool applyConfiguredEraserSizeForWidget(
         char const* reason) {
     return applyConfiguredEraserSizeForWidgetImpl(
         dependencies, widgetObject, reason);
+}
+
+bool applyConfiguredEraserStateForWidget(
+        Dependencies const& dependencies,
+        QObject* widgetObject,
+        int desiredPolicy,
+        char const* reason) {
+    return applyConfiguredEraserStateForWidgetImpl(
+        dependencies, widgetObject, desiredPolicy, reason);
 }
 
 } // namespace layers_eraser

@@ -2,12 +2,15 @@
 
 #include "abi_types.h"
 #include "firmware_api.h"
+#include "layers_eraser.h"
 #include "notebook_widget.h"
 #include "settings.h"
 
 #include <QList>
 #include <QObject>
+#include <QPointer>
 #include <QString>
+#include <QTimer>
 #include <QVariant>
 #include <QWidget>
 
@@ -79,6 +82,16 @@ bool pointerMatchesVma(void* pointer, uintptr_t expectedVma) {
     return address - base == expectedVma;
 }
 
+int activeEraserPolicy(QObject* widget) {
+    if (!widget || !notebook_widget::isNotebookWidget(widget))
+        return -1;
+    int const tool = *reinterpret_cast<int const*>(
+        // setActiveTool stores the live IInkTool at widget+0xac before
+        // dispatching it. Object/Brush tools 1/2 map to policies 0/1.
+        reinterpret_cast<char const*>(widget) + 0xac);
+    return tool == 1 || tool == 2 ? tool - 1 : -1;
+}
+
 } // namespace
 
 bool installHooks(
@@ -133,15 +146,15 @@ bool installHooks(
     firmware.createBrushSizeRowOriginal =
         reinterpret_cast<CreateBrushSizeRow>(originalRow);
 
-    // Hardware stylus inversion reaches setActiveTool through a unique PLT
-    // call in stylusTouchBegin. The wrapper remains stock for every other
-    // caller and only mirrors the already-reset native size into popup state.
+    // Every exported setActiveTool eraser activation is allowed to restore
+    // engine policy/size after stock. The unique hardware caller additionally
+    // mirrors the configured index into an already-open popup.
     SetActiveToolAddress activeToolReplacement;
     activeToolReplacement.function = _cnt_set_active_tool_hook;
     void* const originalActiveTool = nh_dlhook(
         handle, kSetActiveToolSymbol, activeToolReplacement.pointer);
     if (!pointerMatchesVma(originalActiveTool, kSetActiveToolVma)) {
-        trace("eraser-size: hardware UI synchronization hook mismatch; popup unchanged");
+        trace("eraser-state: activation synchronization hook mismatch; popup unchanged");
         return false;
     }
     firmware.setActiveToolOriginal =
@@ -301,15 +314,16 @@ void afterActiveTool(
         uintptr_t caller,
         void* widget,
         int tool,
-        ApplyConfiguredSize applyConfiguredSize) {
-    // stylusTouchBegin switches the engine to its saved eraser tool without
-    // visiting IInkToolMenuController, and firmware resets the live radius in
-    // that path. The user's configured size remains authoritative: replay it
-    // after stock activation, then mirror the same index into any open popup.
+        layers_eraser::Dependencies const& stateDependencies) {
+    // Firmware can reset both the cached radius and eraser policy whenever an
+    // eraser is activated, including toolbar paths which never visit the size
+    // controller. Follow the exact tool stock just published at widget+0xac;
+    // only physical stylus inversion also needs popup synchronization.
     // Nothing here persists; only an explicit five-button tap writes JSON.
-    if (!state.sizeMenuHooksReady || !widget || !firmware.iinknoteBase
-            || caller != firmware.iinknoteBase
-                + kHardwareEraserSetActiveToolReturnVma
+    bool const hardware = firmware.iinknoteBase
+        && caller == firmware.iinknoteBase
+            + kHardwareEraserSetActiveToolReturnVma;
+    if (!state.sizeMenuHooksReady || !widget
             || (tool != 1 && tool != 2)
             || !notebook_widget::isNotebookWidget(
                 reinterpret_cast<QObject*>(widget))) {
@@ -317,12 +331,32 @@ void afterActiveTool(
     }
 
     try {
+        QObject* const widgetObject = reinterpret_cast<QObject*>(widget);
         int const configuredIndex = settings.configuredEraserSizeIndex();
-        bool const engineUpdated = applyConfiguredSize(
-            reinterpret_cast<QObject*>(widget), "hardware-eraser");
+        int const desiredPolicy = tool - 1;
+        int const publishedPolicy = activeEraserPolicy(widgetObject);
+        if (publishedPolicy != desiredPolicy) {
+            trace(QLatin1String(
+                "eraser-state: activation skipped; published policy=")
+                + QString::number(publishedPolicy)
+                + QLatin1String(" requested policy=")
+                + QString::number(desiredPolicy));
+            return;
+        }
+        bool const engineUpdated =
+            layers_eraser::applyConfiguredEraserStateForWidget(
+                stateDependencies,
+                widgetObject,
+                desiredPolicy,
+                hardware ? "hardware-eraser" : "tool-activation");
+        bool const deferred = queueActiveEraserReplay(
+            state,
+            widgetObject,
+            stateDependencies);
         bool uiUpdated = false;
         QObject* const controller = state.liveSizeController.data();
-        if (engineUpdated && controller && firmware.setBrushSizeIndexOriginal
+        if (hardware && engineUpdated && controller
+                && firmware.setBrushSizeIndexOriginal
                 && notebook_widget::findNotebookWidget(controller)
                     == reinterpret_cast<QObject*>(widget)
                 && controller->property(
@@ -333,17 +367,89 @@ void afterActiveTool(
             firmware.setBrushSizeIndexOriginal(controller, configuredIndex);
             uiUpdated = true;
         }
-        trace(QLatin1String(
-            "eraser-size: hardware activation synchronized index=")
+        trace(QLatin1String("eraser-state: activation synchronized source=")
+            + (hardware ? QLatin1String("hardware")
+                        : QLatin1String("hooked"))
+            + QLatin1String(" tool=") + QString::number(tool)
+            + QLatin1String(" policy=") + QString::number(desiredPolicy)
+            + QLatin1String(" index=")
             + QString::number(configuredIndex)
             + QLatin1String(" engine=")
             + (engineUpdated ? QLatin1String("applied")
                              : QLatin1String("unavailable"))
             + QLatin1String(" popup=")
             + (uiUpdated ? QLatin1String("updated")
-                         : QLatin1String("not-open")));
+                         : QLatin1String("unchanged"))
+            + QLatin1String(" deferred=")
+            + (deferred ? QLatin1String("queued")
+                        : QLatin1String("coalesced-or-unavailable")));
     } catch (...) {
-        trace("eraser-size: hardware activation synchronization threw; last successful state preserved");
+        trace("eraser-state: activation synchronization threw; last successful state preserved");
+    }
+}
+
+bool queueActiveEraserReplay(
+        RuntimeState& state,
+        QObject* widget,
+        layers_eraser::Dependencies const& stateDependencies) {
+    if (!state.sizeMenuHooksReady || !widget
+            || !notebook_widget::isNotebookWidget(widget)) {
+        return false;
+    }
+
+    static char const pendingProperty[] =
+        "_cnt_eraser_state_replay_pending";
+    if (widget->property(pendingProperty).toBool())
+        return false;
+
+    try {
+        widget->setProperty(pendingProperty, true);
+        QTimer* const timer = new QTimer(widget);
+        timer->setSingleShot(true);
+        QPointer<QObject> const guardedWidget(widget);
+        QPointer<QTimer> const guardedTimer(timer);
+        layers_eraser::Dependencies const dependencies = stateDependencies;
+        QObject::connect(timer, &QTimer::timeout,
+            [guardedWidget, guardedTimer, dependencies]() {
+                QObject* const object = guardedWidget.data();
+                if (object && notebook_widget::isNotebookWidget(object)) {
+                    int const policy = activeEraserPolicy(object);
+                    if (policy >= 0) {
+                        try {
+                            bool const applied =
+                                layers_eraser::applyConfiguredEraserStateForWidget(
+                                    dependencies,
+                                    object,
+                                    policy,
+                                    "tool-activation-deferred");
+                            trace(QLatin1String(
+                                "eraser-state: deferred replay policy=")
+                                + QString::number(policy)
+                                + QLatin1String(" result=")
+                                + (applied ? QLatin1String("applied")
+                                           : QLatin1String("unavailable")));
+                        } catch (...) {
+                            trace("eraser-state: deferred replay threw; stock state preserved");
+                        }
+                    } else {
+                        trace("eraser-state: deferred replay skipped; active tool is not eraser");
+                    }
+                }
+                // Retain the coalescing guard through the complete replay so
+                // a nested firmware callback cannot enqueue another timer.
+                if (object)
+                    object->setProperty(
+                        "_cnt_eraser_state_replay_pending", false);
+                if (guardedTimer)
+                    guardedTimer->deleteLater();
+            });
+        timer->start(0);
+        trace("eraser-state: deferred replay queued");
+        return true;
+    } catch (...) {
+        widget->setProperty(pendingProperty, false);
+        trace("eraser-state: deferred replay could not be queued");
+        return false;
     }
 }
 

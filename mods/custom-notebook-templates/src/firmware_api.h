@@ -86,6 +86,7 @@ struct FirmwareApi {
     SelectionSelectNone selectionSelectNone;
     SelectionIsEmpty selectionIsEmpty;
     SelectionAdjustToStrokeBoundaries selectionAdjustToStrokeBoundaries;
+    EraserSetPolicy eraserSetPolicy;
     EraserPolicy eraserPolicy;
     EraserSetRadius eraserSetRadius;
     EraserRadius eraserRadius;

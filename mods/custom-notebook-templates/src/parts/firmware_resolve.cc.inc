@@ -215,8 +215,13 @@ static bool resolveCoverApis(void* iinknoteHandle) {
 
     // Eraser size uses the same live editor/backend path as layer routing, but
     // it remains a separate feature gate. The exact vtables prevent a radius
-    // setter from ever being called on an arbitrary kind-4 Tool.
+    // or policy setter from ever being called on an arbitrary kind-4 Tool.
     bool const eraserSizeSymbols = layerSymbols
+        && resolvePinned(
+            iinkHandle,
+            "_ZN3atk4core6Eraser15setEraserPolicyENS1_12EraserPolicyE",
+            0xa75a94,
+            &firmwareApi().eraserSetPolicy)
         && resolvePinned(iinkHandle, kEraserSetRadiusSymbol,
             kEraserSetRadiusVma, &firmwareApi().eraserSetRadius)
         && resolvePinned(iinkHandle, kEraserRadiusSymbol,
@@ -330,7 +335,7 @@ static bool resolveCoverApis(void* iinknoteHandle) {
         ? "layers: isolated preview APIs verified"
         : "layers: preview APIs unavailable; placeholder cards retained");
     trace(eraserState().sizeApisReady
-        ? "eraser-size: pinned radius, line-grid, and exact eraser APIs verified"
+        ? "eraser-size: pinned policy, radius, line-grid, and exact eraser APIs verified"
         : "eraser-size: pinned engine APIs unavailable; feature disabled");
 
     dlclose(iinkHandle);
