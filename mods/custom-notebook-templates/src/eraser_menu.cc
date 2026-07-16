@@ -349,11 +349,10 @@ void afterActiveTool(
                 widgetObject,
                 desiredPolicy,
                 hardware ? "hardware-eraser" : "tool-activation");
-        bool const deferred = queueActiveEraserReplay(
+        queueActiveEraserReplay(
             state,
             widgetObject,
             stateDependencies);
-        bool uiUpdated = false;
         QObject* const controller = state.liveSizeController.data();
         if (hardware && engineUpdated && controller
                 && firmware.setBrushSizeIndexOriginal
@@ -365,24 +364,12 @@ void afterActiveTool(
             // BrushButtons but emits no toolSelected signal, so this cannot
             // recurse into setToolTheme or mutate the engine a second time.
             firmware.setBrushSizeIndexOriginal(controller, configuredIndex);
-            uiUpdated = true;
         }
-        trace(QLatin1String("eraser-state: activation synchronized source=")
-            + (hardware ? QLatin1String("hardware")
-                        : QLatin1String("hooked"))
-            + QLatin1String(" tool=") + QString::number(tool)
-            + QLatin1String(" policy=") + QString::number(desiredPolicy)
-            + QLatin1String(" index=")
-            + QString::number(configuredIndex)
-            + QLatin1String(" engine=")
-            + (engineUpdated ? QLatin1String("applied")
-                             : QLatin1String("unavailable"))
-            + QLatin1String(" popup=")
-            + (uiUpdated ? QLatin1String("updated")
-                         : QLatin1String("unchanged"))
-            + QLatin1String(" deferred=")
-            + (deferred ? QLatin1String("queued")
-                        : QLatin1String("coalesced-or-unavailable")));
+        if (!engineUpdated) {
+            trace(QLatin1String(
+                "eraser-state: immediate activation replay unavailable policy=")
+                + QString::number(desiredPolicy));
+        }
     } catch (...) {
         trace("eraser-state: activation synchronization threw; last successful state preserved");
     }
@@ -422,17 +409,14 @@ bool queueActiveEraserReplay(
                                     object,
                                     policy,
                                     "tool-activation-deferred");
-                            trace(QLatin1String(
-                                "eraser-state: deferred replay policy=")
-                                + QString::number(policy)
-                                + QLatin1String(" result=")
-                                + (applied ? QLatin1String("applied")
-                                           : QLatin1String("unavailable")));
+                            if (!applied) {
+                                trace(QLatin1String(
+                                    "eraser-state: deferred replay unavailable policy=")
+                                    + QString::number(policy));
+                            }
                         } catch (...) {
                             trace("eraser-state: deferred replay threw; stock state preserved");
                         }
-                    } else {
-                        trace("eraser-state: deferred replay skipped; active tool is not eraser");
                     }
                 }
                 // Retain the coalescing guard through the complete replay so
@@ -444,7 +428,6 @@ bool queueActiveEraserReplay(
                     guardedTimer->deleteLater();
             });
         timer->start(0);
-        trace("eraser-state: deferred replay queued");
         return true;
     } catch (...) {
         widget->setProperty(pendingProperty, false);
