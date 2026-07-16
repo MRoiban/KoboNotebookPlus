@@ -411,47 +411,14 @@ void _cnt_add_widget_action_hook(
     QObject* const controllerObject = reinterpret_cast<QObject*>(controller);
     QPixmap noIcon;
 
-    if (coverState().hooksReady && !coverState().customCovers.isEmpty()) {
-        CoverMenuReceiver* const coverReceiver = new CoverMenuReceiver(
-            controllerObject, menu);
-        QObject::connect(
-            coverReceiver,
-            &CoverMenuReceiver::coverRequested,
-            [](QObject* target) {
-                if (target) {
-                    QObject* const widgetObject =
-                        cnt::notebook_widget::findNotebookWidget(target);
-                    cnt::cover_editor::beginPicker(
-                        firmwareApi(),
-                        coverState(),
-                        target,
-                        widgetObject,
-                        kCoverBackupRoot);
-                }
-            });
-
-        QWidget* const coverItem = firmwareApi().createIInkMenuItem(
-            controller,
-            menu,
-            QLatin1String("Change notebook cover"),
-            noIcon,
-            false);
-        if (coverItem) {
-            firmwareApi().addWidgetActionOriginal(
-                controller,
-                menu,
-                coverItem,
-                coverReceiver,
-                SLOT(activate()),
-                true,
-                true,
-                true);
-            trace("covers: native notebook menu item added");
-        } else {
-            coverReceiver->deleteLater();
-            trace("covers: native menu item creation failed");
-        }
-    }
+    cnt::notebook_menu::addCoverContribution(
+        firmwareApi(),
+        coverState(),
+        controller,
+        controllerObject,
+        menu,
+        noIcon,
+        kCoverBackupRoot);
 
     if (layerState().hooksReady) {
         CoverMenuReceiver* const layerReceiver = new CoverMenuReceiver(
@@ -487,97 +454,12 @@ void _cnt_add_widget_action_hook(
     }
 
     if (pageState().hooksReady) {
-        CoverMenuReceiver* const pageReceiver = new CoverMenuReceiver(
-            controllerObject, menu);
-        QObject::connect(
-            pageReceiver,
-            &CoverMenuReceiver::duplicatePageRequested,
-            [](QObject* target) {
-                if (target)
-                    runPageOperation(
-                        target,
-                        cnt::page_actions::DuplicatePageOperation);
-            });
-        QObject::connect(
-            pageReceiver,
-            &CoverMenuReceiver::movePageEarlierRequested,
-            [](QObject* target) {
-                if (target)
-                    runPageOperation(
-                        target,
-                        cnt::page_actions::MovePageEarlierOperation);
-            });
-        QObject::connect(
-            pageReceiver,
-            &CoverMenuReceiver::movePageLaterRequested,
-            [](QObject* target) {
-                if (target)
-                    runPageOperation(
-                        target,
-                        cnt::page_actions::MovePageLaterOperation);
-            });
-
-        QWidget* const duplicateItem = firmwareApi().createIInkMenuItem(
+        cnt::notebook_menu::addPageContribution(
+            firmwareApi(),
             controller,
+            controllerObject,
             menu,
-            QLatin1String("Duplicate page"),
             noIcon,
-            false);
-        if (duplicateItem) {
-            firmwareApi().addWidgetActionOriginal(
-                controller,
-                menu,
-                duplicateItem,
-                pageReceiver,
-                SLOT(activateDuplicatePage()),
-                true,
-                true,
-                false);
-            trace("pages: native duplicate menu item added");
-        } else {
-            trace("pages: native duplicate menu item creation failed");
-        }
-
-        QWidget* const earlierItem = firmwareApi().createIInkMenuItem(
-            controller,
-            menu,
-            QLatin1String("Move page earlier"),
-            noIcon,
-            false);
-        if (earlierItem) {
-            firmwareApi().addWidgetActionOriginal(
-                controller,
-                menu,
-                earlierItem,
-                pageReceiver,
-                SLOT(activateMovePageEarlier()),
-                true,
-                true,
-                false);
-            trace("pages: native move-earlier menu item added");
-        } else {
-            trace("pages: native move-earlier menu item creation failed");
-        }
-
-        QWidget* const laterItem = firmwareApi().createIInkMenuItem(
-            controller,
-            menu,
-            QLatin1String("Move page later"),
-            noIcon,
-            false);
-        if (laterItem) {
-            firmwareApi().addWidgetActionOriginal(
-                controller,
-                menu,
-                laterItem,
-                pageReceiver,
-                SLOT(activateMovePageLater()),
-                true,
-                true,
-                true);
-            trace("pages: native move-later menu item added");
-        } else {
-            trace("pages: native move-later menu item creation failed");
-        }
+            &runPageOperation);
     }
 }
