@@ -636,7 +636,7 @@ static bool addNotebookLayer(LayerContext* context, QString* error) {
 
     firmwareApi().widgetSave(context->widget);
     QString backupPath;
-    if (!backupNotebookPath(
+    if (!cnt::page_io::backupNotebookPath(
             context->state.notebookPath,
             QLatin1String(kLayerBackupRoot),
             QLatin1String("Add layer"),
@@ -753,7 +753,7 @@ static bool deleteActiveNotebookLayer(LayerContext* context, QString* error) {
 
     firmwareApi().widgetSave(context->widget);
     QString backupPath;
-    if (!backupNotebookPath(
+    if (!cnt::page_io::backupNotebookPath(
             context->state.notebookPath,
             QLatin1String(kLayerBackupRoot),
             QLatin1String("Delete layer"),

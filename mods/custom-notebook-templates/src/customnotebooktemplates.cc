@@ -60,6 +60,7 @@
 #include "covermenureceiver.h"
 #include "covers.h"
 #include "fs_util.h"
+#include "page_io.h"
 #include "settings.h"
 #include "templates.h"
 
