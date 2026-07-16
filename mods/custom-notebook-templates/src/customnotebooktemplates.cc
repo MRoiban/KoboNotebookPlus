@@ -62,6 +62,7 @@
 #include "covers.h"
 #include "eraser_menu.h"
 #include "fs_util.h"
+#include "layers.h"
 #include "notebook_widget.h"
 #include "notebook_hook_services.h"
 #include "notebook_menu.h"
@@ -76,6 +77,16 @@ using cnt::trace;
 using cnt::validEraserSizeIndex;
 
 namespace {
+
+using cnt::layers::ActivateLayerOperation;
+using cnt::layers::AddLayerOperation;
+using cnt::layers::DeleteActiveLayerOperation;
+using cnt::layers::LayerContext;
+using cnt::layers::LayerOperation;
+using cnt::layers::LayerRecord;
+using cnt::layers::LayerState;
+using LayerRuntimeState = cnt::layers::RuntimeState;
+using cnt::layers::RefreshLayerPreviewsOperation;
 
 #include "plugin_state.h"
 #include "parts/resolve.cc.inc"

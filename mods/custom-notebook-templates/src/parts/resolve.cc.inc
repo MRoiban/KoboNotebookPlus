@@ -22,7 +22,7 @@ static PageRuntimeState& pageState() {
     return pluginState().pages;
 }
 
-static LayerRuntimeState& layerState() {
+static cnt::layers::RuntimeState& layerState() {
     return pluginState().layers;
 }
 

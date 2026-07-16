@@ -1,37 +1,5 @@
 #line 3659 "src/customnotebooktemplates.cc"
 
-struct LayerRecord {
-    QString id;
-    QString name;
-};
-
-struct LayerState {
-    QString notebookPath;
-    QString partId;
-    QString activeId;
-    QVector<LayerRecord> customLayers;
-};
-
-// Layer popup construction is GUI-thread-only. Cache the already scaled card
-// images so repeatedly opening the native menu does not decode every PNG again.
-struct LayerContext {
-    QPointer<QObject> widgetObject;
-    void* widget;
-    void* editor;
-    SharedPart part;
-    SharedPackage package;
-    LayerState state;
-
-    LayerContext() : widget(nullptr), editor(nullptr) {}
-};
-
-enum LayerOperation {
-    ActivateLayerOperation,
-    AddLayerOperation,
-    DeleteActiveLayerOperation,
-    RefreshLayerPreviewsOperation
-};
-
 static QString nativeDocumentLayerId() {
     if (!firmwareApi().documentLayerName || firmwareApi().documentLayerName->empty())
         return QString();
