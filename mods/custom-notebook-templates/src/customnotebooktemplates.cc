@@ -70,6 +70,7 @@ namespace {
 #include "plugin_state.h"
 #include "parts/resolve.cc.inc"
 #include "parts/cover_cache.cc.inc"
+#include "parts/firmware_resolve.cc.inc"
 #include "parts/pages.cc.inc"
 #include "parts/layers_state.cc.inc"
 #include "parts/layers_eraser.cc.inc"
