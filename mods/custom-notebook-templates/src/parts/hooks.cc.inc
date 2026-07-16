@@ -508,8 +508,15 @@ void _cnt_add_widget_action_hook(
             coverReceiver,
             &CoverMenuReceiver::coverRequested,
             [](QObject* target) {
-                if (target)
-                    beginCoverPicker(target);
+                if (target) {
+                    QObject* const widgetObject = findNotebookWidget(target);
+                    cnt::cover_editor::beginPicker(
+                        firmwareApi(),
+                        coverState(),
+                        target,
+                        widgetObject,
+                        kCoverBackupRoot);
+                }
             });
 
         QWidget* const coverItem = firmwareApi().createIInkMenuItem(

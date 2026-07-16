@@ -58,6 +58,7 @@
 #include <NickelHook.h>
 
 #include "covermenureceiver.h"
+#include "cover_editor.h"
 #include "covers.h"
 #include "fs_util.h"
 #include "notebook_widget.h"
