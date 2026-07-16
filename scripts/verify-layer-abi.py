@@ -407,6 +407,16 @@ PINNED_IINKNOTE_INSTRUCTIONS = {
     # the native popup index after this exact return only.
     0x622EC: bytes.fromhex("b9f1010f00f0a880"),
     0x62444: bytes.fromhex("d4f8b8102046d4f7a4ec59e7"),
+    # setActiveTool publishes the live IInkTool at widget+0xac. The deferred
+    # eraser-state replay reads that exact field after the firmware event stack
+    # unwinds, and only acts when it is Object/Brush Eraser (1/2).
+    0x6219C: bytes.fromhex("c0f8ac10"),
+    # setEraserTool maps tool 1 -> policy 0 and tool 2 -> policy 1 through
+    # clz(tool-2)>>5, then retains the selected eraser enum at widget+0xb8.
+    0x6084E: bytes.fromhex("a2f10208"),
+    0x60858: bytes.fromhex("b8fa88f8"),
+    0x60860: bytes.fromhex("4fea5818"),
+    0x608E0: bytes.fromhex("c6f8b830"),
     # Native layer-selector rows reuse the exact IInkToolMenuWidget surface.
     # Stock loadView proves the 0x58 allocation/parented constructor, then the
     # row selection setter and the +0x44 GestureReceiver registration. The
@@ -420,6 +430,11 @@ PINNED_IINKNOTE_INSTRUCTIONS = {
     # EditorWidget at +0x48. The stock constructor checks the guard's live
     # strong reference before loading +0x48 and calling EditorWidget::setEngine
     # through vslot +0xd0.
+    # The same constructor stores the owned BackgroundWidget at +0x90, and
+    # setBackgroundType loads that exact field before forwarding to it. These
+    # two sites pin the borrowed accessor used by cover editing and its menu.
+    0x60ABA: bytes.fromhex("c4f89060"),
+    0x5BA08: bytes.fromhex("d0f89000"),
     0x60FD6: bytes.fromhex("c4f84490c4f84880"),
     0x61004: bytes.fromhex(
         "636c002b00f051855b68002b00f04d85a06c9be80a000268d2f8d020"

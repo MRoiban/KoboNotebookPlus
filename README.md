@@ -76,9 +76,10 @@ Click any preview to view it at full size.
 
 ## Status
 
-Experimental, source-only — **no stable binary release yet**. The current
-build has passed its host-side ABI, relocation, packaging, and ARM
-disassembly checks; final on-device runtime verification is still pending.
+Experimental alpha. The current release has passed host-side ABI, relocation,
+packaging, ARM disassembly, and on-device feature verification. It is still
+firmware-specific software built on private APIs, not a stable or portable
+Kobo extension.
 
 ## Compatibility
 
@@ -94,13 +95,14 @@ used by the current build is pinned by the verification scripts in
 `scripts/`. Supporting a different firmware requires a fresh binary audit —
 changing only the version check is unsafe.
 
-## Why source-only
+## Release package and source
 
-This repository intentionally contains no Kobo firmware, MyScript libraries,
-Binary Ninja databases, device backups, notebooks, generated plugins, or
-`KoboRoot.tgz`. The install archive embeds a stock `libiinknote.so`, which
-you must extract from firmware you obtained yourself; it must not be
-redistributed here.
+The source repository contains no firmware images, Binary Ninja databases,
+device backups, notebooks, or generated build products. Firmware-pinned alpha
+releases provide a checksum file and a complete `KoboRoot.tgz` containing only
+the ARM plugin and the exact stock `libiinknote.so` required by the supported
+firmware. Source builders can instead supply their own matching firmware
+libraries using the process below.
 
 ## Building
 
@@ -154,9 +156,11 @@ docker run --rm -v "$PWD:/work" -w /work \
 
 ## Installing
 
-Before installing, inspect the built `KoboRoot.tgz` and confirm it contains
-only the compiled ARM plugin and the exact stock library — nothing else.
-Never install a package built for a different firmware.
+Download `KoboRoot.tgz` and its adjacent `.sha256` file from the matching
+[GitHub release](https://github.com/MRoiban/KoboNotebookPlus/releases). Verify
+the checksum before installing. Never install a package built for a different
+device or firmware. Source builders should also inspect the archive and confirm
+it contains only the compiled ARM plugin and the exact stock library.
 
 1. Back up `/mnt/onboard/.kobo/KoboReader.sqlite`, `Kobo eReader.conf`, and
    your notebooks.

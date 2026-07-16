@@ -1,14 +1,22 @@
-name: Source checks
+name: Verification and NickelTC build
 
 on:
   push:
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+env:
+  NICKELTC_IMAGE: ghcr.io/pgaskin/nickeltc:1
+  ABI_FIXTURES_URL: https://github.com/MRoiban/KoboNotebookPlus/releases/download/v0.0.1-alpha/KoboNotebookPlus-fw4.38.23697-abi-fixtures.tar.gz
+  ABI_FIXTURES_SHA256: 2e5fe02b15a947d490c2be29d2bda9598a2413eb2369c281b2e1dd9846abb9db
+  BASELINE_URL: https://github.com/MRoiban/KoboNotebookPlus/releases/download/v0.0.1-alpha/KoboNotebookPlus-v0.0.1-alpha-condor-fw4.38.23697-plugin.zip
+  BASELINE_SHA256: 8707bf7c3c3d8c3a06af351f694701f196b1151ffb6974368aec8210aaa54f2b
+
 jobs:
-  python:
+  source-checks:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,5 +27,75 @@ jobs:
           python-version: "3.12"
       - name: Compile verification scripts
         run: python -m py_compile scripts/*.py
-      - name: Run artifact-verifier tests
-        run: python scripts/test-verify-layer-artifacts.py
+      - name: Run host verification suite
+        run: make -C mods/custom-notebook-templates check
+
+  firmware-build-package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install ARM inspection tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes binutils-arm-linux-gnueabihf
+          mkdir -p "$RUNNER_TEMP/cross-bin"
+          ln -s "$(command -v arm-linux-gnueabihf-nm)" "$RUNNER_TEMP/cross-bin/nm"
+          ln -s "$(command -v arm-linux-gnueabihf-objdump)" "$RUNNER_TEMP/cross-bin/objdump"
+          echo "$RUNNER_TEMP/cross-bin" >> "$GITHUB_PATH"
+      - name: Fetch checksum-pinned firmware ABI fixtures and baseline
+        run: |
+          mkdir -p extracted/rootfs/usr/local/Kobo ci/baseline
+          curl --fail --location --retry 3 "$ABI_FIXTURES_URL" -o "$RUNNER_TEMP/abi-fixtures.tar.gz"
+          echo "$ABI_FIXTURES_SHA256  $RUNNER_TEMP/abi-fixtures.tar.gz" | sha256sum --check --strict
+          tar -xzf "$RUNNER_TEMP/abi-fixtures.tar.gz" -C extracted/rootfs/usr/local/Kobo
+          curl --fail --location --retry 3 "$BASELINE_URL" -o "$RUNNER_TEMP/baseline.zip"
+          echo "$BASELINE_SHA256  $RUNNER_TEMP/baseline.zip" | sha256sum --check --strict
+          unzip -q "$RUNNER_TEMP/baseline.zip" -d ci/baseline
+          mkdir -p mods/custom-notebook-templates/package
+          cp extracted/rootfs/usr/local/Kobo/libiinknote.so mods/custom-notebook-templates/package/libiinknote.so
+          echo "f80a7de7a1c482173a89b18f2bb8164fcfb53b8fab9b2a75bd23998813a528ea  mods/custom-notebook-templates/package/libiinknote.so" | sha256sum --check --strict
+      - name: Verify firmware ABI pins
+        run: python scripts/verify-layer-abi.py
+      - name: Clean NickelTC build
+        run: docker run --rm -v "$PWD:/work" -w /work "$NICKELTC_IMAGE" make -C mods/custom-notebook-templates clean
+      - name: Compile with NickelTC
+        run: docker run --rm -v "$PWD:/work" -w /work "$NICKELTC_IMAGE" make -C mods/custom-notebook-templates -j2 VERSION="ci-${GITHUB_SHA::12}"
+      - name: Package with NickelTC
+        run: docker run --rm -v "$PWD:/work" -w /work "$NICKELTC_IMAGE" make -C mods/custom-notebook-templates koboroot VERSION="ci-${GITHUB_SHA::12}"
+      - name: Verify compiled preview ABI
+        run: >-
+          python scripts/verify-layer-preview-abi.py
+          mods/custom-notebook-templates/libcustomnotebooktemplates.so
+          --objdump arm-linux-gnueabihf-objdump
+      - name: Verify loader-visible binary parity
+        run: >-
+          python scripts/verify-binary-parity.py
+          ci/baseline/libcustomnotebooktemplates.so
+          mods/custom-notebook-templates/libcustomnotebooktemplates.so
+          --tool-prefix arm-linux-gnueabihf-
+      - name: Validate installer contents and binary identity
+        run: >-
+          python scripts/verify-release-package.py
+          mods/custom-notebook-templates/KoboRoot.tgz
+          mods/custom-notebook-templates/libcustomnotebooktemplates.so
+      - name: Record build checksums
+        run: |
+          sha256sum \
+            mods/custom-notebook-templates/KoboRoot.tgz \
+            mods/custom-notebook-templates/libcustomnotebooktemplates.so \
+            mods/custom-notebook-templates/package/libiinknote.so \
+            | tee SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: KoboNotebookPlus-${{ github.sha }}
+          path: |
+            mods/custom-notebook-templates/KoboRoot.tgz
+            mods/custom-notebook-templates/libcustomnotebooktemplates.so
+            SHA256SUMS
+          if-no-files-found: error
+          retention-days: 14
