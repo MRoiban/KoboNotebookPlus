@@ -34,12 +34,6 @@ struct EraserRuntimeState {
     QPointer<QObject> liveSizeController;
 };
 
-struct VisibilityRuntimeState {
-    QMutex traceMutex;
-    bool exclusionObserved = false;
-    bool backingFilePreserved = false;
-};
-
 struct HookRuntimeState {
     QTimer* timer = nullptr;
     bool notebookLifecycleHooksReady = false;
@@ -56,6 +50,6 @@ struct PluginState {
     LayerRuntimeState layers;
     EraserRuntimeState eraser;
     cnt::SettingsStore settings;
-    VisibilityRuntimeState visibility;
+    cnt::visibility::RuntimeState visibility;
     HookRuntimeState hooks;
 };

@@ -5,6 +5,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QMutexLocker>
 #include <QString>
 #include <QStringList>
 
@@ -46,6 +47,46 @@ void ensureCustomAssetSyncExclusion(QString& exclusions) {
         if (!exclusions.isEmpty() && !exclusions.endsWith(QLatin1Char(';')))
             exclusions.append(QLatin1Char(';'));
         exclusions.append(pattern);
+    }
+}
+
+void applyBackingFilePolicy(
+        RuntimeState& state,
+        bool& removeBackingFile,
+        QString const& contentId) {
+    if (!isCustomAssetContentId(contentId))
+        return;
+
+    removeBackingFile = false;
+
+    bool shouldTrace = false;
+    {
+        QMutexLocker locker(&state.traceMutex);
+        if (!state.backingFilePreserved) {
+            state.backingFilePreserved = true;
+            shouldTrace = true;
+        }
+    }
+    if (shouldTrace) {
+        trace("asset-visibility: stale support row removed; backing file preserved");
+    }
+}
+
+void applySyncExclusion(RuntimeState& state, QString& exclusions) {
+    ensureCustomAssetSyncExclusion(exclusions);
+
+    // One observation proves that the live scanner reached the interposed
+    // PLT/GOT seam. Avoid logging every recursive directory visit.
+    bool shouldTrace = false;
+    {
+        QMutexLocker locker(&state.traceMutex);
+        if (!state.exclusionObserved) {
+            state.exclusionObserved = true;
+            shouldTrace = true;
+        }
+    }
+    if (shouldTrace) {
+        trace("asset-visibility: .kobo/custom excluded from live library scan");
     }
 }
 

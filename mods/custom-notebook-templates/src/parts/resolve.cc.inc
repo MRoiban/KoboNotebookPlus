@@ -34,7 +34,7 @@ static cnt::SettingsStore& settingsStore() {
     return pluginState().settings;
 }
 
-static VisibilityRuntimeState& visibilityState() {
+static cnt::visibility::RuntimeState& visibilityState() {
     return pluginState().visibility;
 }
 

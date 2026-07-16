@@ -10,25 +10,10 @@ void _cnt_remove_common_book_data_hook(
     if (!firmwareApi().removeCommonBookDataOriginal)
         return;
 
-    bool preserveBackingFile = false;
     if (removeBackingFile && firmwareApi().contentGetId && volume) {
         QString const id = firmwareApi().contentGetId(volume);
-        preserveBackingFile = cnt::visibility::isCustomAssetContentId(id);
-    }
-
-    if (preserveBackingFile) {
-        removeBackingFile = false;
-        bool shouldTrace = false;
-        {
-            QMutexLocker locker(&visibilityState().traceMutex);
-            if (!visibilityState().backingFilePreserved) {
-                visibilityState().backingFilePreserved = true;
-                shouldTrace = true;
-            }
-        }
-        if (shouldTrace) {
-            trace("asset-visibility: stale support row removed; backing file preserved");
-        }
+        cnt::visibility::applyBackingFilePolicy(
+            visibilityState(), removeBackingFile, id);
     }
 
     firmwareApi().removeCommonBookDataOriginal(
@@ -41,21 +26,7 @@ QString _cnt_exclude_sync_folders_hook(void* featureSettings) {
         return QString();
 
     QString exclusions = firmwareApi().excludeSyncFoldersOriginal(featureSettings);
-    cnt::visibility::ensureCustomAssetSyncExclusion(exclusions);
-
-    // One observation proves that the live scanner reached the interposed
-    // PLT/GOT seam. Avoid logging every recursive directory visit.
-    bool shouldTrace = false;
-    {
-        QMutexLocker locker(&visibilityState().traceMutex);
-        if (!visibilityState().exclusionObserved) {
-            visibilityState().exclusionObserved = true;
-            shouldTrace = true;
-        }
-    }
-    if (shouldTrace) {
-        trace("asset-visibility: .kobo/custom excluded from live library scan");
-    }
+    cnt::visibility::applySyncExclusion(visibilityState(), exclusions);
     return exclusions;
 }
 
