@@ -125,7 +125,7 @@ void _cnt_parser_image_parsed_hook(
         __builtin_return_address(0)) & ~uintptr_t(1);
     if (!coverState().hooksReady
             || !firmwareApi().contentGetId
-            || !zipApi().open
+            || !cnt::cover_cache::zipApisReady(coverState())
             || !firmwareApi().iinknoteBase
             || caller != firmwareApi().iinknoteBase + kThumbnailCallbackReturnVma) {
         firmwareApi().parserImageParsedOriginal(parser, volume, image);
@@ -134,23 +134,27 @@ void _cnt_parser_image_parsed_hook(
 
     QElapsedTimer timer;
     timer.start();
-    QString const notebookPath = notebookPathFromVolume(volume);
+    QString const notebookPath = cnt::cover_cache::notebookPathFromContentId(
+        firmwareApi().contentGetId(volume));
     double const pathResolveMs = cnt::fs_util::elapsedMs(timer);
     QString type;
     if (notebookPath.isEmpty()
-            || !cachedNotebookCoverType(notebookPath, &type, pathResolveMs)) {
+            || !cnt::cover_cache::cachedNotebookCoverType(
+                coverState(), notebookPath, &type, pathResolveMs)) {
         firmwareApi().parserImageParsedOriginal(parser, volume, image);
         return;
     }
 
-    QImage const composed = composeCoverWithRenderedInk(type, image);
+    QImage const composed = cnt::cover_cache::composeCoverWithRenderedInk(
+        coverState(), type, image);
     if (composed.isNull()) {
         firmwareApi().parserImageParsedOriginal(parser, volume, image);
         trace("covers: cover-and-ink composition failed; stock preview preserved");
         return;
     }
 
-    cacheRenderedCoverImage(notebookPath, type, composed);
+    cnt::cover_cache::cacheRenderedCoverImage(
+        coverState(), notebookPath, type, composed);
     firmwareApi().parserImageParsedOriginal(parser, volume, composed);
     trace("covers: custom cover composed with rendered page ink");
 }
@@ -167,7 +171,7 @@ void _cnt_volume_load_cover_hook(void* view) {
             || !firmwareApi().contentGetId
             || !firmwareApi().contentGetImageId
             || !firmwareApi().pixmapSetImage
-            || !zipApi().open) {
+            || !cnt::cover_cache::zipApisReady(coverState())) {
         return;
     }
 
@@ -175,17 +179,20 @@ void _cnt_volume_load_cover_hook(void* view) {
         + kVolumeInPixmapViewOffset;
     QElapsedTimer timer;
     timer.start();
-    QString const notebookPath = notebookPathFromVolume(volume);
+    QString const notebookPath = cnt::cover_cache::notebookPathFromContentId(
+        firmwareApi().contentGetId(volume));
     double const pathResolveMs = cnt::fs_util::elapsedMs(timer);
     QString type;
     if (notebookPath.isEmpty()
-            || !cachedNotebookCoverType(notebookPath, &type, pathResolveMs)) {
+            || !cnt::cover_cache::cachedNotebookCoverType(
+                coverState(), notebookPath, &type, pathResolveMs)) {
         return;
     }
 
-    QImage preview = cachedRenderedCoverImage(notebookPath, type);
+    QImage preview = cnt::cover_cache::cachedRenderedCoverImage(
+        coverState(), notebookPath, type);
     if (preview.isNull()) {
-        preview = cleanCustomCoverImage(type);
+        preview = cnt::cover_cache::cleanCustomCoverImage(coverState(), type);
         if (!preview.isNull())
             trace("covers: clean cover used until ink preview is rendered");
     }

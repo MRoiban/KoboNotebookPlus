@@ -274,15 +274,15 @@ class RepositoryGlobalsBudgetTests(unittest.TestCase):
         self.assertEqual(VERIFIER.validation_errors(audit), [])
         self.assertEqual(audit.names("mutable"), {"gPluginState", "info"})
         self.assertEqual(audit.count("mutex"), 0)
-        self.assertEqual(audit.count("immutable"), 285)
-        self.assertEqual(audit.count("function"), 125)
+        self.assertEqual(audit.count("immutable"), 278)
+        self.assertEqual(audit.count("function"), 102)
         self.assertEqual(audit.framework_globals, ("NickelHook",))
 
         promoted = VERIFIER.audit_promoted_sources(VERIFIER.DEFAULT_SOURCE_ROOT)
         self.assertEqual(VERIFIER.promoted_validation_errors(promoted), [])
         self.assertEqual(promoted.count("mutable"), 0)
         self.assertEqual(promoted.count("mutex"), 0)
-        self.assertEqual(promoted.count("immutable"), 22)
+        self.assertEqual(promoted.count("immutable"), 29)
         self.assertEqual(
             {
                 (declaration.path.name, declaration.name)
@@ -312,6 +312,13 @@ class RepositoryGlobalsBudgetTests(unittest.TestCase):
                 ("covers.cc", "kMaximumCustomCovers"),
                 ("covers.cc", "kBackgroundWidth"),
                 ("covers.cc", "kBackgroundHeight"),
+                ("cover_cache.cc", "kRenderedPreviewRoot"),
+                ("cover_cache.cc", "kBackgroundWidth"),
+                ("cover_cache.cc", "kBackgroundHeight"),
+                ("cover_cache.cc", "kMaximumPageMetadataSize"),
+                ("cover_cache.cc", "kMaximumScanCacheEntries"),
+                ("cover_cache.cc", "kMaximumImageCacheBytes"),
+                ("cover_cache.cc", "kMaximumPersistedPreviews"),
             },
         )
 
@@ -325,7 +332,7 @@ class RepositoryGlobalsBudgetTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("mutable namespace statics: 2 (gPluginState, info)", result.stdout)
-        self.assertIn("immutable namespace statics: 285", result.stdout)
+        self.assertIn("immutable namespace statics: 278", result.stdout)
         self.assertIn("framework global descriptors: 1 (NickelHook)", result.stdout)
         self.assertIn(
             "promoted-TU mutable namespace objects: 0 (none)",
@@ -336,7 +343,7 @@ class RepositoryGlobalsBudgetTests(unittest.TestCase):
             result.stdout,
         )
         self.assertIn(
-            "promoted-TU immutable namespace objects: 22",
+            "promoted-TU immutable namespace objects: 29",
             result.stdout,
         )
         self.assertIn("Globals budget verified", result.stdout)

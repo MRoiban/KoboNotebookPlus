@@ -134,11 +134,13 @@ static void installHookAfterNaturalLoad() {
             trace("eraser-size: popup augmentation unavailable; feature disabled");
         }
 
-        if (layerState().hooksReady && !loadZipApis()) {
+        if (layerState().hooksReady
+                && !cnt::cover_cache::loadZipApis(coverState())) {
             trace("layers: read-only archive persistence probe unavailable");
         }
 
-        if (!coverState().customCovers.isEmpty() && loadZipApis()) {
+        if (!coverState().customCovers.isEmpty()
+                && cnt::cover_cache::loadZipApis(coverState())) {
             SetDialogTitle resolvedTitle = nullptr;
             ParserImageParsed resolvedImageParsed = nullptr;
             bool const coverHookSymbols =

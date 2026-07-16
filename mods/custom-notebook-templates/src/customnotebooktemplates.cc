@@ -1,4 +1,5 @@
 #include "abi_types.h"
+#include "cover_cache.h"
 #include "firmware_api.h"
 
 #include <QAction>
@@ -69,7 +70,6 @@ namespace {
 
 #include "plugin_state.h"
 #include "parts/resolve.cc.inc"
-#include "parts/cover_cache.cc.inc"
 #include "parts/firmware_resolve.cc.inc"
 #include "parts/pages.cc.inc"
 #include "parts/layers_state.cc.inc"

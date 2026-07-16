@@ -1,4 +1,40 @@
-#line 1769 "src/customnotebooktemplates.cc"
+#include "cover_cache.h"
+
+#include "fs_util.h"
+#include "settings.h"
+
+#include <QByteArray>
+#include <QCryptographicHash>
+#include <QDateTime>
+#include <QDir>
+#include <QElapsedTimer>
+#include <QFile>
+#include <QFileInfo>
+#include <QImage>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonParseError>
+#include <QMutexLocker>
+#include <QSaveFile>
+#include <QStringList>
+#include <QUrl>
+
+#include <algorithm>
+#include <cstdio>
+#include <dlfcn.h>
+
+namespace cnt {
+namespace cover_cache {
+namespace {
+
+char const kRenderedPreviewRoot[] =
+    "/mnt/onboard/.kobo/custom/previews/";
+int const kBackgroundWidth = 1404;
+int const kBackgroundHeight = 1872;
+int const kMaximumPageMetadataSize = 256 * 1024;
+int const kMaximumScanCacheEntries = 2048;
+qint64 const kMaximumImageCacheBytes = qint64(64) * 1024 * 1024;
+int const kMaximumPersistedPreviews = 128;
 
 template <typename Function>
 static bool resolveDynamicSymbol(
@@ -16,33 +52,36 @@ static bool resolveDynamicSymbol(
     return true;
 }
 
-static bool loadZipApis() {
-    if (zipApi().libraryHandle)
+} // namespace
+
+bool loadZipApis(State& state) {
+    State::ZipApi& zip = state.zip;
+    if (zip.libraryHandle)
         return true;
 
-    zipApi().libraryHandle = dlopen("libzip.so.5", RTLD_LAZY | RTLD_LOCAL);
-    if (!zipApi().libraryHandle)
+    zip.libraryHandle = dlopen("libzip.so.5", RTLD_LAZY | RTLD_LOCAL);
+    if (!zip.libraryHandle)
         return false;
 
     bool const ready =
-        resolveDynamicSymbol(zipApi().libraryHandle, "zip_open", &zipApi().open)
+        resolveDynamicSymbol(zip.libraryHandle, "zip_open", &zip.open)
         && resolveDynamicSymbol(
-            zipApi().libraryHandle, "zip_get_num_entries", &zipApi().getNumEntries)
-        && resolveDynamicSymbol(zipApi().libraryHandle, "zip_get_name", &zipApi().getName)
-        && resolveDynamicSymbol(zipApi().libraryHandle, "zip_fopen", &zipApi().fopen)
-        && resolveDynamicSymbol(zipApi().libraryHandle, "zip_fread", &zipApi().fread)
-        && resolveDynamicSymbol(zipApi().libraryHandle, "zip_fclose", &zipApi().fclose)
-        && resolveDynamicSymbol(zipApi().libraryHandle, "zip_discard", &zipApi().discard);
+            zip.libraryHandle, "zip_get_num_entries", &zip.getNumEntries)
+        && resolveDynamicSymbol(zip.libraryHandle, "zip_get_name", &zip.getName)
+        && resolveDynamicSymbol(zip.libraryHandle, "zip_fopen", &zip.fopen)
+        && resolveDynamicSymbol(zip.libraryHandle, "zip_fread", &zip.fread)
+        && resolveDynamicSymbol(zip.libraryHandle, "zip_fclose", &zip.fclose)
+        && resolveDynamicSymbol(zip.libraryHandle, "zip_discard", &zip.discard);
     if (!ready) {
-        dlclose(zipApi().libraryHandle);
-        zipApi().libraryHandle = nullptr;
-        zipApi().open = nullptr;
-        zipApi().getNumEntries = nullptr;
-        zipApi().getName = nullptr;
-        zipApi().fopen = nullptr;
-        zipApi().fread = nullptr;
-        zipApi().fclose = nullptr;
-        zipApi().discard = nullptr;
+        dlclose(zip.libraryHandle);
+        zip.libraryHandle = nullptr;
+        zip.open = nullptr;
+        zip.getNumEntries = nullptr;
+        zip.getName = nullptr;
+        zip.fopen = nullptr;
+        zip.fread = nullptr;
+        zip.fclose = nullptr;
+        zip.discard = nullptr;
         return false;
     }
 
@@ -50,19 +89,26 @@ static bool loadZipApis() {
     return true;
 }
 
+bool zipApisReady(State const& state) {
+    return state.zip.open;
+}
+
+namespace {
+
 static bool readZipEntry(
+    State::ZipApi const& zip,
     ZipArchiveOpaque* archive,
     char const* entryName,
     QByteArray* contents) {
     contents->clear();
-    ZipFileOpaque* const file = zipApi().fopen(archive, entryName, 0);
+    ZipFileOpaque* const file = zip.fopen(archive, entryName, 0);
     if (!file)
         return false;
 
     bool valid = true;
     char block[4096];
     while (true) {
-        long long const count = zipApi().fread(file, block, sizeof(block));
+        long long const count = zip.fread(file, block, sizeof(block));
         if (count < 0) {
             valid = false;
             break;
@@ -75,38 +121,42 @@ static bool readZipEntry(
         }
         contents->append(block, static_cast<int>(count));
     }
-    if (zipApi().fclose(file) != 0)
+    if (zip.fclose(file) != 0)
         valid = false;
     if (!valid)
         contents->clear();
     return valid;
 }
 
+} // namespace
+
 // Return 1 when the serialized page.bdom contains the exact native layer ID,
 // 0 when the entry was read completely without it, and -1 when the archive
 // could not be inspected. This is a read-only persistence probe; it never
 // participates in the mutation decision.
-static int notebookArchiveContainsLayerId(
+int notebookArchiveContainsLayerId(
+    State const& state,
     QString const& notebookPath,
     QString const& partId,
     QString const& layerId) {
-    if (!zipApi().open || !zipApi().fopen || !zipApi().fread || !zipApi().fclose || !zipApi().discard
+    State::ZipApi const& zip = state.zip;
+    if (!zip.open || !zip.fopen || !zip.fread || !zip.fclose || !zip.discard
             || partId.isEmpty() || layerId.isEmpty()) {
         return -1;
     }
 
     QByteArray const encodedPath = QFile::encodeName(notebookPath);
     int openError = 0;
-    ZipArchiveOpaque* const archive = zipApi().open(
+    ZipArchiveOpaque* const archive = zip.open(
         encodedPath.constData(), 16, &openError);  // ZIP_RDONLY
     if (!archive)
         return -1;
 
     QByteArray const entryName = QByteArray("pages/")
         + partId.toUtf8() + QByteArray("/page.bdom");
-    ZipFileOpaque* const file = zipApi().fopen(archive, entryName.constData(), 0);
+    ZipFileOpaque* const file = zip.fopen(archive, entryName.constData(), 0);
     if (!file) {
-        zipApi().discard(archive);
+        zip.discard(archive);
         return -1;
     }
 
@@ -117,7 +167,7 @@ static int notebookArchiveContainsLayerId(
     qint64 scanned = 0;
     char block[4096];
     while (true) {
-        long long const count = zipApi().fread(file, block, sizeof(block));
+        long long const count = zip.fread(file, block, sizeof(block));
         if (count < 0) {
             complete = false;
             break;
@@ -138,11 +188,13 @@ static int notebookArchiveContainsLayerId(
         int const retained = std::min(needle.size() - 1, window.size());
         carry = retained > 0 ? window.right(retained) : QByteArray();
     }
-    if (zipApi().fclose(file) != 0)
+    if (zip.fclose(file) != 0)
         complete = false;
-    zipApi().discard(archive);
+    zip.discard(archive);
     return found ? 1 : (complete ? 0 : -1);
 }
+
+namespace {
 
 static QString coverTypeFromMetadata(QByteArray const& contents) {
     QJsonParseError parseError;
@@ -168,6 +220,7 @@ struct ScanTiming {
 };
 
 static bool scanNotebookCoverType(
+    State::ZipApi const& zip,
     QString const& notebookPath,
     QString* coverType,
     bool* determinate,
@@ -180,7 +233,7 @@ static bool scanNotebookCoverType(
     timer.start();
     // ZIP_RDONLY. A notebook being saved or otherwise unreadable simply uses
     // Kobo's original preview for this pass, and the verdict is not cached.
-    ZipArchiveOpaque* const archive = zipApi().open(encodedPath.constData(), 16, &openError);
+    ZipArchiveOpaque* const archive = zip.open(encodedPath.constData(), 16, &openError);
     timing->zipOpenMs = cnt::fs_util::elapsedMs(timer);
     if (!archive)
         return false;
@@ -189,11 +242,11 @@ static bool scanNotebookCoverType(
     bool readFailure = false;
     QString found;
     timer.restart();
-    long long const entryCount = zipApi().getNumEntries(archive, 0);
+    long long const entryCount = zip.getNumEntries(archive, 0);
     if (entryCount >= 0 && entryCount <= 65536) {
         *determinate = true;
         for (long long i = 0; i < entryCount; ++i) {
-            char const* const entryName = zipApi().getName(
+            char const* const entryName = zip.getName(
                 archive, static_cast<unsigned long long>(i), 0);
             if (!entryName)
                 continue;
@@ -203,7 +256,7 @@ static bool scanNotebookCoverType(
 
             ++timing->metadataEntries;
             QByteArray contents;
-            if (!readZipEntry(archive, entryName, &contents)) {
+            if (!readZipEntry(zip, archive, entryName, &contents)) {
                 readFailure = true;
                 continue;
             }
@@ -216,7 +269,7 @@ static bool scanNotebookCoverType(
                 break;
         }
     }
-    zipApi().discard(archive);
+    zip.discard(archive);
     timing->scanMs = cnt::fs_util::elapsedMs(timer);
 
     // An unreadable page entry may be a save in progress; keep this pass's
@@ -232,25 +285,30 @@ static bool scanNotebookCoverType(
     return true;
 }
 
-static int countNotebookPageEntries(QString const& notebookPath) {
-    if (!zipApi().open || !zipApi().getNumEntries || !zipApi().getName || !zipApi().discard)
+} // namespace
+
+int countNotebookPageEntries(
+        State const& state,
+        QString const& notebookPath) {
+    State::ZipApi const& zip = state.zip;
+    if (!zip.open || !zip.getNumEntries || !zip.getName || !zip.discard)
         return -1;
 
     QByteArray const encodedPath = QFile::encodeName(notebookPath);
     int openError = 0;
-    ZipArchiveOpaque* const archive = zipApi().open(
+    ZipArchiveOpaque* const archive = zip.open(
         encodedPath.constData(), 16, &openError);
     if (!archive)
         return -1;
 
     int pages = 0;
     bool valid = true;
-    long long const entryCount = zipApi().getNumEntries(archive, 0);
+    long long const entryCount = zip.getNumEntries(archive, 0);
     if (entryCount < 0 || entryCount > 65536) {
         valid = false;
     } else {
         for (long long i = 0; i < entryCount; ++i) {
-            char const* const entryName = zipApi().getName(
+            char const* const entryName = zip.getName(
                 archive, static_cast<unsigned long long>(i), 0);
             if (!entryName) {
                 valid = false;
@@ -261,32 +319,37 @@ static int countNotebookPageEntries(QString const& notebookPath) {
                 ++pages;
         }
     }
-    zipApi().discard(archive);
+    zip.discard(archive);
     return valid ? pages : -1;
 }
 
-static bool openNotebookHasPluginCover(void* widget, bool* hasCover) {
-    if (!zipApi().open
-            || !zipApi().getNumEntries
-            || !zipApi().getName
-            || !zipApi().fopen
-            || !zipApi().fread
-            || !zipApi().fclose
-            || !zipApi().discard) {
+bool openNotebookHasPluginCover(
+        State const& state,
+        QString const& notebookPathValue,
+        bool* hasCover) {
+    State::ZipApi const& zip = state.zip;
+    if (!zip.open
+            || !zip.getNumEntries
+            || !zip.getName
+            || !zip.fopen
+            || !zip.fread
+            || !zip.fclose
+            || !zip.discard) {
         *hasCover = false;
         return false;
     }
 
-    QString const notebookPath = QDir::cleanPath(firmwareApi().widgetFilePath(widget));
+    QString const notebookPath = QDir::cleanPath(notebookPathValue);
     QString coverType;
     bool determinate = false;
     ScanTiming timing;
     *hasCover = scanNotebookCoverType(
-        notebookPath, &coverType, &determinate, &timing);
+        zip, notebookPath, &coverType, &determinate, &timing);
     return determinate;
 }
 
-static bool cachedNotebookCoverType(
+bool cachedNotebookCoverType(
+    State& state,
     QString const& notebookPath,
     QString* coverType,
     double pathResolveMs) {
@@ -299,10 +362,10 @@ static bool cachedNotebookCoverType(
 
     char line[224];
     {
-        QMutexLocker locker(&coverState().cacheMutex);
+        QMutexLocker locker(&state.cacheMutex);
         QHash<QString, CoverScanEntry>::const_iterator const found =
-            coverState().scanCache.constFind(notebookPath);
-        if (found != coverState().scanCache.constEnd()) {
+            state.scanCache.constFind(notebookPath);
+        if (found != state.scanCache.constEnd()) {
             if (found.value().modifiedMs == modifiedMs
                     && found.value().size == size) {
                 *coverType = found.value().type;
@@ -314,7 +377,7 @@ static bool cachedNotebookCoverType(
                 trace(line);
                 return hasCover;
             }
-            coverState().scanCache.remove(notebookPath);
+            state.scanCache.remove(notebookPath);
             locker.unlock();
             trace("cover-cache: entry invalidated (notebook changed)");
         }
@@ -324,7 +387,7 @@ static bool cachedNotebookCoverType(
     bool determinate = false;
     QString type;
     bool const hasCover = scanNotebookCoverType(
-        notebookPath, &type, &determinate, &timing);
+        state.zip, notebookPath, &type, &determinate, &timing);
 
     // Only cache a verdict that describes the file we originally measured.
     QFileInfo const after(notebookPath);
@@ -342,9 +405,9 @@ static bool cachedNotebookCoverType(
     trace(line);
 
     if (determinate && stable) {
-        QMutexLocker locker(&coverState().cacheMutex);
-        if (coverState().scanCache.size() >= kMaximumScanCacheEntries) {
-            coverState().scanCache.clear();
+        QMutexLocker locker(&state.cacheMutex);
+        if (state.scanCache.size() >= kMaximumScanCacheEntries) {
+            state.scanCache.clear();
             trace("cover-cache: scan cache cleared (entry limit)");
         }
         CoverScanEntry entry;
@@ -352,12 +415,14 @@ static bool cachedNotebookCoverType(
         entry.size = size;
         entry.type = hasCover ? type : QString();
         entry.hasCover = hasCover;
-        coverState().scanCache.insert(notebookPath, entry);
+        state.scanCache.insert(notebookPath, entry);
     }
     if (hasCover)
         *coverType = type;
     return hasCover;
 }
+
+namespace {
 
 // Composed cover previews are persisted to plugin-owned storage so notebook
 // cards can show cover and ink immediately after a restart. The in-memory
@@ -424,34 +489,45 @@ static QImage loadPersistedCoverImage(
     return image;
 }
 
-static void invalidateNotebookScanEntry(QString const& notebookPath) {
+} // namespace
+
+void invalidateNotebookScanEntry(
+        State& state,
+        QString const& notebookPath) {
     QString const key = QDir::cleanPath(notebookPath);
     if (QFile::remove(renderedPreviewFilePath(key)))
         trace("cover-cache: persisted preview removed after cover change");
-    QMutexLocker locker(&coverState().cacheMutex);
-    if (coverState().scanCache.remove(key) > 0)
+    QMutexLocker locker(&state.cacheMutex);
+    if (state.scanCache.remove(key) > 0)
         trace("cover-cache: entry invalidated after plugin cover change");
-    coverState().renderedCache.remove(key);
+    state.renderedCache.remove(key);
 }
 
-static cnt::templates::CustomTemplate const* customCoverForType(
+namespace {
+
+static templates::CustomTemplate const* customCoverForType(
+        State const& state,
         QString const& type) {
-    for (int i = 0; i < coverState().customCovers.size(); ++i) {
-        if (coverState().customCovers.at(i).id == type)
-            return &coverState().customCovers.at(i);
+    for (int i = 0; i < state.customCovers.size(); ++i) {
+        if (state.customCovers.at(i).id == type)
+            return &state.customCovers.at(i);
     }
     return nullptr;
 }
+
+} // namespace
 
 // Kobo's thumbnail service renders notebook ink on white but does not include
 // a plugin-defined background. Treat darkness in that render as an ink mask
 // and multiply it over the clean cover. Transparent pixels remain untouched,
 // while black handwriting remains black. The result is deliberately opaque,
 // matching the full-page cover images accepted by the existing callback.
-static QImage composeCoverWithRenderedInk(
+QImage composeCoverWithRenderedInk(
+    State const& state,
     QString const& type,
     QImage const& renderedInk) {
-    cnt::templates::CustomTemplate const* const cover = customCoverForType(type);
+    templates::CustomTemplate const* const cover =
+        customCoverForType(state, type);
     if (!cover || renderedInk.isNull())
         return QImage();
 
@@ -492,31 +568,36 @@ static QImage composeCoverWithRenderedInk(
     return composed;
 }
 
+namespace {
+
 // Caller must hold coverCacheMutex.
-static void evictCleanCoverImagesLocked() {
+static void evictCleanCoverImagesLocked(State& state) {
     qint64 total = 0;
     QHash<QString, CleanCoverEntry>::const_iterator it;
-    for (it = coverState().cleanCache.constBegin();
-            it != coverState().cleanCache.constEnd(); ++it) {
+    for (it = state.cleanCache.constBegin();
+            it != state.cleanCache.constEnd(); ++it) {
         total += it.value().image.byteCount();
     }
-    while (total > kMaximumImageCacheBytes && coverState().cleanCache.size() > 1) {
+    while (total > kMaximumImageCacheBytes && state.cleanCache.size() > 1) {
         QHash<QString, CleanCoverEntry>::iterator oldest =
-            coverState().cleanCache.begin();
+            state.cleanCache.begin();
         for (QHash<QString, CleanCoverEntry>::iterator candidate =
-                coverState().cleanCache.begin();
-                candidate != coverState().cleanCache.end(); ++candidate) {
+                state.cleanCache.begin();
+                candidate != state.cleanCache.end(); ++candidate) {
             if (candidate.value().sequence < oldest.value().sequence)
                 oldest = candidate;
         }
         total -= oldest.value().image.byteCount();
-        coverState().cleanCache.erase(oldest);
+        state.cleanCache.erase(oldest);
         trace("cover-cache: clean cover evicted (memory bound)");
     }
 }
 
-static QImage cleanCustomCoverImage(QString const& type) {
-    cnt::templates::CustomTemplate const* const cover = customCoverForType(type);
+} // namespace
+
+QImage cleanCustomCoverImage(State& state, QString const& type) {
+    templates::CustomTemplate const* const cover =
+        customCoverForType(state, type);
     if (!cover)
         return QImage();
 
@@ -527,16 +608,16 @@ static QImage cleanCustomCoverImage(QString const& type) {
         return QImage();
 
     {
-        QMutexLocker locker(&coverState().cacheMutex);
+        QMutexLocker locker(&state.cacheMutex);
         QHash<QString, CleanCoverEntry>::iterator const found =
-            coverState().cleanCache.find(type);
-        if (found != coverState().cleanCache.end()) {
+            state.cleanCache.find(type);
+        if (found != state.cleanCache.end()) {
             if (found.value().pngModifiedMs == modifiedMs
                     && found.value().pngSize == size) {
-                found.value().sequence = ++coverState().cleanSequence;
+                found.value().sequence = ++state.cleanSequence;
                 return found.value().image;
             }
-            coverState().cleanCache.erase(found);
+            state.cleanCache.erase(found);
         }
     }
 
@@ -547,41 +628,46 @@ static QImage cleanCustomCoverImage(QString const& type) {
         return QImage();
     }
 
-    QMutexLocker locker(&coverState().cacheMutex);
+    QMutexLocker locker(&state.cacheMutex);
     CleanCoverEntry entry;
     entry.image = image;
     entry.pngModifiedMs = modifiedMs;
     entry.pngSize = size;
-    entry.sequence = ++coverState().cleanSequence;
-    coverState().cleanCache.insert(type, entry);
-    evictCleanCoverImagesLocked();
+    entry.sequence = ++state.cleanSequence;
+    state.cleanCache.insert(type, entry);
+    evictCleanCoverImagesLocked(state);
     return image;
 }
 
+namespace {
+
 // Caller must hold coverCacheMutex.
-static void evictRenderedCoverImagesLocked() {
+static void evictRenderedCoverImagesLocked(State& state) {
     qint64 total = 0;
     QHash<QString, RenderedCoverEntry>::const_iterator it;
-    for (it = coverState().renderedCache.constBegin();
-            it != coverState().renderedCache.constEnd(); ++it) {
+    for (it = state.renderedCache.constBegin();
+            it != state.renderedCache.constEnd(); ++it) {
         total += it.value().image.byteCount();
     }
-    while (total > kMaximumImageCacheBytes && coverState().renderedCache.size() > 1) {
+    while (total > kMaximumImageCacheBytes && state.renderedCache.size() > 1) {
         QHash<QString, RenderedCoverEntry>::iterator oldest =
-            coverState().renderedCache.begin();
+            state.renderedCache.begin();
         for (QHash<QString, RenderedCoverEntry>::iterator candidate =
-                coverState().renderedCache.begin();
-                candidate != coverState().renderedCache.end(); ++candidate) {
+                state.renderedCache.begin();
+                candidate != state.renderedCache.end(); ++candidate) {
             if (candidate.value().sequence < oldest.value().sequence)
                 oldest = candidate;
         }
         total -= oldest.value().image.byteCount();
-        coverState().renderedCache.erase(oldest);
+        state.renderedCache.erase(oldest);
         trace("cover-cache: rendered preview evicted (memory bound)");
     }
 }
 
-static void cacheRenderedCoverImage(
+} // namespace
+
+void cacheRenderedCoverImage(
+    State& state,
     QString const& notebookPath,
     QString const& coverType,
     QImage const& image) {
@@ -598,13 +684,14 @@ static void cacheRenderedCoverImage(
     entry.notebookModifiedMs = info.lastModified().toMSecsSinceEpoch();
     entry.notebookSize = info.size();
     entry.coverType = coverType;
-    QMutexLocker locker(&coverState().cacheMutex);
-    entry.sequence = ++coverState().renderedSequence;
-    coverState().renderedCache.insert(QDir::cleanPath(notebookPath), entry);
-    evictRenderedCoverImagesLocked();
+    QMutexLocker locker(&state.cacheMutex);
+    entry.sequence = ++state.renderedSequence;
+    state.renderedCache.insert(QDir::cleanPath(notebookPath), entry);
+    evictRenderedCoverImagesLocked(state);
 }
 
-static QImage cachedRenderedCoverImage(
+QImage cachedRenderedCoverImage(
+    State& state,
     QString const& notebookPath,
     QString const& coverType) {
     QString const key = QDir::cleanPath(notebookPath);
@@ -613,12 +700,12 @@ static QImage cachedRenderedCoverImage(
         return QImage();
 
     {
-        QMutexLocker locker(&coverState().cacheMutex);
+        QMutexLocker locker(&state.cacheMutex);
         QHash<QString, RenderedCoverEntry>::iterator const found =
-            coverState().renderedCache.find(key);
-        if (found != coverState().renderedCache.end()) {
+            state.renderedCache.find(key);
+        if (found != state.renderedCache.end()) {
             if (found.value().coverType != coverType) {
-                coverState().renderedCache.erase(found);
+                state.renderedCache.erase(found);
             } else {
                 // MyScript can emit the completed ink render before
                 // IInkNotePadWidget's final save updates the .nebo mtime and
@@ -634,7 +721,7 @@ static QImage cachedRenderedCoverImage(
                     trace("cover-cache: retaining rendered ink across final "
                           "notebook save");
                 }
-                found.value().sequence = ++coverState().renderedSequence;
+                found.value().sequence = ++state.renderedSequence;
                 return found.value().image;
             }
         }
@@ -649,16 +736,16 @@ static QImage cachedRenderedCoverImage(
     entry.notebookModifiedMs = info.lastModified().toMSecsSinceEpoch();
     entry.notebookSize = info.size();
     entry.coverType = coverType;
-    QMutexLocker locker(&coverState().cacheMutex);
-    entry.sequence = ++coverState().renderedSequence;
-    coverState().renderedCache.insert(key, entry);
-    evictRenderedCoverImagesLocked();
+    QMutexLocker locker(&state.cacheMutex);
+    entry.sequence = ++state.renderedSequence;
+    state.renderedCache.insert(key, entry);
+    evictRenderedCoverImagesLocked(state);
     trace("cover-cache: persisted preview restored");
     return persisted;
 }
 
-static QString notebookPathFromVolume(void const* volume) {
-    QString path = firmwareApi().contentGetId(volume);
+QString notebookPathFromContentId(QString const& contentId) {
+    QString path = contentId;
     if (path.startsWith(QLatin1String("file:")))
         path = QUrl(path).toLocalFile();
     if (!path.endsWith(QLatin1String(".nebo"), Qt::CaseInsensitive))
@@ -670,3 +757,6 @@ static QString notebookPathFromVolume(void const* volume) {
     }
     return path;
 }
+
+} // namespace cover_cache
+} // namespace cnt

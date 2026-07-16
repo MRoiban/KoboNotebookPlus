@@ -29,39 +29,6 @@ struct BackgroundOption {
         : type(type_), path(path_), text(text_) {}
 };
 
-// One archive-scan verdict per canonical onboard .nebo path. Negative results
-// (no custom cover, or an ambiguous marker count) are cached too, so uncovered
-// notebooks stop paying the ZIP scan on every tile reload. Entries are reused
-// only while the notebook's modification time and size are both unchanged;
-// busy or unreadable archives are never cached.
-struct CoverScanEntry {
-    qint64 modifiedMs;
-    qint64 size;
-    QString type;
-    bool hasCover;
-};
-
-// Kobo's own rendered first-page preview, including the selected cover and
-// live ink. The parser callback populates this cache; the notebook-card hook
-// may reuse it only while the source .nebo has the same mtime and size.
-struct RenderedCoverEntry {
-    QImage image;
-    qint64 notebookModifiedMs;
-    qint64 notebookSize;
-    QString coverType;
-    quint64 sequence;
-};
-
-// Clean source covers are the immediate notebook-card fallback until Kobo's
-// thumbnail service supplies an ink render. Revalidate against the source PNG
-// so replacing a cover file never leaves a stale decoded image in memory.
-struct CleanCoverEntry {
-    QImage image;
-    qint64 pngModifiedMs;
-    qint64 pngSize;
-    quint64 sequence;
-};
-
 struct LayerPreviewCardCacheEntry {
     QImage image;
     qint64 modifiedMs;

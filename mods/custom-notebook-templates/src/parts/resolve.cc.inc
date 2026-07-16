@@ -10,15 +10,11 @@ static FirmwareApi& firmwareApi() {
     return pluginState().firmware;
 }
 
-static ZipApi& zipApi() {
-    return pluginState().zip;
-}
-
 static cnt::templates::TemplateRuntimeState& templateState() {
     return pluginState().templates;
 }
 
-static CoverRuntimeState& coverState() {
+static cnt::cover_cache::State& coverState() {
     return pluginState().covers;
 }
 
@@ -74,7 +70,6 @@ static char const kPageTransactionRoot[] = "/mnt/onboard/.kobo/custom/page-manag
 static char const kLayerRoot[] = "/mnt/onboard/.kobo/custom/layers/";
 static char const kLayerBackupRoot[] = "/mnt/onboard/.kobo/custom/layers/backups/";
 static char const kLayerPreviewRoot[] = "/mnt/onboard/.kobo/custom/layers/previews/";
-static char const kRenderedPreviewRoot[] = "/mnt/onboard/.kobo/custom/previews/";
 // SyncFileSystemCommand anchors each semicolon-separated expression beneath
 // /mnt/(sd|onboard). Hide the plugin's entire support tree from content import
 // while preserving its existing paths for direct QFile/MyScript access.
@@ -88,10 +83,6 @@ static char const kCustomAssetSdContentPrefix[] =
     "file:///mnt/sd/.kobo/custom/";
 static char const kCustomAssetSdExternalContentPrefix[] =
     "file:///mnt/sd/koboExtStorage/custom/";
-static int const kBackgroundWidth = 1404;
-static int const kBackgroundHeight = 1872;
-static int const kMaximumPageMetadataSize = 256 * 1024;
-static int const kMaximumScanCacheEntries = 2048;
 static int const kMaximumNotebookPages = 4096;
 static int const kMaximumDestinationNotebooks = 512;
 static int const kMaximumNotebookLayers = 16;
@@ -116,8 +107,6 @@ static int const kMaximumLayerPreviewCardCacheEntries = 64;
 static bool const kEnableCrossNotebookMove = false;
 // Rendered previews are normally card-sized, but keep a hard byte bound in
 // case this firmware callback supplies full-resolution images.
-static qint64 const kMaximumImageCacheBytes = qint64(64) * 1024 * 1024;
-static int const kMaximumPersistedPreviews = 128;
 
 // Binary Ninja image addresses minus its 0x10000 analysis base.
 static uintptr_t const kBackgroundOptionsVma = 0x78c9c;

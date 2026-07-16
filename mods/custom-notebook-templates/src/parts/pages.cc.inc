@@ -271,7 +271,8 @@ static bool applyNotebookCover(void* widget, QString const& type, QString* error
         firmwareApi().widgetSave(widget);
         firmwareApi().packageSave(package.get());
         firmwareApi().widgetRefresh(widget);
-        invalidateNotebookScanEntry(firmwareApi().widgetFilePath(widget));
+        cnt::cover_cache::invalidateNotebookScanEntry(
+            coverState(), firmwareApi().widgetFilePath(widget));
         trace("covers: existing cover background changed");
         return true;
     }
@@ -296,7 +297,8 @@ static bool applyNotebookCover(void* widget, QString const& type, QString* error
     firmwareApi().packageSave(package.get());
     // The archive is mutated from here on; drop any cached verdict even if a
     // later validation step fails.
-    invalidateNotebookScanEntry(firmwareApi().widgetFilePath(widget));
+    cnt::cover_cache::invalidateNotebookScanEntry(
+        coverState(), firmwareApi().widgetFilePath(widget));
 
     SharedDocument const document = documentForPart(coverPart);
     int const appendedIndex = firmwareApi().packageIndexOfPart(package.get(), coverPart);
@@ -323,7 +325,8 @@ static bool applyNotebookCover(void* widget, QString const& type, QString* error
 
     firmwareApi().editorSetPart(editor, coverPart);
     firmwareApi().widgetRefresh(widget);
-    invalidateNotebookScanEntry(firmwareApi().widgetFilePath(widget));
+    cnt::cover_cache::invalidateNotebookScanEntry(
+        coverState(), firmwareApi().widgetFilePath(widget));
     trace("covers: new writable cover inserted as page zero");
     return true;
 }
@@ -422,7 +425,8 @@ static bool reorderCurrentPage(void* widget, int target, QString* error) {
             return false;
         }
         bool hasCover = false;
-        if (!openNotebookHasPluginCover(widget, &hasCover)) {
+        if (!cnt::cover_cache::openNotebookHasPluginCover(
+                coverState(), firmwareApi().widgetFilePath(widget), &hasCover)) {
             *error = QLatin1String(
                 "Page not reordered: the notebook cover could not be checked.");
             return false;
@@ -463,7 +467,8 @@ static bool reorderCurrentPage(void* widget, int target, QString* error) {
         }
 
         firmwareApi().widgetSave(widget);
-        invalidateNotebookScanEntry(firmwareApi().widgetFilePath(widget));
+        cnt::cover_cache::invalidateNotebookScanEntry(
+            coverState(), firmwareApi().widgetFilePath(widget));
         firmwareApi().editorSetPart(context.editor, context.part);
         firmwareApi().widgetRefresh(widget);
         trace("pages: current page reordered");
@@ -489,7 +494,8 @@ static bool duplicateCurrentPage(void* widget, QString* error) {
         if (!loadPageContext(widget, &context, error))
             return false;
         bool hasCover = false;
-        if (!openNotebookHasPluginCover(widget, &hasCover)) {
+        if (!cnt::cover_cache::openNotebookHasPluginCover(
+                coverState(), firmwareApi().widgetFilePath(widget), &hasCover)) {
             *error = QLatin1String(
                 "Page not duplicated: the notebook cover could not be checked.");
             return false;
@@ -544,7 +550,8 @@ static bool duplicateCurrentPage(void* widget, QString* error) {
         }
 
         firmwareApi().widgetSave(widget);
-        invalidateNotebookScanEntry(firmwareApi().widgetFilePath(widget));
+        cnt::cover_cache::invalidateNotebookScanEntry(
+            coverState(), firmwareApi().widgetFilePath(widget));
         firmwareApi().editorSetPart(context.editor, clone);
         firmwareApi().widgetRefresh(widget);
         trace("pages: current page duplicated");
@@ -712,14 +719,16 @@ static bool moveCurrentPageToNotebook(
             return false;
         }
         firmwareApi().packageSave(destinationPackage.get());
-        invalidateNotebookScanEntry(destination);
+        cnt::cover_cache::invalidateNotebookScanEntry(
+            coverState(), destination);
         destinationPart.reset();
         destinationPackage.reset();
 
         // Reopening is insufficient because MyScript's process-global path
         // registry may return a new package wrapper over the same cached
         // Document. Count serialized page metadata directly in the ZIP.
-        if (countNotebookPageEntries(destination) != destinationCount + 1) {
+        if (cnt::cover_cache::countNotebookPageEntries(
+                coverState(), destination) != destinationCount + 1) {
             *error = QLatin1String(
                 "Page was not removed from its source because the destination "
                 "copy could not be verified. Both backups were retained.");
@@ -763,9 +772,11 @@ static bool moveCurrentPageToNotebook(
 
         firmwareApi().editorSetPart(source.editor, replacement);
         firmwareApi().packageSave(source.package.get());
-        invalidateNotebookScanEntry(sourcePath);
+        cnt::cover_cache::invalidateNotebookScanEntry(
+            coverState(), sourcePath);
         if (firmwareApi().packagePartCount(source.package.get()) != oldCount - 1
-                || countNotebookPageEntries(sourcePath) != oldCount - 1) {
+                || cnt::cover_cache::countNotebookPageEntries(
+                    coverState(), sourcePath) != oldCount - 1) {
             *error = QLatin1String(
                 "The page was copied, but removal from the source could not be "
                 "verified. Both backups were retained.");
@@ -773,7 +784,8 @@ static bool moveCurrentPageToNotebook(
         }
 
         firmwareApi().widgetSave(widget);
-        invalidateNotebookScanEntry(sourcePath);
+        cnt::cover_cache::invalidateNotebookScanEntry(
+            coverState(), sourcePath);
         writePageTransaction(
             transactionPath,
             QLatin1String("complete"),

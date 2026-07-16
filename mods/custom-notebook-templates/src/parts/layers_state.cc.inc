@@ -100,8 +100,8 @@ static void traceSerializedLayerProbe(
     LayerState const& state,
     QString const& id,
     char const* phase) {
-    int const marker = notebookArchiveContainsLayerId(
-        state.notebookPath, state.partId, id);
+    int const marker = cnt::cover_cache::notebookArchiveContainsLayerId(
+        coverState(), state.notebookPath, state.partId, id);
     QString markerText = QLatin1String("indeterminate");
     if (marker > 0)
         markerText = QLatin1String("present");
