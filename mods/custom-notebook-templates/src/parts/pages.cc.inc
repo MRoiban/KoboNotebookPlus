@@ -48,7 +48,8 @@ struct NotebookDestination {
     QString path;
 };
 
-static QVector<NotebookDestination> notebookDestinations(QString const& sourcePath) {
+static QVector<NotebookDestination> __attribute__((unused))
+notebookDestinations(QString const& sourcePath) {
     QVector<NotebookDestination> values;
     QDirIterator iterator(
         QLatin1String("/mnt/onboard"),
@@ -81,7 +82,7 @@ static QVector<NotebookDestination> notebookDestinations(QString const& sourcePa
     return values;
 }
 
-static bool moveCurrentPageToNotebook(
+static bool __attribute__((unused)) moveCurrentPageToNotebook(
     void* widget,
     QString const& destinationPath,
     QString* error) {

@@ -76,29 +76,38 @@ void addPageContribution(
         QObject* controllerObject,
         QMenu* menu,
         QPixmap const& noIcon,
-        PageActivation activatePage) {
+        page_actions::Dependencies dependencies) {
     CoverMenuReceiver* const pageReceiver = new CoverMenuReceiver(
         controllerObject, menu);
     QObject::connect(
         pageReceiver,
         &CoverMenuReceiver::duplicatePageRequested,
-        [activatePage](QObject* target) {
+        [dependencies](QObject* target) {
             if (target)
-                activatePage(target, page_actions::DuplicatePageOperation);
+                page_actions::runForController(
+                    dependencies,
+                    target,
+                    page_actions::DuplicatePageOperation);
         });
     QObject::connect(
         pageReceiver,
         &CoverMenuReceiver::movePageEarlierRequested,
-        [activatePage](QObject* target) {
+        [dependencies](QObject* target) {
             if (target)
-                activatePage(target, page_actions::MovePageEarlierOperation);
+                page_actions::runForController(
+                    dependencies,
+                    target,
+                    page_actions::MovePageEarlierOperation);
         });
     QObject::connect(
         pageReceiver,
         &CoverMenuReceiver::movePageLaterRequested,
-        [activatePage](QObject* target) {
+        [dependencies](QObject* target) {
             if (target)
-                activatePage(target, page_actions::MovePageLaterOperation);
+                page_actions::runForController(
+                    dependencies,
+                    target,
+                    page_actions::MovePageLaterOperation);
         });
 
     QWidget* const duplicateItem = firmware.createIInkMenuItem(

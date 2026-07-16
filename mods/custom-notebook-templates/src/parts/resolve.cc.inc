@@ -57,9 +57,6 @@ static char const kPageTransactionRoot[] = "/mnt/onboard/.kobo/custom/page-manag
 static int const kMaximumNotebookPages = 4096;
 static int const kMaximumDestinationNotebooks = 512;
 static int const kMaximumNotebookLayers = 16;
-// Blocked until the clonePart resource-independence runtime matrix passes on
-// a disposable device test.
-static bool const kEnableCrossNotebookMove = false;
 
 // Binary Ninja image addresses minus its 0x10000 analysis base.
 static uintptr_t const kBackgroundOptionsVma = 0x78c9c;
@@ -121,13 +118,10 @@ static uintptr_t const kTouchMenuSetCustomPopupPositionOffsetVma = 0x11150a8;
 static uintptr_t const kAbstractNickelMenuControllerPopupFromWidgetVma =
     0xeb4f94;
 static uintptr_t const kNickelTouchMenuPopupPositionVma = 0xed7248;
-static size_t const kNickelTouchMenuSize = 0x90;
 static uintptr_t const kIInkToolMenuWidgetConstructorVma = 0x761ac;
 static uintptr_t const kIInkToolMenuWidgetSetSelectedVma = 0x76580;
 static uintptr_t const kAbstractMenuControllerGrabTapGestureVma = 0xb3cfac;
 static uintptr_t const kAbstractMenuControllerTapGestureVma = 0xb3d00c;
-static size_t const kIInkToolMenuWidgetSize = 0x58;
-static uintptr_t const kIInkToolMenuWidgetGestureReceiverOffset = 0x44;
 static uintptr_t const kSetDialogTitleVma = 0x10e4168;
 static uintptr_t const kMenuSelectBackgroundVma = 0x49438;
 static uintptr_t const kSetBackgroundTypeVma = 0x5b9fc;
@@ -368,6 +362,15 @@ static cnt::layers_preview::Pins const kLayerPreviewPins = {
     /* editorWidgetEditorControlOffset */ 0x1c,
     /* editorWidgetImageLoaderObjectOffset */ 0x20,
     /* editorWidgetImageLoaderControlOffset */ 0x24
+};
+// Native layer-menu storage sizes and base offsets recovered from the pinned
+// 4.38.23697 menu implementations. Keeping them in one inert aggregate makes
+// the promoted menu service's firmware-private inputs explicit.
+static cnt::layers_menu::Pins const kLayerMenuPins = {
+    /* nickelTouchMenuBytes */ 0x90,
+    /* toolRowBytes */ 0x58,
+    /* rowGestureReceiverOffset */ 0x44,
+    /* controllerViewOffset */ 0x10
 };
 // Every layer/eraser vtable slot, object offset, stock implementation VMA,
 // selection mode, and size bucket enters the promoted implementation through

@@ -297,14 +297,25 @@ void _cnt_add_widget_action_hook(
         kCoverBackupRoot);
 
     if (layerState().hooksReady) {
+        cnt::layers_preview::Dependencies const previewDependencies = {
+            &firmwareApi(),
+            &layerState(),
+            &coverState(),
+            kLayerToolRoutingOperations,
+            kLayerPreviewPins
+        };
+        cnt::layers_menu::Dependencies const menuDependencies = {
+            previewDependencies,
+            kLayerMenuPins
+        };
         CoverMenuReceiver* const layerReceiver = new CoverMenuReceiver(
             controllerObject, menu);
         QObject::connect(
             layerReceiver,
             &CoverMenuReceiver::layersRequested,
-            [](QObject* target) {
+            [menuDependencies](QObject* target) {
                 if (target)
-                    showLayerPopup(target);
+                    cnt::layers_menu::showPopup(menuDependencies, target);
             });
         QWidget* const layerItem = firmwareApi().createIInkMenuItem(
             controller,
@@ -330,12 +341,18 @@ void _cnt_add_widget_action_hook(
     }
 
     if (pageState().hooksReady) {
+        cnt::page_actions::Dependencies const pageDependencies = {
+            &firmwareApi(),
+            &coverState(),
+            kMaximumNotebookPages,
+            kPageBackupRoot
+        };
         cnt::notebook_menu::addPageContribution(
             firmwareApi(),
             controller,
             controllerObject,
             menu,
             noIcon,
-            &runPageOperation);
+            pageDependencies);
     }
 }

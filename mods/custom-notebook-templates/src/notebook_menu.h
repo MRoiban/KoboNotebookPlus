@@ -14,10 +14,6 @@ struct State;
 
 namespace notebook_menu {
 
-typedef void (*PageActivation)(
-    QObject* controller,
-    page_actions::PageOperation operation);
-
 // backupRoot is retained by the asynchronous cover receiver and must outlive it.
 void addCoverContribution(
     FirmwareApi& firmware,
@@ -33,7 +29,7 @@ void addPageContribution(
     QObject* controllerObject,
     QMenu* menu,
     QPixmap const& noIcon,
-    PageActivation activatePage);
+    page_actions::Dependencies dependencies);
 
 } // namespace notebook_menu
 } // namespace cnt

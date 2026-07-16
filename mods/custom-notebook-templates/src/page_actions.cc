@@ -2,16 +2,36 @@
 
 #include "cover_cache.h"
 #include "firmware_api.h"
+#include "notebook_widget.h"
 #include "pages.h"
 #include "settings.h"
 
+#include <QObject>
+#include <QPointer>
 #include <QString>
+#include <QVariant>
 
 #include <exception>
 
 namespace cnt {
 namespace page_actions {
 namespace {
+
+class PageOperationActiveGuard {
+public:
+    explicit PageOperationActiveGuard(QObject* widgetObject)
+        : widgetObject_(widgetObject) {
+        widgetObject_->setProperty("_cnt_page_operation_active", true);
+    }
+
+    ~PageOperationActiveGuard() {
+        if (widgetObject_)
+            widgetObject_->setProperty("_cnt_page_operation_active", false);
+    }
+
+private:
+    QPointer<QObject> widgetObject_;
+};
 
 void showOperationError(
         FirmwareApi& firmware,
@@ -23,6 +43,30 @@ void showOperationError(
 }
 
 } // namespace
+
+void runForController(
+        Dependencies dependencies,
+        QObject* controller,
+        PageOperation operation) {
+    if (!controller || !dependencies.firmware || !dependencies.coverCache
+            || !dependencies.backupRoot) {
+        return;
+    }
+    QObject* const widgetObject = notebook_widget::findNotebookWidget(controller);
+    if (!widgetObject)
+        return;
+    if (widgetObject->property("_cnt_page_operation_active").toBool())
+        return;
+
+    PageOperationActiveGuard const activeGuard(widgetObject);
+    runForWidget(
+        *dependencies.firmware,
+        *dependencies.coverCache,
+        widgetObject,
+        operation,
+        dependencies.maximumNotebookPages,
+        dependencies.backupRoot);
+}
 
 void runForWidget(
         FirmwareApi& firmware,

@@ -64,6 +64,7 @@
 #include "fs_util.h"
 #include "layers.h"
 #include "layers_eraser.h"
+#include "layers_menu.h"
 #include "layers_preview.h"
 #include "layers_service.h"
 #include "layers_state.h"
@@ -97,7 +98,6 @@ using cnt::layers::RefreshLayerPreviewsOperation;
 #include "parts/firmware_resolve.cc.inc"
 #include "parts/pages.cc.inc"
 #include "parts/layers_eraser.cc.inc"
-#include "parts/menus.cc.inc"
 #include "parts/visibility.cc.inc"
 #include "parts/hook_install.cc.inc"
 
