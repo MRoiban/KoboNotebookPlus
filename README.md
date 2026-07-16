@@ -9,9 +9,48 @@ Elipsa 2E. Instead of overlaying a separate app, it hooks the native notebook
 UI and the MyScript ink engine directly, so layers, previews, and erasing all
 behave like built-in features.
 
-<!-- TODO: add 1–2 photos here — the Layers popup on-device and a custom
-     template/cover. A single picture will sell this better than the list
-     below. -->
+## On-device previews
+
+Click any preview to view it at full size.
+
+<table>
+  <tr>
+    <td align="center">
+      <a href="docs/images/previews/layers.jpg">
+        <img src="docs/images/previews/layers.jpg" width="420" alt="Native Layers popup on a Kobo Elipsa 2E">
+      </a><br>
+      <strong>Native layers</strong>
+    </td>
+    <td align="center">
+      <a href="docs/images/previews/eraser-controls.jpg">
+        <img src="docs/images/previews/eraser-controls.jpg" width="420" alt="Brush and object eraser controls with five eraser sizes">
+      </a><br>
+      <strong>Eraser controls</strong>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <a href="docs/images/previews/cover-picker.jpg">
+        <img src="docs/images/previews/cover-picker.jpg" width="420" alt="Custom notebook cover picker on a Kobo Elipsa 2E">
+      </a><br>
+      <strong>Custom covers</strong>
+    </td>
+    <td align="center">
+      <a href="docs/images/previews/notebook-menu.jpg">
+        <img src="docs/images/previews/notebook-menu.jpg" width="420" alt="Notebook menu with layers and page operations">
+      </a><br>
+      <strong>Page and notebook tools</strong>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" colspan="2">
+      <a href="docs/images/previews/notebook-library.jpg">
+        <img src="docs/images/previews/notebook-library.jpg" width="420" alt="Kobo notebook library showing a custom checkerboard cover">
+      </a><br>
+      <strong>Custom covers in the notebook library</strong>
+    </td>
+  </tr>
+</table>
 
 > [!CAUTION]
 > This plugin calls private Kobo and MyScript C++ APIs **by firmware
