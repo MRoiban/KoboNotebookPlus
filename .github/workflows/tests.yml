@@ -78,6 +78,7 @@ jobs:
           ci/baseline/libcustomnotebooktemplates.so
           mods/custom-notebook-templates/libcustomnotebooktemplates.so
           --tool-prefix arm-linux-gnueabihf-
+          --expected-symbol-delta ci/notebook-sleep-abi-additions.json
       - name: Validate installer contents and binary identity
         run: >-
           python scripts/verify-release-package.py
