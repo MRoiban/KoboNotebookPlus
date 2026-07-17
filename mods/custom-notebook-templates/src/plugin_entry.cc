@@ -4,6 +4,7 @@
 #include "eraser_menu.h"
 #include "firmware_api.h"
 #include "firmware_resolver.h"
+#include "notebook_sleep.h"
 #include "plugin_runtime.h"
 #include "plugin_state.h"
 #include "settings.h"
@@ -125,7 +126,8 @@ static void installHookAfterNaturalLoad() {
             trace("layers: native action hook unavailable; feature disabled");
         }
 
-        if (layerState().hooksReady || eraserState().sizeApisReady) {
+        if (layerState().hooksReady || eraserState().sizeApisReady
+                || pluginState().notebookSleep.coreHooksReady) {
             SetToolTheme resolvedTheme = nullptr;
             RenderVolume resolvedRender = nullptr;
             bool const lifecycleSymbols =
@@ -166,8 +168,13 @@ static void installHookAfterNaturalLoad() {
             hookState().notebookLifecycleHooksReady =
                 lifecycleSymbols && themeHookValid && renderHookValid;
             if (hookState().notebookLifecycleHooksReady) {
-                trace("layers: active-layer lifecycle hooks installed");
-                trace("eraser-size: notebook lifecycle reapply hooks installed");
+                if (layerState().hooksReady)
+                    trace("layers: active-layer lifecycle hooks installed");
+                if (eraserState().sizeApisReady) {
+                    trace("eraser-size: notebook lifecycle reapply hooks installed");
+                }
+                if (pluginState().notebookSleep.coreHooksReady)
+                    trace("notebook-sleep: notebook-open observer hook installed");
             } else {
                 if (layerState().hooksReady)
                     trace("layers: lifecycle hook validation failed; feature disabled");
@@ -191,20 +198,42 @@ static void installHookAfterNaturalLoad() {
             trace("layers: read-only archive persistence probe unavailable");
         }
 
+        // The parser hook is also the stock notebook-cover source for the
+        // sleep screen, so keep it independent from custom cover PNGs and the
+        // optional archive scanner. Exact-caller checks in routeParserImage()
+        // leave every non-thumbnail ParserInterface signal untouched.
+        void* originalImageParsed = nullptr;
+        ParserImageParsed resolvedImageParsed = nullptr;
+        if (firmwareApi().contentGetId
+                && resolvePinned(handle, kParserImageParsedSymbol,
+                    kParserImageParsedVma, &resolvedImageParsed)) {
+            firmwareApi().parserImageParsedOriginal = resolvedImageParsed;
+            ParserImageParsedAddress imageReplacement;
+            imageReplacement.function = _cnt_parser_image_parsed_hook;
+            originalImageParsed = nh_dlhook(
+                handle,
+                kParserImageParsedSymbol,
+                imageReplacement.pointer);
+            if (pointerMatchesVma(
+                    originalImageParsed, kParserImageParsedVma)) {
+                firmwareApi().parserImageParsedOriginal =
+                    reinterpret_cast<ParserImageParsed>(originalImageParsed);
+                coverState().parserHookReady = true;
+                trace("notebook-sleep: stock page-zero thumbnail hook installed");
+            } else {
+                trace("notebook-sleep: parser-thumbnail hook validation failed");
+            }
+        }
+
         if (!coverState().customCovers.isEmpty()
                 && cnt::cover_cache::loadZipApis(coverState())) {
             SetDialogTitle resolvedTitle = nullptr;
-            ParserImageParsed resolvedImageParsed = nullptr;
             bool const coverHookSymbols =
                 resolvePinned(handle, kSetDialogTitleSymbol,
-                    kSetDialogTitleVma, &resolvedTitle)
-                && resolvePinned(handle, kParserImageParsedSymbol,
-                    kParserImageParsedVma, &resolvedImageParsed);
+                    kSetDialogTitleVma, &resolvedTitle);
             void* originalTitle = nullptr;
-            void* originalImageParsed = nullptr;
             if (coverHookSymbols) {
                 firmwareApi().setDialogTitleOriginal = resolvedTitle;
-                firmwareApi().parserImageParsedOriginal = resolvedImageParsed;
 
                 SetDialogTitleAddress titleReplacement;
                 titleReplacement.function = _cnt_set_dialog_title_hook;
@@ -215,18 +244,6 @@ static void installHookAfterNaturalLoad() {
                 if (pointerMatchesVma(originalTitle, kSetDialogTitleVma)) {
                     firmwareApi().setDialogTitleOriginal =
                         reinterpret_cast<SetDialogTitle>(originalTitle);
-                }
-
-                ParserImageParsedAddress imageReplacement;
-                imageReplacement.function = _cnt_parser_image_parsed_hook;
-                originalImageParsed = nh_dlhook(
-                    handle,
-                    kParserImageParsedSymbol,
-                    imageReplacement.pointer);
-                if (pointerMatchesVma(
-                        originalImageParsed, kParserImageParsedVma)) {
-                    firmwareApi().parserImageParsedOriginal =
-                        reinterpret_cast<ParserImageParsed>(originalImageParsed);
                 }
             }
 
@@ -278,8 +295,7 @@ static void installHookAfterNaturalLoad() {
             // (including notebook subfolders).
             if (pointerMatchesVma(original, kAddWidgetActionVma)
                     && pointerMatchesVma(originalTitle, kSetDialogTitleVma)
-                    && pointerMatchesVma(
-                        originalImageParsed, kParserImageParsedVma)) {
+                    && coverState().parserHookReady) {
                 coverState().hooksReady = true;
                 trace("covers: guarded menu, picker-title, and parser-thumbnail hooks installed");
             } else {
@@ -299,6 +315,7 @@ static void installHookAfterNaturalLoad() {
 static int initialize() {
     publishPluginState(new PluginState());
     trace("NickelHook init entered");
+    cnt::notebook_sleep::installHooks(pluginState().notebookSleep);
     cnt::visibility_hooks::install();
     cnt::visibility::hideLegacyNotebookBackups(coverBackupRoot());
     hookState().timer = new QTimer(QCoreApplication::instance());

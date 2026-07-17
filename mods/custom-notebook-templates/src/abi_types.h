@@ -78,14 +78,37 @@ typedef std::shared_ptr<ActiveBackendOpaque> SharedActiveBackend;
 
 // atk::core::Extent is a four-float homogeneous aggregate under ARM's
 // hard-float ABI. PageController::exportToPNG passes it in s0-s3 to its one
-// RendererListener callback.
+// RendererListener callback. Despite the API name, the last two floats are
+// the maximum coordinates, not width and height. BackendImageDrawer proves
+// this by calculating its bitmap dimensions from (right - left) and
+// (bottom - top).
 struct ExtentOpaque {
-    float x;
-    float y;
-    float width;
-    float height;
+    float left;
+    float top;
+    float right;
+    float bottom;
 };
 static_assert(sizeof(ExtentOpaque) == 16, "unexpected Extent ABI");
+
+// atk::core::Transform is returned by value through ARM's hidden sret
+// pointer. RendererImpl::getViewTransform converts its six internal floats
+// to these six doubles in row-major affine order:
+//
+//   viewX = xx * pageX + xy * pageY + x0
+//   viewY = yx * pageX + yy * pageY + y0
+//
+// Keeping the exact 48-byte return shape is important: declaring this as a
+// Qt transform (or as six floats) would shift the implicit `this` argument.
+struct RendererViewTransformOpaque {
+    double xx;
+    double xy;
+    double x0;
+    double yx;
+    double yy;
+    double y0;
+};
+static_assert(sizeof(RendererViewTransformOpaque) == 48,
+    "unexpected renderer view-transform ABI");
 
 // atk::core::Point is two floats. The PointerInfo vector remains opaque: it
 // is passed by reference to Kobo's own Eraser::strokerPolygon implementation,
@@ -219,6 +242,8 @@ typedef void (*DocumentLayoutGetLayer)(
 typedef bool (*LayerIteratorIsAtEnd)(void const* iterator);
 typedef void (*ManagedObjectDestructor)(void* object);
 typedef void* (*RendererGetBackend)(void* renderer);
+typedef RendererViewTransformOpaque (*RendererGetViewTransform)(
+    void const* renderer);
 typedef void (*RendererRestrictToLayers)(
     void* renderer,
     std::vector<std::string> const& ids);

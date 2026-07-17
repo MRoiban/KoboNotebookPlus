@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 import pathlib
 import stat
@@ -53,6 +54,8 @@ if "--defined-only" in sys.argv:
 elif "--undefined-only" in sys.argv:
     print("         U dlopen@GLIBC_2.4")
     print("         w _ITM_registerTMCloneTable")
+    if candidate and os.environ.get("FAKE_IMPORT_DRIFT"):
+        print("         U intentional_import")
 """
 
 
@@ -99,7 +102,28 @@ class BinaryParityTests(unittest.TestCase):
         path.chmod(path.stat().st_mode | stat.S_IXUSR)
         return path
 
-    def run_verifier(self, **environment: str) -> subprocess.CompletedProcess[str]:
+    def write_delta_manifest(
+        self,
+        exports: list[dict[str, str]] | None = None,
+        imports: list[dict[str, str]] | None = None,
+    ) -> pathlib.Path:
+        path = self.root / "expected-symbol-delta.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "candidate_only_exports": exports or [],
+                    "candidate_only_imports": imports or [],
+                }
+            ),
+            encoding="utf-8",
+        )
+        return path
+
+    def run_verifier(
+        self,
+        *extra_args: str,
+        **environment: str,
+    ) -> subprocess.CompletedProcess[str]:
         env = os.environ.copy()
         env.update(environment)
         return subprocess.run(
@@ -113,6 +137,7 @@ class BinaryParityTests(unittest.TestCase):
                 "--objdump",
                 str(self.objdump),
                 "--skip-pinned-plugin-abi",
+                *extra_args,
             ],
             check=False,
             text=True,
@@ -130,8 +155,43 @@ class BinaryParityTests(unittest.TestCase):
     def test_added_dynamic_export_fails(self) -> None:
         result = self.run_verifier(FAKE_EXPORT_DRIFT="1")
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        self.assertIn("candidate only: T accidental_export", result.stderr)
+        self.assertIn("unapproved candidate only: T accidental_export", result.stderr)
         self.assertIn("Binary parity verification FAILED", result.stderr)
+
+    def test_exact_expected_symbol_delta_passes(self) -> None:
+        manifest = self.write_delta_manifest(
+            exports=[{"kind": "T", "name": "accidental_export"}],
+            imports=[{"kind": "U", "name": "intentional_import"}],
+        )
+        result = self.run_verifier(
+            "--expected-symbol-delta",
+            str(manifest),
+            FAKE_EXPORT_DRIFT="1",
+            FAKE_IMPORT_DRIFT="1",
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("1 approved additions", result.stdout)
+
+    def test_missing_expected_symbol_delta_fails(self) -> None:
+        manifest = self.write_delta_manifest(
+            exports=[{"kind": "T", "name": "accidental_export"}],
+        )
+        result = self.run_verifier("--expected-symbol-delta", str(manifest))
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn(
+            "approved candidate addition missing: T accidental_export",
+            result.stderr,
+        )
+
+    def test_malformed_expected_symbol_delta_is_rejected(self) -> None:
+        manifest = self.root / "expected-symbol-delta.json"
+        manifest.write_text(
+            json.dumps({"candidate_only_exports": []}),
+            encoding="utf-8",
+        )
+        result = self.run_verifier("--expected-symbol-delta", str(manifest))
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("must contain exactly", result.stderr)
 
     def test_dt_needed_order_change_fails(self) -> None:
         result = self.run_verifier(FAKE_NEEDED_DRIFT="1")

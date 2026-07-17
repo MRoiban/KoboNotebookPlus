@@ -1,0 +1,42 @@
+{
+  "candidate_only_exports": [
+    {"kind": "T", "name": "_cnt_power_cover_loaded_hook"},
+    {"kind": "T", "name": "_cnt_power_set_info_panel_visible_hook"},
+    {"kind": "T", "name": "_cnt_power_update_cover_hook"},
+    {"kind": "T", "name": "_cnt_power_update_reading_status_hook"},
+    {"kind": "T", "name": "_cnt_settings_power_view_constructor_hook"},
+    {"kind": "T", "name": "_cnt_show_power_off_view_hook"},
+    {"kind": "T", "name": "_cnt_show_sleep_view_hook"}
+  ],
+  "candidate_only_imports": [
+    {"kind": "U", "name": "_ZN10QBoxLayout9addWidgetEP7QWidgeti6QFlagsIN2Qt13AlignmentFlagEE"},
+    {"kind": "U", "name": "_ZN10QJsonValueC1E13QLatin1String"},
+    {"kind": "U", "name": "_ZN10QJsonValueC1Eb"},
+    {"kind": "U", "name": "_ZN10QTransformC1Edddddd"},
+    {"kind": "U", "name": "_ZN11QVBoxLayout16staticMetaObjectE"},
+    {"kind": "U", "name": "_ZN4QDir8tempPathEv"},
+    {"kind": "U", "name": "_ZN6QImage4fillEN2Qt11GlobalColorE"},
+    {"kind": "U", "name": "_ZN6QImageC1ERK5QSizeNS_6FormatE"},
+    {"kind": "U", "name": "_ZN7QLocaleC1Ev"},
+    {"kind": "U", "name": "_ZN7QLocaleD1Ev"},
+    {"kind": "U", "name": "_ZN7QObject7connectEPKS_PKcS1_S3_N2Qt14ConnectionTypeE"},
+    {"kind": "U", "name": "_ZN7QRegionD1Ev"},
+    {"kind": "U", "name": "_ZN7QWidget10setEnabledEb"},
+    {"kind": "U", "name": "_ZN8QPainter13setRenderHintENS_10RenderHintEb"},
+    {"kind": "U", "name": "_ZN8QPainter17setWorldTransformERK10QTransformb"},
+    {"kind": "U", "name": "_ZN8QPainter18setCompositionModeENS_15CompositionModeE"},
+    {"kind": "U", "name": "_ZN8QPainter9drawImageERK6QRectFRK6QImageS2_6QFlagsIN2Qt19ImageConversionFlagEE"},
+    {"kind": "U", "name": "_ZN8QVariantC1Ei"},
+    {"kind": "U", "name": "_ZNK10QJsonValue4typeEv"},
+    {"kind": "U", "name": "_ZNK10QJsonValue6toBoolEb"},
+    {"kind": "U", "name": "_ZNK10QTransform7mapRectERK6QRectF"},
+    {"kind": "U", "name": "_ZNK11QMetaObject4castEP7QObject"},
+    {"kind": "U", "name": "_ZNK6QImage4rectEv"},
+    {"kind": "U", "name": "_ZNK6QRectF10intersectsERKS_"},
+    {"kind": "U", "name": "_ZNK7QRegion7isEmptyEv"},
+    {"kind": "U", "name": "_ZNK7QWidget13visibleRegionEv"},
+    {"kind": "U", "name": "_ZNK7QWidget5mapToEPKS_RK6QPoint"},
+    {"kind": "U", "name": "_ZNK7QWidget6layoutEv"},
+    {"kind": "U", "name": "_ZNK7QWidget6windowEv"}
+  ]
+}

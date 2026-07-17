@@ -25,9 +25,11 @@ EXPECTED = {
     "_ZNK8myscript8document13LayerIterator7isAtEndEv": 0x4B3E88,
     "_ZN8myscript6engine13ManagedObjectD1Ev": 0x3E5390,
     "_ZN8myscript4iink12RendererImpl10getBackendEv": 0x49E318,
+    "_ZNK8myscript4iink12RendererImpl16getViewTransformEv": 0x49DF8C,
     "_ZN3atk4core8Renderer16restrictToLayersERKSt6vectorISsSaISsEE": 0xA57714,
     "_ZN3snt14PageController11exportToPNGESt10shared_ptrIN3atk4core3BoxEERKSsS1_INS3_16RendererListenerEEj": 0x5130C4,
     "_ZNSt12__shared_ptrIN8myscript4iink18BackendImageDrawerELN9__gnu_cxx12_Lock_policyE2EEC2ISaIS2_EIRSt10shared_ptrINS1_10EngineImplEERS8_INS1_13IImagePainterEERS8_INS1_17ConfigurationImplEEEEESt19_Sp_make_shared_tagRKT_DpOT0_": 0x443EAC,
+    "_ZN8myscript4iink18BackendImageDrawer9drawImageEN3atk4core4PageESt10shared_ptrINS3_8RendererEEPNS0_8IBackendENS3_6ExtentENS3_9SelectionESs": 0x3E7B8C,
     "_ZN3snt14PageController19setRendererListenerESt10shared_ptrIN3atk4core16RendererListenerEE": 0x505498,
     "_ZNK3snt14PageController15inputDispatcherEv": 0x501960,
     "_ZNK3snt23PlatformInputDispatcher14getCurrentToolEv": 0x5BC80C,
@@ -296,6 +298,16 @@ PINNED_INSTRUCTIONS = {
         "97ed000a5b46d7ed010a504697ed021a07f11802d7ed031a"
         "2146cdf8049000956cf729fd"
     ),
+    # BackendImageDrawer treats atk::core::Extent as left/top/right/bottom.
+    # Its default image-size path subtracts the first coordinate pair from the
+    # second, converts the resulting millimetres through the configured image
+    # resolution, and rounds those two differences to pixel dimensions. This
+    # prevents the sleep compositor from ever interpreting right/bottom as
+    # width/height again.
+    0x3E80F2: bytes.fromhex(
+        "dfedc59a30ee6a0a95ed069a38ee4b8a80ee290a20ee090a6af68aea"
+        "fdeec08a88ee290a29ee000a6af682ead9f81810bdeec09a"
+    ),
 }
 
 EXPECTED_IINKNOTE = {
@@ -460,6 +472,21 @@ EXPECTED_NICKEL = {
     "_ZNK7Content5getIdEv": 0x953D84,
     "_ZN15FeatureSettings18excludeSyncFoldersEv": 0xA04650,
     "_ZN13VolumeManager20removeCommonBookDataERK6DeviceR6Volumeb": 0xA6EC74,
+    "_ZN22N3PowerWorkflowManager13showSleepViewEv": 0xF3EB98,
+    "_ZN22N3PowerWorkflowManager16showPowerOffViewEv": 0xF3EA54,
+    "_ZN19PowerViewController13onCoverLoadedERK6QImage": 0xF425B4,
+    "_ZN19PowerViewController11updateCoverEv": 0xF430B0,
+    "_ZN19PowerViewController19updateReadingStatusEv": 0xF42798,
+    "_ZN25FullScreenDragonPowerView19setInfoPanelVisibleEb": 0xF3A114,
+    "_ZN19N3SettingsPowerViewC1EP7QWidget": 0x10455DC,
+    "_ZN23SettingItemWithCheckBoxC1EP7QWidget": 0x1065824,
+    "_ZN23SettingItemWithDropDownC1EP7QWidget": 0x106599C,
+    "_ZN23SettingItemWithCheckBox7setTextERK7QString": 0x10653A0,
+    "_ZN23SettingItemWithCheckBox10setCheckedEb": 0x10653C0,
+    "_ZN15SettingItemBase8setLabelERK7QString": 0x10652C0,
+    "_ZNK23SettingItemWithDropDown8dropDownEv": 0x10653F8,
+    "_ZN24MultiSelectTouchDropDown7addItemERK7QStringRK8QVariantRK7QLocaleb": 0x10DE390,
+    "_ZN13TouchDropDown15setCurrentIndexEi": 0x1113230,
 }
 
 EXPECTED_NICKEL_SIZES = {
@@ -475,9 +502,48 @@ EXPECTED_NICKEL_SHA256 = (
 EXPECTED_NICKEL_JUMP_SLOTS = {
     "_ZN13VolumeManager20removeCommonBookDataERK6DeviceR6Volumeb": 0x16B0470,
     "_ZN15FeatureSettings18excludeSyncFoldersEv": 0x16BB1F0,
+    "_ZN22N3PowerWorkflowManager16showPowerOffViewEv": 0x16AC9D8,
+    "_ZN19N3SettingsPowerViewC1EP7QWidget": 0x16AEF90,
+    "_ZN19PowerViewController13onCoverLoadedERK6QImage": 0x16B1C38,
+    "_ZN19PowerViewController11updateCoverEv": 0x16BCB5C,
+    "_ZN22N3PowerWorkflowManager13showSleepViewEv": 0x16B5698,
+    "_ZN19PowerViewController19updateReadingStatusEv": 0x16BB524,
+    "_ZN25FullScreenDragonPowerView19setInfoPanelVisibleEb": 0x16BD7B8,
 }
 
 PINNED_NICKEL_INSTRUCTIONS = {
+    # loadView calls updateCover through its PLT entry immediately before the
+    # stock reading-status update. This is the reliable notebook-image seam:
+    # the hook can apply the captured QImage and keep the stale book status
+    # suppressed for the following call.
+    0xF43A9C: bytes.fromhex("204665f70cce"),
+    # updateCover stores onCoverLoaded as a direct C++ member-function pointer
+    # in a QSlotObject, and that dispatcher ultimately branches through r2.
+    # It therefore bypasses onCoverLoaded's otherwise valid PLT jump slot.
+    0xF43430: bytes.fromhex(
+        "dff828250021dff8283510205af802203964fa635af80330b9647b64"
+    ),
+    0xF43F46: bytes.fromhex(
+        "c8688968c4074bbf401002eb600014580a4644bf801862585968bd4690bc1047"
+    ),
+    # PowerViewController's generated metacall dispatch loads the QImage
+    # reference from Qt's argv array, restores the frame, and tail-branches
+    # through onCoverLoaded's PLT entry. Keep that fallback hook pinned, but
+    # updateCover's actual imageReady connection uses the direct QSlotObject
+    # path proved above, so notebook injection happens at updateCover instead.
+    # Binary Ninja address is ELF VMA +0x10000.
+    0xF4304A: bytes.fromhex("5968bd46b0bc43f7309c"),
+    # Native power checkboxes are two-column SettingItem rows. retranslateUi
+    # first sends the full setting name to SettingItemBase::setLabel, then
+    # sends only "On" to SettingItemWithCheckBox::setText. The plugin mirrors
+    # this exact split so its checkbox aligns with the three stock rows.
+    # Binary Ninja address is ELF VMA +0x10000.
+    0x1046758: bytes.fromhex(
+        "5ff624ce2146304635f65ecc78680368"
+    ),
+    0x104678E: bytes.fromhex(
+        "5ff60ace214630464ef6b2cb78680368"
+    ),
     # Library asset visibility. FeatureSettings reads the user's existing
     # ExcludeSyncFolders value; findFilesToParse reaches it through this exact
     # PLT/GOT call, splits the result on a one-byte separator, and later wraps

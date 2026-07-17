@@ -9,6 +9,7 @@
 #include "layers_state.h"
 #include "notebook_hook_services.h"
 #include "notebook_menu.h"
+#include "notebook_sleep.h"
 #include "notebook_widget.h"
 #include "page_actions.h"
 #include "plugin_runtime.h"
@@ -177,11 +178,16 @@ void _cnt_render_volume_hook(void* widget, void const* volume) {
     // caller reaches this symbol through the PLT, so running after the original
     // is the first hookable point where all three identities are coherent.
     firmwareApi().renderVolumeOriginal(widget, volume);
-    if (!hookState().notebookLifecycleHooksReady || !widget)
+    if (!widget)
         return;
 
     QObject* const object = reinterpret_cast<QObject*>(widget);
     if (!cnt::notebook_widget::isNotebookWidget(object))
+        return;
+    cnt::notebook_sleep::observeNotebookWidget(
+        pluginState().notebookSleep,
+        reinterpret_cast<QWidget*>(widget));
+    if (!hookState().notebookLifecycleHooksReady)
         return;
     if (eraserState().sizeApisReady) {
         try {

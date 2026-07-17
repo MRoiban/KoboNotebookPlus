@@ -71,6 +71,7 @@ struct FirmwareApi {
     LayerIteratorIsAtEnd layerIteratorIsAtEnd;
     ManagedObjectDestructor managedObjectDestructor;
     RendererGetBackend rendererGetBackend;
+    RendererGetViewTransform rendererGetViewTransform;
     RendererRestrictToLayers rendererRestrictToLayers;
     PageControllerExportToPng pageControllerExportToPng;
     BackendImageDrawerMakeShared backendImageDrawerMakeShared;

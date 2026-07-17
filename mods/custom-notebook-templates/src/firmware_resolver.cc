@@ -148,6 +148,9 @@ bool resolveFirmwareApis(void* iinknoteHandle) {
             kManagedObjectDestructorVma, &firmwareApi().managedObjectDestructor)
         && resolvePinned(iinkHandle, kRendererGetBackendSymbol,
             kRendererGetBackendVma, &firmwareApi().rendererGetBackend)
+        && resolvePinned(iinkHandle, kRendererGetViewTransformSymbol,
+            kRendererGetViewTransformVma,
+            &firmwareApi().rendererGetViewTransform)
         && resolvePinned(iinkHandle, kRendererRestrictToLayersSymbol,
             kRendererRestrictToLayersVma, &firmwareApi().rendererRestrictToLayers)
         && resolvePinned(iinkHandle, kPageControllerInputDispatcherSymbol,

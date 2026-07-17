@@ -677,10 +677,23 @@ void cacheRenderedCoverImage(
     if (!info.isFile() || info.size() <= 0)
         return;
 
-    persistRenderedCoverImage(notebookPath, coverType, image);
+    QImage cachedImage = image;
+    if (coverType.isEmpty()
+            && (cachedImage.width() != kBackgroundWidth
+                || cachedImage.height() != kBackgroundHeight)) {
+        cachedImage = cachedImage.scaled(
+            kBackgroundWidth,
+            kBackgroundHeight,
+            Qt::IgnoreAspectRatio,
+            Qt::SmoothTransformation);
+    }
+    if (cachedImage.isNull())
+        return;
+
+    persistRenderedCoverImage(notebookPath, coverType, cachedImage);
 
     RenderedCoverEntry entry;
-    entry.image = image;
+    entry.image = cachedImage;
     entry.notebookModifiedMs = info.lastModified().toMSecsSinceEpoch();
     entry.notebookSize = info.size();
     entry.coverType = coverType;
