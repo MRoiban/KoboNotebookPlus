@@ -8,10 +8,10 @@ override LIBRARY  := libcustomnotebooktemplates.so
 override SOURCES  += src/firmware_resolver.cc src/fs_util.cc src/settings.cc \
 	src/templates.cc src/covers.cc src/cover_cache.cc src/cover_editor.cc src/page_io.cc \
 	src/notebook_widget.cc src/notebook_hook_services.cc src/notebook_menu.cc src/pages.cc \
-	src/page_actions.cc src/visibility.cc src/eraser_menu.cc src/layers_state.cc \
+	src/page_actions.cc src/notebook_sleep.cc src/visibility.cc src/eraser_menu.cc src/layers_state.cc \
 	src/layers_service.cc src/layers_preview.cc src/layers_eraser.cc src/layers_menu.cc \
 	src/plugin_runtime.cc src/plugin_entry.cc src/hooks.cc src/visibility_hooks.cc
-override MOCS     += src/covermenureceiver.h
+override MOCS     += src/covermenureceiver.h src/notebooksleepsettingsreceiver.h
 override PKGCONF  += Qt5Widgets
 override CXXFLAGS += -Wall -Wextra -Werror -Wno-missing-field-initializers \
 	-fvisibility=hidden -fvisibility-inlines-hidden

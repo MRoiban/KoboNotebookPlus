@@ -84,6 +84,8 @@ static char const kManagedObjectDestructorSymbol[] =
     "_ZN8myscript6engine13ManagedObjectD1Ev";
 static char const kRendererGetBackendSymbol[] =
     "_ZN8myscript4iink12RendererImpl10getBackendEv";
+static char const kRendererGetViewTransformSymbol[] =
+    "_ZNK8myscript4iink12RendererImpl16getViewTransformEv";
 static char const kRendererRestrictToLayersSymbol[] =
     "_ZN3atk4core8Renderer16restrictToLayersERKSt6vectorISsSaISsEE";
 static char const kPageControllerExportToPngSymbol[] =
@@ -191,6 +193,7 @@ static uintptr_t const kDocumentLayoutGetLayerVma = 0x4b3d00;
 static uintptr_t const kLayerIteratorIsAtEndVma = 0x4b3e88;
 static uintptr_t const kManagedObjectDestructorVma = 0x3e5390;
 static uintptr_t const kRendererGetBackendVma = 0x49e318;
+static uintptr_t const kRendererGetViewTransformVma = 0x49df8c;
 static uintptr_t const kRendererRestrictToLayersVma = 0xa57714;
 static uintptr_t const kPageControllerExportToPngVma = 0x5130c4;
 static uintptr_t const kBackendImageDrawerMakeSharedVma = 0x443eac;

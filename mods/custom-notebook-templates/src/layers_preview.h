@@ -15,6 +15,7 @@
 class QLabel;
 class QMenu;
 class QObject;
+class QImage;
 class QPixmap;
 struct FirmwareApi;
 
@@ -79,6 +80,13 @@ struct DeferredLayerPreviewRow {
     QPointer<QLabel> textLabel;
 };
 
+// Snapshot of the live editor's page-to-view mapping. It is captured before
+// the isolated exporter runs so the sleep compositor can undo the exporter's
+// bounding-box normalization without guessing the device DPI or zoom.
+struct LivePageView {
+    RendererViewTransformOpaque transform;
+};
+
 void showLayerError(
     Dependencies dependencies,
     void* widget,
@@ -95,6 +103,17 @@ bool layerPreviewNeedsRefresh(
     Dependencies dependencies,
     layers::LayerState const& state,
     QString const& id);
+
+// Export the live selection through Kobo's isolated renderer and return its
+// exact MyScript page-space extent. Unlike layer cards, this does not restrict
+// the renderer, persist a cache file, or mutate the live editor.
+bool exportCurrentPageImage(
+    Dependencies dependencies,
+    QObject* notebookWidget,
+    QImage* image,
+    ExtentOpaque* extent,
+    LivePageView* liveView,
+    QString* error);
 
 QPixmap layerPreview(
     Dependencies dependencies,

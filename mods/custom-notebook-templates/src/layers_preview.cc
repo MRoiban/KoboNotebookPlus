@@ -354,6 +354,69 @@ private:
     bool* writerInvoked_;
 };
 
+class FullPageRendererListener {
+public:
+    FullPageRendererListener(
+        FirmwareApi* firmware,
+        Pins const& pins,
+        SharedImagePainter const& painter,
+        SharedBackendImageDrawer const& drawer,
+        SharedRenderer const& liveRenderer,
+        void* backend,
+        bool* writerInvoked,
+        ExtentOpaque* renderedExtent,
+        bool* extentCaptured)
+        : firmware_(firmware),
+          pins_(pins),
+          painter_(painter),
+          drawer_(drawer),
+          liveRenderer_(liveRenderer),
+          backend_(backend),
+          writerInvoked_(writerInvoked),
+          renderedExtent_(renderedExtent),
+          extentCaptured_(extentCaptured) {}
+
+    virtual ~FullPageRendererListener() {}
+
+    virtual void exportImage(
+        SharedRenderer const& renderer,
+        void const* selection,
+        ExtentOpaque extent,
+        unsigned int flags,
+        std::string const& path) {
+        if (writerInvoked_)
+            *writerInvoked_ = false;
+        if (extentCaptured_)
+            *extentCaptured_ = false;
+        if (!firmware_->stockBackendImageDrawerExport || !drawer_ || !backend_)
+            return;
+        StockPreviewCallbackContext callback(pins_, drawer_.get(), backend_);
+        if (renderedExtent_)
+            *renderedExtent_ = extent;
+        if (extentCaptured_)
+            *extentCaptured_ = true;
+        if (writerInvoked_)
+            *writerInvoked_ = true;
+        try {
+            firmware_->stockBackendImageDrawerExport(
+                callback.bytes, renderer, selection, extent, flags, path);
+        } catch (...) {
+            trace("notebook-sleep: stock current-page writer threw");
+        }
+    }
+
+private:
+    FirmwareApi* firmware_;
+    Pins pins_;
+    SharedImagePainter painter_;
+    SharedBackendImageDrawer drawer_;
+    SharedRenderer liveRenderer_;
+    void* backend_;
+    bool* writerInvoked_;
+    ExtentOpaque* renderedExtent_;
+    bool* extentCaptured_;
+};
+
 static bool liveNeboControllerAndBackend(
     Dependencies const& dependencies,
     layers::LayerContext const& context,
@@ -625,6 +688,159 @@ static bool generateLayerPreview(
     // same byte count. Explicit eviction guarantees the just-written card is
     // decoded once instead of reusing an indistinguishable old memory entry.
     runtime.previewCardCache.remove(finalPath);
+    return true;
+}
+
+static bool exportCurrentPageImageImpl(
+        Dependencies const& dependencies,
+        QObject* notebookWidget,
+        QImage* image,
+        ExtentOpaque* extent,
+        LivePageView* liveView,
+        QString* error) {
+    if (image)
+        *image = QImage();
+    if (extent)
+        *extent = ExtentOpaque{0.0f, 0.0f, 0.0f, 0.0f};
+    if (liveView) {
+        liveView->transform = RendererViewTransformOpaque{
+            0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+    }
+    FirmwareApi& firmware = *dependencies.firmware;
+    Pins const& pins = dependencies.pins;
+    if (!image || !extent || !liveView || !notebookWidget
+            || !cnt::notebook_widget::isNotebookWidget(notebookWidget)
+            || !dependencies.runtime->previewApisReady
+            || !firmware.pageControllerExportToPng
+            || !firmware.rendererGetViewTransform
+            || !firmware.stockBackendImageDrawerExport
+            || !StockPreviewCallbackContext::supports(pins)) {
+        if (error) {
+            *error = QLatin1String(
+                "Notebook sleep page unavailable: export APIs are not ready.");
+        }
+        return false;
+    }
+    if (notebookWidget->property("_cnt_layer_preview_active").toBool()) {
+        if (error) {
+            *error = QLatin1String(
+                "Notebook sleep page unavailable: renderer is busy.");
+        }
+        return false;
+    }
+    LayerPreviewActiveGuard const previewActive(notebookWidget);
+
+    layers::LayerContext context;
+    context.widgetObject = notebookWidget;
+    context.widget = notebookWidget;
+    context.editor = cnt::notebook_widget::notePadEditor(notebookWidget);
+    if (!context.editor) {
+        if (error) {
+            *error = QLatin1String(
+                "Notebook sleep page unavailable: editor is not ready.");
+        }
+        return false;
+    }
+
+    SharedRenderer rendererKeepAlive;
+    void* pageController = nullptr;
+    void* backend = nullptr;
+    if (!liveNeboControllerAndBackend(
+            dependencies,
+            context,
+            &rendererKeepAlive,
+            &pageController,
+            &backend,
+            error)) {
+        return false;
+    }
+
+    // The PNG callback returns only the content extent and normalizes that
+    // extent to the output bitmap. Capture the live renderer's mapping now,
+    // while its zoom, pan, and device pixel scales still describe the visible
+    // notebook. This call is read-only and does not touch the editor state.
+    try {
+        liveView->transform = firmware.rendererGetViewTransform(
+            rendererKeepAlive.get());
+    } catch (...) {
+        if (error) {
+            *error = QLatin1String(
+                "Notebook sleep page unavailable: view transform failed.");
+        }
+        return false;
+    }
+    SharedImagePainter painter;
+    SharedBackendImageDrawer drawer;
+    if (!createLayerPreviewDrawer(
+            dependencies, context, &painter, &drawer, error)) {
+        return false;
+    }
+
+    QString const path = QDir(QDir::tempPath()).filePath(
+        QLatin1String("cnt-notebook-sleep-")
+        + QString::number(getpid()) + QLatin1Char('-')
+        + QUuid::createUuid().toString().remove('{').remove('}')
+        + QLatin1String(".png"));
+    QFile::remove(path);
+    bool writerInvoked = false;
+    bool extentCaptured = false;
+    std::shared_ptr<FullPageRendererListener> const proxy =
+        std::make_shared<FullPageRendererListener>(
+            &firmware,
+            pins,
+            painter,
+            drawer,
+            rendererKeepAlive,
+            backend,
+            &writerInvoked,
+            extent,
+            &extentCaptured);
+    SharedRendererListener const opaqueProxy(
+        proxy,
+        reinterpret_cast<RendererListenerOpaque*>(proxy.get()));
+
+    bool exported = false;
+    try {
+        std::string const output = path.toUtf8().constData();
+        exported = firmware.pageControllerExportToPng(
+            pageController, SharedBox(), output, opaqueProxy, 0);
+    } catch (...) {
+        exported = false;
+    }
+
+    QFileInfo const generated(path);
+    if (!exported || !writerInvoked || !extentCaptured || !generated.isFile()
+            || generated.size() <= 0
+            || generated.size() > pins.maximumLayerPreviewBytes) {
+        QFile::remove(path);
+        if (error) {
+            *error = QLatin1String(
+                "Notebook sleep page unavailable: renderer produced no valid PNG.");
+        }
+        return false;
+    }
+    QImageReader reader(path);
+    QSize const decodedSize = reader.size();
+    if (!decodedSize.isValid() || decodedSize.width() > 4096
+            || decodedSize.height() > 4096) {
+        QFile::remove(path);
+        if (error) {
+            *error = QLatin1String(
+                "Notebook sleep page unavailable: rendered size is invalid.");
+        }
+        return false;
+    }
+    QImage const decoded = reader.read();
+    QFile::remove(path);
+    if (decoded.isNull()) {
+        if (error) {
+            *error = QLatin1String(
+                "Notebook sleep page unavailable: rendered PNG is unreadable.");
+        }
+        return false;
+    }
+    *image = decoded;
+    trace("notebook-sleep: current page exported with isolated renderer");
     return true;
 }
 
@@ -1241,6 +1457,17 @@ bool layerPreviewNeedsRefresh(
         layers::LayerState const& state,
         QString const& id) {
     return layerPreviewNeedsRefreshImpl(dependencies, state, id);
+}
+
+bool exportCurrentPageImage(
+        Dependencies dependencies,
+        QObject* notebookWidget,
+        QImage* image,
+        ExtentOpaque* extent,
+        LivePageView* liveView,
+        QString* error) {
+    return exportCurrentPageImageImpl(
+        dependencies, notebookWidget, image, extent, liveView, error);
 }
 
 QPixmap layerPreview(

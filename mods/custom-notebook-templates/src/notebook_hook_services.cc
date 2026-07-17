@@ -65,9 +65,8 @@ void routeParserImage(
         void* parser,
         void const* volume,
         QImage const& image) {
-    if (!coverState.hooksReady
+    if (!coverState.parserHookReady
             || !firmware.contentGetId
-            || !cover_cache::zipApisReady(coverState)
             || !firmware.iinknoteBase
             || callerAddress
                 != firmware.iinknoteBase + thumbnailCallbackReturnVma) {
@@ -80,26 +79,34 @@ void routeParserImage(
     QString const notebookPath = cover_cache::notebookPathFromContentId(
         firmware.contentGetId(volume));
     double const pathResolveMs = fs_util::elapsedMs(timer);
+    if (notebookPath.isEmpty()) {
+        firmware.parserImageParsedOriginal(parser, volume, image);
+        return;
+    }
+
     QString type;
-    if (notebookPath.isEmpty()
-            || !cover_cache::cachedNotebookCoverType(
+    if (coverState.hooksReady
+            && cover_cache::zipApisReady(coverState)
+            && cover_cache::cachedNotebookCoverType(
                 coverState, notebookPath, &type, pathResolveMs)) {
-        firmware.parserImageParsedOriginal(parser, volume, image);
-        return;
-    }
-
-    QImage const composed = cover_cache::composeCoverWithRenderedInk(
-        coverState, type, image);
-    if (composed.isNull()) {
-        firmware.parserImageParsedOriginal(parser, volume, image);
+        QImage const composed = cover_cache::composeCoverWithRenderedInk(
+            coverState, type, image);
+        if (!composed.isNull()) {
+            cover_cache::cacheRenderedCoverImage(
+                coverState, notebookPath, type, composed);
+            firmware.parserImageParsedOriginal(parser, volume, composed);
+            trace("covers: custom cover composed with rendered page ink");
+            return;
+        }
         trace("covers: cover-and-ink composition failed; stock preview preserved");
-        return;
     }
 
+    // Keep Kobo's own page-zero render for notebooks without a plugin cover.
+    // The empty type annotation intentionally distinguishes stock page zero
+    // from a composed custom cover in the shared persisted cache.
     cover_cache::cacheRenderedCoverImage(
-        coverState, notebookPath, type, composed);
-    firmware.parserImageParsedOriginal(parser, volume, composed);
-    trace("covers: custom cover composed with rendered page ink");
+        coverState, notebookPath, QString(), image);
+    firmware.parserImageParsedOriginal(parser, volume, image);
 }
 
 void augmentNotebookGridCover(

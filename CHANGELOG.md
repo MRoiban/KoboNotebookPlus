@@ -2,6 +2,37 @@
 
 All notable changes to KoboNotebookPlus will be documented in this file.
 
+## [0.0.3-alpha] - 2026-07-17
+
+### Added
+
+- Add **Show notebook on sleep** to Kobo's native Energy saving and privacy
+  settings, with **Cover** and **Current page** image choices.
+- Show a notebook image only when sleep or power-off starts from a visible
+  Advanced Notebook; books and all other views keep Kobo's stock cover flow.
+- Composite current-page ink over the active built-in or custom paper
+  template while preserving the notebook's live zoom, pan, and canvas offset.
+
+### Fixed
+
+- Suppress the stale book reading-status panel while a notebook image is
+  substituted on the power view.
+- Interpret MyScript export extents as left/top/right/bottom coordinates and
+  apply the live renderer transform, preventing ink from being centered,
+  shifted, stretched, or clipped by its content bounding box.
+- Match Kobo's native two-column settings layout by placing the setting label
+  on the left and the checkbox's **On** control on the right.
+- Fall back safely to the normal book cover whenever the notebook is hidden,
+  busy, invalid, or cannot be rendered.
+
+### Verification
+
+- Tested on Kobo Elipsa 2E (`condor`) firmware `4.38.23697` for notebook and
+  book sleep routing, current-page ink/template alignment, and native settings
+  alignment.
+- Verified button sleep and power-off behavior with on-device notebook pages;
+  the release remains pinned to this exact device and firmware.
+
 ## [0.0.2-alpha] - 2026-07-17
 
 ### Fixed

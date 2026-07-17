@@ -25,9 +25,9 @@ struct CoverScanEntry {
     bool hasCover;
 };
 
-// Kobo's own rendered first-page preview, including the selected cover and
-// live ink. The parser callback populates this cache; the notebook-card hook
-// may reuse it only while the source .nebo has the same mtime and size.
+// Kobo's rendered first-page preview and, for plugin covers, the composed
+// cover plus live ink. The parser callback populates this cache; notebook
+// cards and the notebook sleep screen can both reuse it.
 struct RenderedCoverEntry {
     QImage image;
     qint64 notebookModifiedMs;
@@ -71,6 +71,7 @@ struct State {
     QMutex cacheMutex;
     bool pickerPending = false;
     bool titlePending = false;
+    bool parserHookReady = false;
     bool hooksReady = false;
     bool gridHookReady = false;
 };

@@ -4,6 +4,7 @@
 #include "eraser_menu.h"
 #include "firmware_api.h"
 #include "layers.h"
+#include "notebook_sleep.h"
 #include "settings.h"
 #include "templates.h"
 #include "visibility.h"
@@ -38,6 +39,7 @@ struct PluginState {
     cnt::layers::RuntimeState layers;
     cnt::eraser_menu::RuntimeState eraser;
     cnt::SettingsStore settings;
+    cnt::notebook_sleep::RuntimeState notebookSleep;
     cnt::visibility::RuntimeState visibility;
     HookRuntimeState hooks;
 };

@@ -1,7 +1,7 @@
 # KoboNotebookPlus
 
-**Native layers, custom paper templates, writable covers, page tools, and a
-configurable eraser for Kobo Advanced Notebooks.**
+**Native layers, custom paper templates, writable covers, notebook sleep
+screens, page tools, and a configurable eraser for Kobo Advanced Notebooks.**
 
 KoboNotebookPlus is a [NickelHook](https://github.com/pgaskin/NickelHook)
 plugin that extends the stock Advanced Notebook experience on the Kobo
@@ -70,6 +70,10 @@ Click any preview to view it at full size.
 - **Custom paper templates** — drop in your own full-page PNG templates.
 - **Writable covers** — custom notebook covers you can write on as a first
   page.
+- **Notebook sleep screens** — when sleep or power-off starts from a visible
+  Advanced Notebook, show either its cover (page zero) or its current page,
+  including the active built-in or custom paper template; books and every
+  non-notebook view retain Kobo's stock cover behavior.
 - **Page operations** — duplicate and reorder notebook pages.
 - **Clean library** — plugin support images stay out of Home/My Books
   without touching the Kobo database.
@@ -186,6 +190,10 @@ If Nickel crash-loops or notebooks misbehave after install:
 - Inside an Advanced Notebook, the notebook menu gains Covers, Layers, and
   page operations. The eraser popup shows the stock mode choices plus the
   size row.
+- Under **Settings → Energy saving and privacy**, enable **Show notebook on
+  sleep**, then choose **Cover** or **Current page** under **Notebook sleep
+  image**. The selector is disabled until the toggle is enabled. Rendering
+  failure or a busy/hidden notebook falls back to Kobo's normal book cover.
 
 Layer metadata and preview caches live under `.kobo/custom/layers/`; native
 ink stays inside the `.nebo` document. Backups created by cover, page, and
