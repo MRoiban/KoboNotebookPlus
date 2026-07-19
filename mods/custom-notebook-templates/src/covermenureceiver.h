@@ -19,6 +19,7 @@ signals:
     void movePageEarlierRequested(QObject* controller);
     void movePageLaterRequested(QObject* controller);
     void layersRequested(QObject* controller);
+    void sleepPagePinRequested(QObject* controller);
 
 public slots:
     void activate() {
@@ -44,6 +45,11 @@ public slots:
     void activateLayers() {
         if (controller_)
             emit layersRequested(controller_.data());
+    }
+
+    void activateSleepPagePin() {
+        if (controller_)
+            emit sleepPagePinRequested(controller_.data());
     }
 
 private:

@@ -194,6 +194,48 @@ int notebookArchiveContainsLayerId(
     return found ? 1 : (complete ? 0 : -1);
 }
 
+int notebookArchiveContainsPageId(
+        State const& state,
+        QString const& notebookPath,
+        QString const& partId) {
+    State::ZipApi const& zip = state.zip;
+    if (!zip.open || !zip.getNumEntries || !zip.getName || !zip.discard
+            || partId.isEmpty()) {
+        return -1;
+    }
+
+    QByteArray const encodedPath = QFile::encodeName(notebookPath);
+    int openError = 0;
+    ZipArchiveOpaque* const archive = zip.open(
+        encodedPath.constData(), 16, &openError);  // ZIP_RDONLY
+    if (!archive)
+        return -1;
+
+    QByteArray const expected = QByteArray("pages/")
+        + partId.toUtf8() + QByteArray("/meta.json");
+    bool found = false;
+    bool complete = true;
+    long long const entryCount = zip.getNumEntries(archive, 0);
+    if (entryCount < 0 || entryCount > 65536) {
+        complete = false;
+    } else {
+        for (long long i = 0; i < entryCount; ++i) {
+            char const* const entryName = zip.getName(
+                archive, static_cast<unsigned long long>(i), 0);
+            if (!entryName) {
+                complete = false;
+                break;
+            }
+            if (QByteArray(entryName) == expected) {
+                found = true;
+                break;
+            }
+        }
+    }
+    zip.discard(archive);
+    return found ? 1 : (complete ? 0 : -1);
+}
+
 namespace {
 
 static QString coverTypeFromMetadata(QByteArray const& contents) {

@@ -138,4 +138,15 @@ struct FirmwareApi {
     ImagePainterDeletingDestructor imagePainterDeletingDestructor;
     ImagePainterSetImageLoader imagePainterSetImageLoader;
     void* uirefEditorWidgetVtable;
+
+    // In-memory export capture. getImage/saveImage are the concrete non-virtual
+    // and virtual entries; imagePainterVtableAddressPoint is the resolved
+    // address point (concrete vtable symbol + 8). inMemoryCaptureReady is set
+    // only after every slot at that address point matches its pinned VMA, so a
+    // firmware mismatch leaves the shadow-vtable path disabled and preserves the
+    // existing PNG export.
+    ImagePainterGetImage imagePainterGetImage;
+    ImagePainterSaveImage imagePainterSaveImage;
+    void** imagePainterVtableAddressPoint;
+    bool inMemoryCaptureReady;
 };

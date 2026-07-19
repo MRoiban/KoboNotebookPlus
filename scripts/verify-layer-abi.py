@@ -333,14 +333,32 @@ EXPECTED_IINKUIREF = {
     "_ZN8myscript4iink25uireferenceimplementation12ImagePainterC1Ev": 0x28B48,
     "_ZN8myscript4iink25uireferenceimplementation12ImagePainterD0Ev": 0x29948,
     "_ZN8myscript4iink25uireferenceimplementation12ImagePainter14setImageLoaderESt10shared_ptrINS1_11ImageLoaderEE": 0x28A60,
+    "_ZNK8myscript4iink25uireferenceimplementation12ImagePainter8getImageEv": 0x28B38,
+    "_ZN8myscript4iink25uireferenceimplementation12ImagePainter12prepareImageEiif": 0x28254,
     "_ZN8myscript4iink25uireferenceimplementation12ImagePainter9saveImageERKNS0_6StringE": 0x28354,
+    "_ZN8myscript4iink25uireferenceimplementation12ImagePainter12createCanvasEv": 0x28BB4,
+    "_ZTVN8myscript4iink25uireferenceimplementation12ImagePainterE": 0x4FE38,
     "_ZTVN8myscript4iink25uireferenceimplementation12EditorWidgetE": 0x50000,
+}
+
+EXPECTED_IINKUIREF_IMAGE_PAINTER_VTABLE_RELOCATIONS = {
+    0x4FE3C: "_ZTIN8myscript4iink25uireferenceimplementation12ImagePainterE",
+    0x4FE40: "_ZN8myscript4iink25uireferenceimplementation12ImagePainterD1Ev",
+    0x4FE44: "_ZN8myscript4iink25uireferenceimplementation12ImagePainterD0Ev",
+    0x4FE48: "_ZN8myscript4iink25uireferenceimplementation12ImagePainter12prepareImageEiif",
+    0x4FE4C: "_ZN8myscript4iink25uireferenceimplementation12ImagePainter9saveImageERKNS0_6StringE",
+    0x4FE50: "_ZN8myscript4iink25uireferenceimplementation12ImagePainter12createCanvasEv",
+    0x4FE54: "_ZNK8myscript4iink25uireferenceimplementation12ImagePainter7contextEv",
 }
 
 # ImagePainter derives its encoder name from QFileInfo::suffix(), converts
 # that suffix to UTF-8, and passes it as QImage::save's format argument. A
 # temporary export path must therefore still end in `.png`.
 PINNED_IINKUIREF_INSTRUCTIONS = {
+    # getImage uses the AAPCS hidden result in r0, saves it in r4, loads the
+    # concrete painter's shared_ptr<QImage> object through this(r1)+0x14, and
+    # copy-constructs the implicitly shared result before returning r4.
+    0x28B38: bytes.fromhex("98b5044600af4969f0f700e8204698bd"),
     0x28444: bytes.fromhex("07f13c03414618461c46fb60eff7e0ef"),
     0x28454: bytes.fromhex(
         "21465046f0f7faed3a6c4ff0ff3338695946d4682244f0f70cef"
@@ -678,6 +696,28 @@ def jump_slots(path: pathlib.Path) -> dict[str, int]:
     return found
 
 
+def relocations(path: pathlib.Path) -> dict[int, tuple[str, str]]:
+    """Return dynamic relocation type and unversioned symbol by offset."""
+    result = subprocess.run(
+        ["objdump", "-R", str(path)],
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    found: dict[int, tuple[str, str]] = {}
+    for line in result.stdout.splitlines():
+        fields = line.split()
+        if len(fields) < 3 or not fields[1].startswith("R_ARM_"):
+            continue
+        try:
+            offset = int(fields[0], 16)
+        except ValueError:
+            continue
+        found[offset] = (fields[1], fields[2].split("@", 1)[0])
+    return found
+
+
 def load_segments(path: pathlib.Path) -> list[tuple[int, int, int]]:
     """Return (vaddr, file_offset, filesz) for each PT_LOAD in a 32-bit LE ELF."""
     data = path.read_bytes()
@@ -796,6 +836,36 @@ def verify_iinkuiref_instruction_bytes(path: pathlib.Path) -> list[str]:
             problems.append(
                 f"libiinkuiref instruction at 0x{vma:x}: {actual.hex()}, "
                 f"expected {expected.hex()}"
+            )
+    return problems
+
+
+def verify_iinkuiref_image_painter_vtable(path: pathlib.Path) -> list[str]:
+    """Verify the exact primary table header/method relocations we shadow."""
+    data = path.read_bytes()
+    segments = load_segments(path)
+    problems: list[str] = []
+    try:
+        offset_to_top = read_word(data, segments, 0x4FE38)
+    except ValueError as exc:
+        problems.append(str(exc))
+    else:
+        if offset_to_top != 0:
+            problems.append(
+                "libiinkuiref ImagePainter vtable offset-to-top is "
+                f"0x{offset_to_top:x}, expected 0"
+            )
+
+    found = relocations(path)
+    for offset, expected_symbol in (
+        EXPECTED_IINKUIREF_IMAGE_PAINTER_VTABLE_RELOCATIONS.items()
+    ):
+        actual = found.get(offset)
+        expected = ("R_ARM_ABS32", expected_symbol)
+        if actual != expected:
+            problems.append(
+                "libiinkuiref ImagePainter vtable relocation at "
+                f"0x{offset:x}: {actual!r}, expected {expected!r}"
             )
     return problems
 
@@ -931,6 +1001,7 @@ def main() -> int:
     failures.extend(verify_iinknote_instruction_bytes(args.iinknote))
     failures.extend(verify_nickel_instruction_bytes(args.nickel))
     failures.extend(verify_iinkuiref_instruction_bytes(args.iinkuiref))
+    failures.extend(verify_iinkuiref_image_painter_vtable(args.iinkuiref))
 
     if failures:
         print("Layer ABI verification FAILED", file=sys.stderr)
@@ -945,7 +1016,9 @@ def main() -> int:
         f"symbols, {len(VTABLE_SIZES)} vtable size, and {slot_count} "
         f"vtable slots plus "
         f"{len(PINNED_INSTRUCTIONS) + len(PINNED_IINKNOTE_INSTRUCTIONS) + len(PINNED_NICKEL_INSTRUCTIONS) + len(PINNED_IINKUIREF_INSTRUCTIONS)} "
-        f"instruction pins and {len(EXPECTED_NICKEL_JUMP_SLOTS)} jump slots "
+        f"instruction pins, {len(EXPECTED_NICKEL_JUMP_SLOTS)} jump slots, and "
+        f"{len(EXPECTED_IINKUIREF_IMAGE_PAINTER_VTABLE_RELOCATIONS)} "
+        "ImagePainter vtable relocations "
         "match pinned libraries"
     )
     return 0

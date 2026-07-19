@@ -265,6 +265,15 @@ typedef void (*ImagePainterDeletingDestructor)(void* painter);
 typedef void (*ImagePainterSetImageLoader)(
     void* painter,
     SharedImageLoader loader);
+// myscript::iink::uireferenceimplementation::ImagePainter::getImage() const.
+// Returns a QImage by value: AAPCS places the hidden return-slot pointer in r0
+// and the object pointer in r1. The result is a normal implicitly shared QImage
+// that outlives the painter and its internal shared_ptr<QImage>.
+typedef void (*ImagePainterGetImage)(void* resultImage, void const* painter);
+// ImagePainter::saveImage(myscript::iink::String const&). r0 is the object and
+// r1 is the String reference. The interception thunk delegates to this exact
+// stock virtual when in-memory capture is unavailable.
+typedef void (*ImagePainterSaveImage)(void* painter, void const* pathString);
 // AAPCS shape of libiink's exported make_shared helper: r0 is the result,
 // r1/r2 are empty tag/allocator placeholders, r3 is &engine, then painter and
 // configuration references occupy the first two stack words.

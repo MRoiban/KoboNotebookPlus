@@ -4,6 +4,7 @@
 #include "cover_cache.h"
 #include "covermenureceiver.h"
 #include "firmware_api.h"
+#include "notebook_sleep.h"
 #include "notebook_widget.h"
 #include "settings.h"
 
@@ -172,6 +173,55 @@ void addPageContribution(
     } else {
         trace("pages: native move-later menu item creation failed");
     }
+}
+
+bool addSleepPinContribution(
+        FirmwareApi& firmware,
+        notebook_sleep::RuntimeState& sleepState,
+        void* controller,
+        QObject* controllerObject,
+        QMenu* menu,
+        QPixmap const& noIcon,
+        QString const& text,
+        int maximumPageCount) {
+    if (text.isEmpty())
+        return false;
+
+    CoverMenuReceiver* const receiver = new CoverMenuReceiver(
+        controllerObject, menu);
+    notebook_sleep::RuntimeState* const sleepStatePointer = &sleepState;
+    QObject::connect(
+        receiver,
+        &CoverMenuReceiver::sleepPagePinRequested,
+        [sleepStatePointer, maximumPageCount](QObject* target) {
+            if (target) {
+                notebook_sleep::togglePinnedPageForController(
+                    *sleepStatePointer, target, maximumPageCount);
+            }
+        });
+
+    QWidget* const item = firmware.createIInkMenuItem(
+        controller,
+        menu,
+        text,
+        noIcon,
+        false);
+    if (!item) {
+        receiver->deleteLater();
+        trace("notebook-sleep: native pin menu item creation failed");
+        return false;
+    }
+    firmware.addWidgetActionOriginal(
+        controller,
+        menu,
+        item,
+        receiver,
+        SLOT(activateSleepPagePin()),
+        true,
+        true,
+        true);
+    trace("notebook-sleep: native pin menu item added");
+    return true;
 }
 
 } // namespace notebook_menu

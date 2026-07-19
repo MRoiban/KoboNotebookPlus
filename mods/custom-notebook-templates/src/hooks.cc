@@ -323,6 +323,13 @@ void _cnt_add_widget_action_hook(
     menu->setProperty("_cnt_notebook_actions_added", true);
     QObject* const controllerObject = reinterpret_cast<QObject*>(controller);
     QPixmap noIcon;
+    QString const sleepPinText = layerState().hooksReady
+            && pluginState().notebookSleep.coreHooksReady
+        ? cnt::notebook_sleep::pinnedPageMenuText(
+            pluginState().notebookSleep,
+            controllerObject,
+            maximumNotebookPages())
+        : QString();
 
     cnt::notebook_menu::addCoverContribution(
         firmwareApi(),
@@ -369,12 +376,24 @@ void _cnt_add_widget_action_hook(
                 SLOT(activateLayers()),
                 true,
                 true,
-                true);
+                sleepPinText.isEmpty());
             trace("layers: native notebook menu item added");
         } else {
             layerReceiver->deleteLater();
             trace("layers: native menu item creation failed");
         }
+    }
+
+    if (!sleepPinText.isEmpty()) {
+        cnt::notebook_menu::addSleepPinContribution(
+            firmwareApi(),
+            pluginState().notebookSleep,
+            controller,
+            controllerObject,
+            menu,
+            noIcon,
+            sleepPinText,
+            maximumNotebookPages());
     }
 
     if (pluginState().pages.hooksReady) {

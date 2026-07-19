@@ -98,6 +98,16 @@ static char const kImagePainterDeletingDestructorSymbol[] =
     "_ZN8myscript4iink25uireferenceimplementation12ImagePainterD0Ev";
 static char const kImagePainterSetImageLoaderSymbol[] =
     "_ZN8myscript4iink25uireferenceimplementation12ImagePainter14setImageLoaderESt10shared_ptrINS1_11ImageLoaderEE";
+static char const kImagePainterGetImageSymbol[] =
+    "_ZNK8myscript4iink25uireferenceimplementation12ImagePainter8getImageEv";
+static char const kImagePainterSaveImageSymbol[] =
+    "_ZN8myscript4iink25uireferenceimplementation12ImagePainter9saveImageERKNS0_6StringE";
+static char const kImagePainterPrepareImageSymbol[] =
+    "_ZN8myscript4iink25uireferenceimplementation12ImagePainter12prepareImageEiif";
+static char const kImagePainterCreateCanvasSymbol[] =
+    "_ZN8myscript4iink25uireferenceimplementation12ImagePainter12createCanvasEv";
+static char const kImagePainterVtableSymbol[] =
+    "_ZTVN8myscript4iink25uireferenceimplementation12ImagePainterE";
 static char const kUirefEditorWidgetVtableSymbol[] =
     "_ZTVN8myscript4iink25uireferenceimplementation12EditorWidgetE";
 static char const kPageControllerInputDispatcherSymbol[] =
@@ -205,6 +215,20 @@ static uintptr_t const kStockBackendImageDrawerExportVma = 0x47b090;
 static uintptr_t const kImagePainterConstructorVma = 0x28b48;
 static uintptr_t const kImagePainterDeletingDestructorVma = 0x29948;
 static uintptr_t const kImagePainterSetImageLoaderVma = 0x28a60;
+// In-memory capture pins (ELF-relative, libiinkuiref). getImage returns the
+// rendered QImage without encoding. The shadow-vtable interception replaces the
+// concrete saveImage slot with a plugin thunk; the remaining method VMAs are
+// validated against the resolved concrete vtable before any slot is patched, so
+// a firmware drift fails closed onto the existing PNG path.
+static uintptr_t const kImagePainterGetImageVma = 0x28b38;
+static uintptr_t const kImagePainterSaveImageVma = 0x28354;
+static uintptr_t const kImagePainterPrepareImageVma = 0x28254;
+static uintptr_t const kImagePainterCreateCanvasVma = 0x28bb4;
+// Concrete ImagePainter primary vtable symbol. Its address point is symbol+8;
+// slots run destructor D1 (+0x00), D0 (+0x04), prepareImage (+0x08),
+// saveImage (+0x0c), createCanvas (+0x10), MyScriptLeakDetectable::context
+// (+0x14). Only the saveImage slot is replaced.
+static uintptr_t const kImagePainterVtableVma = 0x4fe38;
 static uintptr_t const kUirefEditorWidgetVtableVma = 0x50000;
 static uintptr_t const kPageControllerInputDispatcherVma = 0x501960;
 static uintptr_t const kPlatformInputDispatcherGetCurrentToolVma = 0x5bc80c;

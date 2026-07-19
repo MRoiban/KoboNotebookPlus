@@ -12,6 +12,7 @@
 #include <string>
 
 class QObject;
+class QImage;
 
 namespace cnt {
 namespace layers {
@@ -67,6 +68,16 @@ struct RuntimeState {
 
     QHash<QString, LayerPreviewCardCacheEntry> previewCardCache;
     quint64 previewCardCacheSequence = 0;
+
+    // Synchronous, single-GUI-thread channel used by the ImagePainter saveImage
+    // interception. The exporter arms this immediately around one exportToPNG
+    // call and disarms it afterward; the thunk consults it via pluginState().
+    // A non-null sink plus a matching painter object means "capture the
+    // rendered QImage instead of encoding a PNG".
+    QImage* sleepCaptureSink = nullptr;
+    void* sleepCapturePainter = nullptr;
+    bool sleepCaptureArmed = false;
+    bool sleepCaptureCaptured = false;
 
     bool hooksReady = false;
     bool previewApisReady = false;

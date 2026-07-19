@@ -83,6 +83,12 @@ int notebookArchiveContainsLayerId(
     QString const& notebookPath,
     QString const& partId,
     QString const& layerId);
+// Return 1 when the exact page metadata entry exists, 0 when the archive was
+// read successfully without it, and -1 when the archive could not be checked.
+int notebookArchiveContainsPageId(
+    State const& state,
+    QString const& notebookPath,
+    QString const& partId);
 int countNotebookPageEntries(State const& state, QString const& notebookPath);
 bool openNotebookHasPluginCover(
     State const& state,

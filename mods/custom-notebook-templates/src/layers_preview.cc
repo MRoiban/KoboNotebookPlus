@@ -5,6 +5,8 @@
 #include "layers_state.h"
 #include "notebook_widget.h"
 #include "page_io.h"
+#include "plugin_runtime.h"
+#include "plugin_state.h"
 #include "settings.h"
 
 #include <QByteArray>
@@ -364,6 +366,7 @@ public:
         SharedRenderer const& liveRenderer,
         void* backend,
         bool* writerInvoked,
+        bool* writerSucceeded,
         ExtentOpaque* renderedExtent,
         bool* extentCaptured)
         : firmware_(firmware),
@@ -373,6 +376,7 @@ public:
           liveRenderer_(liveRenderer),
           backend_(backend),
           writerInvoked_(writerInvoked),
+          writerSucceeded_(writerSucceeded),
           renderedExtent_(renderedExtent),
           extentCaptured_(extentCaptured) {}
 
@@ -386,6 +390,8 @@ public:
         std::string const& path) {
         if (writerInvoked_)
             *writerInvoked_ = false;
+        if (writerSucceeded_)
+            *writerSucceeded_ = false;
         if (extentCaptured_)
             *extentCaptured_ = false;
         if (!firmware_->stockBackendImageDrawerExport || !drawer_ || !backend_)
@@ -400,6 +406,8 @@ public:
         try {
             firmware_->stockBackendImageDrawerExport(
                 callback.bytes, renderer, selection, extent, flags, path);
+            if (writerSucceeded_)
+                *writerSucceeded_ = true;
         } catch (...) {
             trace("notebook-sleep: stock current-page writer threw");
         }
@@ -413,6 +421,7 @@ private:
     SharedRenderer liveRenderer_;
     void* backend_;
     bool* writerInvoked_;
+    bool* writerSucceeded_;
     ExtentOpaque* renderedExtent_;
     bool* extentCaptured_;
 };
@@ -691,6 +700,170 @@ static bool generateLayerPreview(
     return true;
 }
 
+// Raw storage for the hidden QImage return value. The firmware copy-constructs
+// a QImage into this slot; starting with an already-constructed null QImage
+// would still overwrite a live C++ object even though its internal pointer is
+// null. This wrapper models the AAPCS result slot exactly and destroys the
+// firmware-constructed value once the sink has taken its implicit-share copy.
+class QImageReturnSlot {
+public:
+    QImageReturnSlot() : constructed_(false) {}
+
+    ~QImageReturnSlot() {
+        if (constructed_)
+            image()->~QImage();
+    }
+
+    void* storage() { return bytes_; }
+
+    void markConstructed() { constructed_ = true; }
+
+    QImage* image() {
+        return reinterpret_cast<QImage*>(bytes_);
+    }
+
+private:
+    alignas(QImage) unsigned char bytes_[sizeof(QImage)];
+    bool constructed_;
+
+    QImageReturnSlot(QImageReturnSlot const&);
+    QImageReturnSlot& operator=(QImageReturnSlot const&);
+};
+
+// Concrete ImagePainter::saveImage replacement. It is installed only through a
+// per-instance shadow of the primary vtable and only while a sleep export is
+// armed on this exact painter object. On success it copies the fully rendered
+// QImage out of the painter and skips PNG encoding entirely; on any doubt it
+// calls the exact stock saveImage, so a real PNG is still produced and the
+// caller's file fallback stays valid.
+static void interceptImagePainterSaveImage(
+        void* self, void const* pathString) {
+    FirmwareApi& firmware = firmwareApi();
+    cnt::layers::RuntimeState& runtime = pluginState().layers;
+    if (runtime.sleepCaptureArmed
+            && self == runtime.sleepCapturePainter
+            && runtime.sleepCaptureSink
+            && firmware.imagePainterGetImage) {
+        try {
+            // getImage returns a QImage by value (hidden result in r0, this in
+            // r1). The result is a normal implicitly shared copy that outlives
+            // the painter and its internal shared_ptr<QImage>.
+            QImageReturnSlot captured;
+            firmware.imagePainterGetImage(captured.storage(), self);
+            captured.markConstructed();
+            if (!captured.image()->isNull()) {
+                *runtime.sleepCaptureSink = *captured.image();
+                runtime.sleepCaptureCaptured = true;
+                return;
+            }
+        } catch (...) {
+            trace("notebook-sleep: in-memory capture threw; deferring to PNG");
+        }
+    }
+    if (firmware.imagePainterSaveImage)
+        firmware.imagePainterSaveImage(self, pathString);
+}
+
+// RAII installer for the one-slot shadow vtable. The shadow copies the concrete
+// primary vtable header (offset-to-top and RTTI) plus all six method slots and
+// replaces only saveImage (slot +0x0c). The object's primary vptr is repointed
+// at the shadow for the duration of one synchronous export and restored on
+// scope exit; the secondary MyScriptLeakDetectable vptr at object +0x0c is left
+// untouched.
+class ShadowSaveVtableGuard {
+public:
+    ShadowSaveVtableGuard(FirmwareApi& firmware, void* painterObject)
+        : objectVptrSlot_(nullptr), originalVptr_(nullptr) {
+        if (!firmware.inMemoryCaptureReady
+                || !firmware.imagePainterVtableAddressPoint
+                || !painterObject) {
+            return;
+        }
+        void** const addressPoint = firmware.imagePainterVtableAddressPoint;
+        void** const objectVptrSlot = reinterpret_cast<void**>(painterObject);
+        void* const originalVptr = *objectVptrSlot;
+        if (originalVptr != addressPoint)
+            return;
+        for (int i = 0; i < 8; ++i)
+            shadow_[i] = addressPoint[i - 2];
+        union {
+            ImagePainterSaveImage function;
+            void* pointer;
+        } replacement = {};
+        replacement.function = &interceptImagePainterSaveImage;
+        shadow_[5] = reinterpret_cast<void*>(
+            reinterpret_cast<uintptr_t>(replacement.pointer) | 1);
+        objectVptrSlot_ = objectVptrSlot;
+        originalVptr_ = originalVptr;
+        *objectVptrSlot_ = reinterpret_cast<void*>(&shadow_[2]);
+    }
+
+    ~ShadowSaveVtableGuard() { restore(); }
+
+    bool installed() const { return objectVptrSlot_ != nullptr; }
+
+    void restore() {
+        if (!objectVptrSlot_)
+            return;
+        *objectVptrSlot_ = originalVptr_;
+        objectVptrSlot_ = nullptr;
+        originalVptr_ = nullptr;
+    }
+
+private:
+    void* shadow_[8];
+    void** objectVptrSlot_;
+    void* originalVptr_;
+
+    ShadowSaveVtableGuard(ShadowSaveVtableGuard const&);
+    ShadowSaveVtableGuard& operator=(ShadowSaveVtableGuard const&);
+};
+
+// The export callback is synchronous on Nickel's GUI thread. Keep the global
+// hand-off pointer valid for exactly that lexical interval, refuse nested
+// arming, and clear every field even if a later operation returns early.
+class SleepCaptureChannelGuard {
+public:
+    SleepCaptureChannelGuard(
+            layers::RuntimeState& runtime,
+            void* painter,
+            QImage* sink,
+            bool enabled)
+        : runtime_(nullptr) {
+        if (!enabled || !painter || !sink || runtime.sleepCaptureArmed)
+            return;
+        runtime.sleepCaptureSink = sink;
+        runtime.sleepCapturePainter = painter;
+        runtime.sleepCaptureCaptured = false;
+        runtime.sleepCaptureArmed = true;
+        runtime_ = &runtime;
+    }
+
+    ~SleepCaptureChannelGuard() { disarm(); }
+
+    bool armed() const { return runtime_ != nullptr; }
+
+    bool captured() const {
+        return runtime_ && runtime_->sleepCaptureCaptured;
+    }
+
+    void disarm() {
+        if (!runtime_)
+            return;
+        runtime_->sleepCaptureArmed = false;
+        runtime_->sleepCaptureSink = nullptr;
+        runtime_->sleepCapturePainter = nullptr;
+        runtime_->sleepCaptureCaptured = false;
+        runtime_ = nullptr;
+    }
+
+private:
+    layers::RuntimeState* runtime_;
+
+    SleepCaptureChannelGuard(SleepCaptureChannelGuard const&);
+    SleepCaptureChannelGuard& operator=(SleepCaptureChannelGuard const&);
+};
+
 static bool exportCurrentPageImageImpl(
         Dependencies const& dependencies,
         QObject* notebookWidget,
@@ -783,6 +956,7 @@ static bool exportCurrentPageImageImpl(
         + QLatin1String(".png"));
     QFile::remove(path);
     bool writerInvoked = false;
+    bool writerSucceeded = false;
     bool extentCaptured = false;
     std::shared_ptr<FullPageRendererListener> const proxy =
         std::make_shared<FullPageRendererListener>(
@@ -793,54 +967,138 @@ static bool exportCurrentPageImageImpl(
             rendererKeepAlive,
             backend,
             &writerInvoked,
+            &writerSucceeded,
             extent,
             &extentCaptured);
     SharedRendererListener const opaqueProxy(
         proxy,
         reinterpret_cast<RendererListenerOpaque*>(proxy.get()));
 
-    bool exported = false;
-    try {
-        std::string const output = path.toUtf8().constData();
-        exported = firmware.pageControllerExportToPng(
-            pageController, SharedBox(), output, opaqueProxy, 0);
-    } catch (...) {
-        exported = false;
+    // Arm in-memory capture around this one export. When the shadow vtable
+    // installs, the save thunk copies the rendered QImage and skips PNG
+    // encoding; we pre-create the output path so BackendImageDrawer's post-save
+    // existence check still succeeds. Any failure disarms cleanly and the stock
+    // saveImage writes a real PNG that the file path below decodes as before.
+    layers::RuntimeState& runtime = *dependencies.runtime;
+    QImage capturedImage;
+    ShadowSaveVtableGuard shadowGuard(firmware, painter.get());
+    bool sentinelReady = false;
+    if (shadowGuard.installed()) {
+        QFile sentinel(path);
+        if (sentinel.open(QIODevice::WriteOnly)) {
+            sentinel.close();
+            sentinelReady = QFileInfo(path).isFile();
+        }
+    }
+    SleepCaptureChannelGuard captureGuard(
+        runtime,
+        painter.get(),
+        &capturedImage,
+        shadowGuard.installed() && sentinelReady);
+    if (!captureGuard.armed())
+        shadowGuard.restore();
+
+    auto exportOnce = [&]() -> bool {
+        try {
+            std::string const output = path.toUtf8().constData();
+            return firmware.pageControllerExportToPng(
+                pageController, SharedBox(), output, opaqueProxy, 0);
+        } catch (...) {
+            return false;
+        }
+    };
+    QElapsedTimer stageTimer;
+    stageTimer.start();
+    bool exported = exportOnce();
+    qint64 exportMs = stageTimer.elapsed();
+
+    bool captured = captureGuard.armed()
+        && captureGuard.captured()
+        && !capturedImage.isNull();
+    bool const capturedSizeInvalid = captured
+        && (capturedImage.width() <= 0 || capturedImage.height() <= 0
+            || capturedImage.width() > 4096 || capturedImage.height() > 4096);
+    bool const retryPng = captureGuard.armed()
+        && (!exported || !writerInvoked || !writerSucceeded
+            || !extentCaptured || capturedSizeInvalid);
+    captureGuard.disarm();
+    shadowGuard.restore();
+
+    if (retryPng) {
+        trace("notebook-sleep: in-memory export incomplete; retrying PNG");
+        QFile::remove(path);
+        capturedImage = QImage();
+        writerInvoked = false;
+        writerSucceeded = false;
+        extentCaptured = false;
+        stageTimer.restart();
+        exported = exportOnce();
+        exportMs += stageTimer.elapsed();
+        captured = false;
     }
 
-    QFileInfo const generated(path);
-    if (!exported || !writerInvoked || !extentCaptured || !generated.isFile()
-            || generated.size() <= 0
-            || generated.size() > pins.maximumLayerPreviewBytes) {
+    if (!exported || !writerInvoked || !writerSucceeded || !extentCaptured) {
         QFile::remove(path);
         if (error) {
             *error = QLatin1String(
-                "Notebook sleep page unavailable: renderer produced no valid PNG.");
+                "Notebook sleep page unavailable: renderer produced no valid image.");
         }
         return false;
     }
-    QImageReader reader(path);
-    QSize const decodedSize = reader.size();
-    if (!decodedSize.isValid() || decodedSize.width() > 4096
-            || decodedSize.height() > 4096) {
+
+    qint64 decodeMs = 0;
+    qint64 pngBytes = 0;
+    QImage result;
+    if (captured) {
+        // The sentinel file is empty; MyScript only needed it to exist.
         QFile::remove(path);
-        if (error) {
-            *error = QLatin1String(
-                "Notebook sleep page unavailable: rendered size is invalid.");
+        result = capturedImage;
+    } else {
+        QFileInfo const generated(path);
+        if (!generated.isFile() || generated.size() <= 0
+                || generated.size() > pins.maximumLayerPreviewBytes) {
+            QFile::remove(path);
+            if (error) {
+                *error = QLatin1String(
+                    "Notebook sleep page unavailable: renderer produced no valid PNG.");
+            }
+            return false;
         }
-        return false;
-    }
-    QImage const decoded = reader.read();
-    QFile::remove(path);
-    if (decoded.isNull()) {
-        if (error) {
-            *error = QLatin1String(
-                "Notebook sleep page unavailable: rendered PNG is unreadable.");
+        QImageReader reader(path);
+        QSize const decodedSize = reader.size();
+        if (!decodedSize.isValid() || decodedSize.width() > 4096
+                || decodedSize.height() > 4096) {
+            QFile::remove(path);
+            if (error) {
+                *error = QLatin1String(
+                    "Notebook sleep page unavailable: rendered size is invalid.");
+            }
+            return false;
         }
-        return false;
+        stageTimer.restart();
+        result = reader.read();
+        decodeMs = stageTimer.elapsed();
+        pngBytes = generated.size();
+        QFile::remove(path);
+        if (result.isNull()) {
+            if (error) {
+                *error = QLatin1String(
+                    "Notebook sleep page unavailable: rendered PNG is unreadable.");
+            }
+            return false;
+        }
     }
-    *image = decoded;
-    trace("notebook-sleep: current page exported with isolated renderer");
+
+    *image = result;
+    trace(QLatin1String(
+            "notebook-sleep: current page exported with isolated renderer")
+        + QLatin1String(" capture=")
+        + (captured ? QLatin1String("memory") : QLatin1String("png"))
+        + QLatin1String(" exportMs=") + QString::number(exportMs)
+        + QLatin1String(" decodeMs=") + QString::number(decodeMs)
+        + QLatin1String(" pngBytes=") + QString::number(pngBytes)
+        + QLatin1String(" png=") + QString::number(result.width())
+        + QLatin1Char('x') + QString::number(result.height()));
     return true;
 }
 

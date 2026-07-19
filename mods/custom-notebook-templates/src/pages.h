@@ -29,6 +29,13 @@ SharedDocument documentForPart(
     FirmwareApi& firmware,
     SharedPart const& part);
 
+// Return MyScript's stable content-part identifier for a notebook page. The
+// identifier survives page reordering and is therefore suitable for metadata
+// references which must not depend on a transient page index.
+QString partStableId(
+    FirmwareApi& firmware,
+    SharedPart const& part);
+
 bool loadPageContext(
     FirmwareApi& firmware,
     void* widget,

@@ -5,6 +5,7 @@
 #include "firmware_resolver.h"
 #include "layers_preview.h"
 #include "notebook_widget.h"
+#include "notebooksleeprefreshreceiver.h"
 #include "notebooksleepsettingsreceiver.h"
 #include "pages.h"
 #include "plugin_runtime.h"
@@ -14,10 +15,18 @@
 #include <NickelHook.h>
 
 #include <QBoxLayout>
+#include <QCoreApplication>
 #include <QDateTime>
+#include <QDir>
+#include <QElapsedTimer>
+#include <QEvent>
 #include <QFile>
 #include <QFileInfo>
 #include <QImageReader>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonParseError>
+#include <QJsonValue>
 #include <QLocale>
 #include <QMap>
 #include <QObject>
@@ -25,6 +34,7 @@
 #include <QPoint>
 #include <QRegion>
 #include <QRectF>
+#include <QSaveFile>
 #include <QSize>
 #include <QTransform>
 #include <QVariant>
@@ -62,7 +72,14 @@ enum LayoutPin {
     FallbackScreenWidth = 1404,
     FallbackScreenHeight = 1872,
     MaximumBackgroundPngBytes = 32 * 1024 * 1024,
+    MaximumPinnedStateBytes = 4096,
+    MaximumPinnedPartIdCharacters = 128,
 };
+
+char const kPinnedPageStatePath[] =
+    "/mnt/onboard/.kobo/custom/templates/pinned-sleep-page.json";
+char const kPinnedPageImagePath[] =
+    "/mnt/onboard/.kobo/custom/templates/pinned-sleep-page.png";
 
 template <typename Function>
 void* functionPointer(Function function) {
@@ -96,6 +113,240 @@ bool installPinnedHook(
     value.pointer = hooked;
     *original = value.function;
     return true;
+}
+
+static bool validPinnedPartId(QString const& id) {
+    if (id.isEmpty() || id.size() > MaximumPinnedPartIdCharacters)
+        return false;
+    for (int i = 0; i < id.size(); ++i) {
+        ushort const value = id.at(i).unicode();
+        bool const letter = (value >= 'a' && value <= 'z')
+            || (value >= 'A' && value <= 'Z');
+        bool const digit = value >= '0' && value <= '9';
+        if (!(letter || digit || value == '-' || value == '_'
+                || value == '.')) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool validPinnedNotebookPath(QString const& path) {
+    return !path.isEmpty()
+        && path == QDir::cleanPath(path)
+        && path.startsWith(QLatin1String("/mnt/onboard/"))
+        && path.endsWith(QLatin1String(".nebo"), Qt::CaseInsensitive)
+        && !path.contains(QLatin1String("/../"));
+}
+
+static QString canonicalNotebookPath(QString const& path) {
+    QFileInfo const info(path);
+    QString const canonical = info.canonicalFilePath();
+    return QDir::cleanPath(canonical.isEmpty()
+        ? info.absoluteFilePath() : canonical);
+}
+
+static void clearPinnedPageMemory(
+        cnt::notebook_sleep::RuntimeState& state) {
+    state.pinnedNotebookPath.clear();
+    state.pinnedPartId.clear();
+    state.pinnedPageImage = QImage();
+    state.pinnedPageGeneration = 0;
+    state.pinnedPageValid = false;
+    state.pinnedPageImageLoaded = false;
+    state.pinnedPageRenderedInSession = false;
+}
+
+static void loadPinnedPageState(
+        cnt::notebook_sleep::RuntimeState& state) {
+    if (state.pinnedPageLoaded)
+        return;
+    state.pinnedPageLoaded = true;
+    clearPinnedPageMemory(state);
+
+    QString const statePath = QLatin1String(kPinnedPageStatePath);
+    QFile file(statePath);
+    QFileInfo const info(file);
+    if (!info.exists()) {
+        cnt::trace("notebook-sleep: no pinned page");
+        return;
+    }
+    if (!info.isFile() || info.size() < 1
+            || info.size() > MaximumPinnedStateBytes
+            || !file.open(QIODevice::ReadOnly)) {
+        cnt::trace("notebook-sleep: pinned page state unreadable; preserving file");
+        return;
+    }
+
+    QJsonParseError parseError;
+    QJsonDocument const document = QJsonDocument::fromJson(
+        file.readAll(), &parseError);
+    if (parseError.error != QJsonParseError::NoError
+            || !document.isObject()) {
+        cnt::trace("notebook-sleep: pinned page state malformed; preserving file");
+        return;
+    }
+    QJsonObject const object = document.object();
+    QJsonValue const versionValue = object.value(QLatin1String("version"));
+    double const version = versionValue.toDouble(-1.0);
+    QString const notebookPath = object.value(
+        QLatin1String("notebookPath")).toString();
+    QString const partId = object.value(
+        QLatin1String("partId")).toString();
+    if (version != 1.0
+            || !validPinnedNotebookPath(notebookPath)
+            || !validPinnedPartId(partId)) {
+        cnt::trace("notebook-sleep: pinned page state invalid; preserving file");
+        return;
+    }
+
+    state.pinnedNotebookPath = notebookPath;
+    state.pinnedPartId = partId;
+    state.pinnedPageValid = true;
+    cnt::trace("notebook-sleep: pinned page state restored");
+}
+
+static bool removePinnedPageState(
+        cnt::notebook_sleep::RuntimeState& state) {
+    QString const statePath = QLatin1String(kPinnedPageStatePath);
+    if (QFileInfo(statePath).exists() && !QFile::remove(statePath))
+        return false;
+
+    QString const imagePath = QLatin1String(kPinnedPageImagePath);
+    if (QFileInfo(imagePath).exists() && !QFile::remove(imagePath)) {
+        cnt::trace("notebook-sleep: orphaned pinned image could not be removed");
+    }
+    clearPinnedPageMemory(state);
+    state.pinnedPageLoaded = true;
+    return true;
+}
+
+static void discardUnavailablePinnedPage(
+        cnt::notebook_sleep::RuntimeState& state,
+        char const* reason) {
+    if (!removePinnedPageState(state)) {
+        clearPinnedPageMemory(state);
+        state.pinnedPageLoaded = true;
+        cnt::trace("notebook-sleep: stale pinned state could not be removed");
+    }
+    cnt::trace(reason);
+}
+
+static bool persistPinnedPageState(
+        cnt::notebook_sleep::RuntimeState& state,
+        QString const& notebookPath,
+        QString const& partId) {
+    if (!validPinnedNotebookPath(notebookPath)
+            || !validPinnedPartId(partId)
+            || !QDir().mkpath(QLatin1String(
+                "/mnt/onboard/.kobo/custom/templates/"))) {
+        return false;
+    }
+
+    // A fixed cache filename is safe only after the previous identity's frame
+    // is gone. If it cannot be removed, preserve the old pin rather than risk
+    // associating that bitmap with the new page.
+    QString const imagePath = QLatin1String(kPinnedPageImagePath);
+    if (QFileInfo(imagePath).exists() && !QFile::remove(imagePath))
+        return false;
+
+    QString const statePath = QLatin1String(kPinnedPageStatePath);
+    QSaveFile file(statePath);
+    if (!file.open(QIODevice::WriteOnly))
+        return false;
+    QJsonObject object;
+    object.insert(QLatin1String("version"), 1);
+    object.insert(QLatin1String("notebookPath"), notebookPath);
+    object.insert(QLatin1String("partId"), partId);
+    QByteArray bytes = QJsonDocument(object).toJson(QJsonDocument::Compact);
+    bytes.append('\n');
+    if (file.write(bytes) != bytes.size() || !file.commit())
+        return false;
+
+    clearPinnedPageMemory(state);
+    state.pinnedPageLoaded = true;
+    state.pinnedNotebookPath = notebookPath;
+    state.pinnedPartId = partId;
+    state.pinnedPageValid = true;
+    return true;
+}
+
+static bool currentPageIdentity(
+        QObject* controller,
+        int maximumPageCount,
+        QObject** widgetResult,
+        QString* notebookPath,
+        QString* partId,
+        QString* error) {
+    if (widgetResult)
+        *widgetResult = nullptr;
+    if (notebookPath)
+        notebookPath->clear();
+    if (partId)
+        partId->clear();
+
+    QObject* const widget = cnt::notebook_widget::findNotebookWidget(controller);
+    if (!widget) {
+        if (error)
+            *error = QLatin1String("Sleep page not changed: notebook is not ready.");
+        return false;
+    }
+    if (widgetResult)
+        *widgetResult = widget;
+    try {
+        FirmwareApi& firmware = firmwareApi();
+        if (!firmware.editorGetPart || !firmware.partGetPackage
+                || !firmware.packagePartCount || !firmware.packageIndexOfPart
+                || !firmware.widgetFilePath || !firmware.partGetId
+                || !firmware.iinkStringToStdString) {
+            if (error) {
+                *error = QLatin1String(
+                    "Sleep page not changed: firmware APIs are unavailable.");
+            }
+            return false;
+        }
+        void* const editor = cnt::notebook_widget::notePadEditor(widget);
+        void* const editorControl =
+            cnt::notebook_widget::notePadEditorControl(widget);
+        SharedPart const part = editor && editorControl
+            ? firmware.editorGetPart(editor) : SharedPart();
+        SharedPackage const package = part
+            ? firmware.partGetPackage(part.get()) : SharedPackage();
+        int const count = package
+            ? firmware.packagePartCount(package.get()) : 0;
+        int const index = package
+            ? firmware.packageIndexOfPart(package.get(), part) : -1;
+        if (!part || !package || count < 1 || count > maximumPageCount
+                || index < 0 || index >= count) {
+            if (error) {
+                *error = QLatin1String(
+                    "Sleep page not changed: current page could not be verified.");
+            }
+            return false;
+        }
+        QString const path = canonicalNotebookPath(
+            firmware.widgetFilePath(widget));
+        QString const id = cnt::pages::partStableId(
+            firmware, part);
+        if (!validPinnedNotebookPath(path) || !validPinnedPartId(id)) {
+            if (error) {
+                *error = QLatin1String(
+                    "Sleep page not changed: notebook identity is invalid.");
+            }
+            return false;
+        }
+        if (notebookPath)
+            *notebookPath = path;
+        if (partId)
+            *partId = id;
+        return true;
+    } catch (...) {
+        if (error) {
+            *error = QLatin1String(
+                "Sleep page not changed: notebook engine rejected the request.");
+        }
+        return false;
+    }
 }
 
 static bool activeNotebookWidget(QWidget* widget) {
@@ -150,6 +401,54 @@ static QString condorVariantPath(QString const& basePath) {
     path.chop(4);
     path.append(QLatin1String("_condor.png"));
     return path;
+}
+
+static void invalidateCurrentPageCache(
+        cnt::notebook_sleep::RuntimeState& state) {
+    state.cachedPageImage = QImage();
+    state.cachedPagePath.clear();
+    state.cachedPageIndex = -1;
+    state.cachedPageValid = false;
+}
+
+static int currentPageIndex(QWidget* widget) {
+    cnt::pages::PageContext context;
+    QString error;
+    if (!cnt::pages::loadPageContext(
+            firmwareApi(), widget, maximumNotebookPages(), &context, &error)) {
+        return -1;
+    }
+    return context.index;
+}
+
+static void publishCurrentPageCache(
+        cnt::notebook_sleep::RuntimeState& state,
+        QImage const& image,
+        QString const& notebookPath,
+        int pageIndex,
+        quint64 generation) {
+    // The exporter runs synchronously on the GUI thread, but a firmware call
+    // could still have pumped events; publish only if nothing changed while
+    // the frame was rendered.
+    if (image.isNull() || pageIndex < 0 || generation != state.editGeneration)
+        return;
+    state.cachedPageImage = image;
+    state.cachedPagePath = notebookPath;
+    state.cachedPageIndex = pageIndex;
+    state.cachedPageGeneration = generation;
+    state.cachedPageValid = true;
+}
+
+static bool currentPageCacheMatches(
+        cnt::notebook_sleep::RuntimeState const& state,
+        QString const& notebookPath,
+        int pageIndex) {
+    return state.cachedPageValid
+        && !state.cachedPageImage.isNull()
+        && state.cachedPageGeneration == state.editGeneration
+        && state.cachedPagePath == notebookPath
+        && pageIndex >= 0
+        && state.cachedPageIndex == pageIndex;
 }
 
 static void clearBackgroundCache(
@@ -400,6 +699,282 @@ static QImage exportedCurrentPage(
     return QImage();
 }
 
+static QImage loadPinnedPageImage(
+        cnt::notebook_sleep::RuntimeState& state) {
+    if (state.pinnedPageImageLoaded)
+        return state.pinnedPageImage;
+    state.pinnedPageImageLoaded = true;
+    state.pinnedPageImage = QImage();
+
+    QString const imagePath = QLatin1String(kPinnedPageImagePath);
+    QFileInfo const info(imagePath);
+    if (!info.isFile() || info.size() <= 0
+            || info.size() > MaximumBackgroundPngBytes) {
+        return QImage();
+    }
+    QImageReader reader(imagePath);
+    if (reader.size() != QSize(FallbackScreenWidth, FallbackScreenHeight))
+        return QImage();
+    QImage const image = reader.read();
+    if (image.isNull()
+            || image.size() != QSize(
+                FallbackScreenWidth, FallbackScreenHeight)) {
+        return QImage();
+    }
+    state.pinnedPageImage = image.convertToFormat(QImage::Format_RGB32);
+    return state.pinnedPageImage;
+}
+
+static bool persistPinnedPageImage(QImage const& image) {
+    if (image.isNull()
+            || image.size() != QSize(
+                FallbackScreenWidth, FallbackScreenHeight)) {
+        return false;
+    }
+    QString const imagePath = QLatin1String(kPinnedPageImagePath);
+    QSaveFile file(imagePath);
+    if (!file.open(QIODevice::WriteOnly)
+            || !image.save(&file, "PNG")
+            || !file.commit()) {
+        return false;
+    }
+    return true;
+}
+
+enum PinnedRenderStatus {
+    PinnedRenderUnavailable,
+    PinnedRenderMissing,
+    PinnedRenderSucceeded,
+};
+
+class EditorPartRestoreGuard {
+public:
+    EditorPartRestoreGuard(
+            FirmwareApi& firmware,
+            void* editor,
+            SharedPart const& original)
+        : firmware_(&firmware), editor_(editor), original_(original), armed_(false) {}
+
+    ~EditorPartRestoreGuard() {
+        if (!armed_ || !firmware_ || !editor_ || !original_)
+            return;
+        try {
+            firmware_->editorSetPart(editor_, original_);
+            cnt::trace("notebook-sleep: pinned page renderer restored current page");
+        } catch (...) {
+            cnt::trace("notebook-sleep: pinned page renderer restore threw");
+        }
+    }
+
+    void arm() { armed_ = true; }
+
+private:
+    FirmwareApi* firmware_;
+    void* editor_;
+    SharedPart original_;
+    bool armed_;
+
+    EditorPartRestoreGuard(EditorPartRestoreGuard const&);
+    EditorPartRestoreGuard& operator=(EditorPartRestoreGuard const&);
+};
+
+static SharedPart findPinnedPart(
+        FirmwareApi& firmware,
+        SharedPackage const& package,
+        SharedPart const& current,
+        QString const& partId,
+        int maximumPageCount,
+        bool* determinate) {
+    if (determinate)
+        *determinate = false;
+    if (!package || !current || !validPinnedPartId(partId) || !determinate)
+        return SharedPart();
+    QString const currentId = cnt::pages::partStableId(firmware, current);
+    if (currentId.isEmpty())
+        return SharedPart();
+    if (currentId == partId) {
+        *determinate = true;
+        return current;
+    }
+
+    int const count = firmware.packagePartCount(package.get());
+    if (count < 1 || count > maximumPageCount)
+        return SharedPart();
+    for (int i = 0; i < count; ++i) {
+        SharedPart const candidate = firmware.packageGetPart(package.get(), i);
+        if (!candidate)
+            return SharedPart();
+        QString const candidateId = cnt::pages::partStableId(
+            firmware, candidate);
+        if (candidateId.isEmpty())
+            return SharedPart();
+        if (candidateId == partId) {
+            *determinate = true;
+            return candidate;
+        }
+    }
+    *determinate = true;
+    return SharedPart();
+}
+
+static PinnedRenderStatus renderPinnedPage(
+        cnt::notebook_sleep::RuntimeState& state,
+        QWidget* widget,
+        int maximumPageCount,
+        QImage* result) {
+    if (result)
+        *result = QImage();
+    if (!widget || !result || !cnt::notebook_widget::isNotebookWidget(widget))
+        return PinnedRenderUnavailable;
+
+    FirmwareApi& firmware = firmwareApi();
+    void* const editor = cnt::notebook_widget::notePadEditor(widget);
+    if (!editor || !firmware.editorGetPart || !firmware.partGetPackage
+            || !firmware.packagePartCount || !firmware.packageGetPart
+            || !firmware.editorSetPart) {
+        return PinnedRenderUnavailable;
+    }
+    try {
+        SharedPart const original = firmware.editorGetPart(editor);
+        SharedPackage const package = original
+            ? firmware.partGetPackage(original.get()) : SharedPackage();
+        if (!original || !package)
+            return PinnedRenderUnavailable;
+        bool partScanDeterminate = false;
+        SharedPart const target = findPinnedPart(
+            firmware,
+            package,
+            original,
+            state.pinnedPartId,
+            maximumPageCount,
+            &partScanDeterminate);
+        if (!target)
+            return partScanDeterminate
+                ? PinnedRenderMissing : PinnedRenderUnavailable;
+
+        EditorPartRestoreGuard restore(firmware, editor, original);
+        if (target.get() != original.get()) {
+            restore.arm();
+            firmware.editorSetPart(editor, target);
+            cnt::trace(
+                "notebook-sleep: pinned page installed temporarily for render");
+        }
+        QImage const rendered = exportedCurrentPage(state, widget);
+        QImage const fitted = fitToPowerView(rendered);
+        if (fitted.isNull())
+            return PinnedRenderUnavailable;
+        *result = fitted;
+        return PinnedRenderSucceeded;
+    } catch (...) {
+        cnt::trace("notebook-sleep: pinned page render threw");
+        return PinnedRenderUnavailable;
+    }
+}
+
+static bool preparePinnedPageImage(
+        cnt::notebook_sleep::RuntimeState& state) {
+    loadPinnedPageState(state);
+    if (!state.pinnedPageValid)
+        return false;
+
+    QFileInfo const notebookInfo(state.pinnedNotebookPath);
+    if (!notebookInfo.isFile()) {
+        discardUnavailablePinnedPage(
+            state,
+            "notebook-sleep: pinned notebook missing; pin cleared");
+        return false;
+    }
+
+    QWidget* const widget = state.activeNotebook.data();
+    QString const widgetPath = widget
+        ? canonicalNotebookPath(firmwareApi().widgetFilePath(widget))
+        : QString();
+    bool const matchingLiveNotebook = widget
+        && cnt::notebook_widget::isNotebookWidget(widget)
+        && widgetPath == state.pinnedNotebookPath;
+    bool const matchingVisibleNotebook = matchingLiveNotebook
+        && activeNotebookWidget(widget);
+
+    // When the pinned notebook is not the visible editor, validate the stable
+    // page ID against the serialized archive before trusting its cached frame.
+    // A conclusive miss clears the pin; an unreadable/busy archive preserves
+    // it but falls back to Kobo's normal behavior for this power transition.
+    if (!matchingVisibleNotebook) {
+        int const archiveStatus =
+            cnt::cover_cache::notebookArchiveContainsPageId(
+                coverState(),
+                state.pinnedNotebookPath,
+                state.pinnedPartId);
+        if (archiveStatus == 0) {
+            discardUnavailablePinnedPage(
+                state,
+                "notebook-sleep: pinned page deleted; pin cleared");
+            return false;
+        }
+        if (archiveStatus < 0) {
+            cnt::trace(
+                "notebook-sleep: pinned page could not be validated; normal behavior preserved");
+            return false;
+        }
+    }
+
+    QImage image;
+    bool rendered = false;
+    bool memoryHit = false;
+    if (matchingLiveNotebook
+            && state.pinnedPageRenderedInSession
+            && state.pinnedPageGeneration == state.editGeneration
+            && !state.pinnedPageImage.isNull()) {
+        image = state.pinnedPageImage;
+        memoryHit = true;
+    } else if (matchingLiveNotebook
+            && !matchingVisibleNotebook
+            && !(image = loadPinnedPageImage(state)).isNull()) {
+        // Input elsewhere in Nickel also bumps the conservative edit
+        // generation while a hidden notebook widget survives. Prefer the
+        // validated persisted frame in that case; only a visible notebook (or
+        // a missing first frame) justifies another MyScript render.
+    } else if (matchingLiveNotebook) {
+        PinnedRenderStatus const status = renderPinnedPage(
+            state, widget, maximumNotebookPages(), &image);
+        if (status == PinnedRenderMissing) {
+            discardUnavailablePinnedPage(
+                state,
+                "notebook-sleep: pinned page missing; pin cleared");
+            return false;
+        }
+        if (status == PinnedRenderSucceeded) {
+            state.pinnedPageImage = image;
+            state.pinnedPageImageLoaded = true;
+            state.pinnedPageRenderedInSession = true;
+            state.pinnedPageGeneration = state.editGeneration;
+            rendered = true;
+            if (!persistPinnedPageImage(image)) {
+                cnt::trace(
+                    "notebook-sleep: pinned page frame cache write failed; memory retained");
+            }
+        } else {
+            image = loadPinnedPageImage(state);
+        }
+    } else {
+        image = loadPinnedPageImage(state);
+    }
+
+    if (image.isNull()) {
+        cnt::trace(
+            "notebook-sleep: pinned page frame unavailable; normal behavior preserved");
+        return false;
+    }
+    state.pendingImage = image;
+    state.pendingNotebookImage = true;
+    cnt::trace(QLatin1String("notebook-sleep: pinned page armed for power view source=")
+        + (rendered
+            ? QLatin1String("render")
+            : (memoryHit
+                ? QLatin1String("memory") : QLatin1String("disk"))));
+    return true;
+}
+
 static QImage notebookCover(
         cnt::notebook_sleep::RuntimeState& state,
         QWidget* widget,
@@ -435,6 +1010,47 @@ static QImage notebookCover(
 }
 
 } // namespace
+
+NotebookSleepRefreshReceiver::NotebookSleepRefreshReceiver(QObject* parent)
+    : QObject(parent) {}
+
+bool NotebookSleepRefreshReceiver::eventFilter(
+        QObject* watched, QEvent* event) {
+    cnt::notebook_sleep::RuntimeState& state =
+        pluginState().notebookSleep;
+
+    switch (event->type()) {
+    case QEvent::TabletPress:
+    case QEvent::TabletMove:
+    case QEvent::TabletRelease:
+    case QEvent::MouseButtonPress:
+    case QEvent::MouseMove:
+    case QEvent::MouseButtonRelease:
+    case QEvent::MouseButtonDblClick:
+    case QEvent::TouchBegin:
+    case QEvent::TouchUpdate:
+    case QEvent::TouchEnd:
+    case QEvent::TouchCancel:
+    case QEvent::KeyPress:
+    case QEvent::Wheel: {
+        // Any interaction can change the page, layers, zoom, or ink, so the
+        // cached frame conservatively dies here. The per-event cost while a
+        // notebook is open is one increment. This watcher never accepts or
+        // consumes input and never renders.
+        if (state.activeNotebook) {
+            ++state.editGeneration;
+            state.cachedPageValid = false;
+        } else if (!state.cachedPageImage.isNull()) {
+            // The notebook closed; do not keep a ~10 MiB frame alive for it.
+            invalidateCurrentPageCache(state);
+        }
+        break;
+    }
+    default:
+        break;
+    }
+    return QObject::eventFilter(watched, event);
+}
 
 NotebookSleepSettingsReceiver::NotebookSleepSettingsReceiver(
         cnt::SettingsStore* settings,
@@ -561,9 +1177,109 @@ bool installHooks(RuntimeState& state) {
 void observeNotebookWidget(RuntimeState& state, QWidget* widget) {
     if (!widget || !notebook_widget::isNotebookWidget(widget))
         return;
+    if (state.activeNotebook.data() != widget)
+        invalidateCurrentPageCache(state);
     state.activeNotebook = widget;
     state.renderHookReady = true;
+    QCoreApplication* const application = QCoreApplication::instance();
+    if (!state.refreshReceiver && application) {
+        NotebookSleepRefreshReceiver* const receiver =
+            new NotebookSleepRefreshReceiver(application);
+        application->installEventFilter(receiver);
+        state.refreshReceiver = receiver;
+        trace("notebook-sleep: page-cache invalidation watcher installed");
+    }
     trace("notebook-sleep: live notebook observed");
+}
+
+QString pinnedPageMenuText(
+        RuntimeState& state,
+        QObject* controller,
+        int maximumPageCount) {
+    if (!state.coreHooksReady || !controller)
+        return QString();
+
+    QString notebookPath;
+    QString partId;
+    QString error;
+    if (!currentPageIdentity(
+            controller,
+            maximumPageCount,
+            nullptr,
+            &notebookPath,
+            &partId,
+            &error)) {
+        trace(QLatin1String("notebook-sleep: pin menu unavailable: ") + error);
+        return QString();
+    }
+    try {
+        loadPinnedPageState(state);
+        bool const currentIsPinned = state.pinnedPageValid
+            && state.pinnedNotebookPath == notebookPath
+            && state.pinnedPartId == partId;
+        return currentIsPinned
+            ? QLatin1String("Unpin sleep page (pinned)")
+            : QLatin1String("Pin current page for sleep");
+    } catch (...) {
+        trace("notebook-sleep: pin menu state check threw; row skipped");
+        return QString();
+    }
+}
+
+void togglePinnedPageForController(
+        RuntimeState& state,
+        QObject* controller,
+        int maximumPageCount) {
+    QObject* widget = nullptr;
+    QString notebookPath;
+    QString partId;
+    QString error;
+    if (!currentPageIdentity(
+            controller,
+            maximumPageCount,
+            &widget,
+            &notebookPath,
+            &partId,
+            &error)) {
+        if (widget && firmwareApi().showErrorPopup)
+            firmwareApi().showErrorPopup(widget, error);
+        else
+            trace(QLatin1String("notebook-sleep: pin toggle failed: ") + error);
+        return;
+    }
+
+    bool succeeded = false;
+    try {
+        loadPinnedPageState(state);
+        bool const currentIsPinned = state.pinnedPageValid
+            && state.pinnedNotebookPath == notebookPath
+            && state.pinnedPartId == partId;
+        if (currentIsPinned) {
+            succeeded = removePinnedPageState(state);
+            if (succeeded)
+                trace("notebook-sleep: sleep page unpinned");
+            else
+                error = QLatin1String("Sleep page could not be unpinned.");
+        } else {
+            succeeded = persistPinnedPageState(
+                state, notebookPath, partId);
+            if (succeeded) {
+                // The menu action persists metadata only. Rendering is
+                // deliberately deferred until prepareNotebookImage at the
+                // next power boundary.
+                trace("notebook-sleep: current page pinned; render deferred to power boundary");
+            } else {
+                error = QLatin1String(
+                    "Current page could not be pinned for sleep.");
+            }
+        }
+    } catch (...) {
+        error = QLatin1String(
+            "Sleep page not changed: unexpected persistence error.");
+        trace("notebook-sleep: pin toggle threw and was contained");
+    }
+    if (!succeeded && widget && firmwareApi().showErrorPopup)
+        firmwareApi().showErrorPopup(widget, error);
 }
 
 void prepareNotebookImage(RuntimeState& state) {
@@ -571,6 +1287,19 @@ void prepareNotebookImage(RuntimeState& state) {
     state.pendingImage = QImage();
     if (!state.coreHooksReady)
         return;
+
+    // A menu pin is an explicit global override. It is evaluated before the
+    // general notebook-sleep setting, so unpinning returns immediately to the
+    // configured Cover/Current page behavior while a valid pin works even if
+    // that general toggle is currently off.
+    try {
+        if (preparePinnedPageImage(state))
+            return;
+    } catch (...) {
+        state.pendingImage = QImage();
+        state.pendingNotebookImage = false;
+        trace("notebook-sleep: pinned page preparation threw; normal behavior preserved");
+    }
 
     NotebookSleepSettings const configured =
         settingsStore().configuredNotebookSleep();
@@ -583,6 +1312,8 @@ void prepareNotebookImage(RuntimeState& state) {
     }
 
     try {
+        QElapsedTimer prepareTimer;
+        prepareTimer.start();
         QString const notebookPath = QFileInfo(
             firmwareApi().widgetFilePath(widget)).absoluteFilePath();
         if (!notebookPath.startsWith(QLatin1String("/mnt/onboard/"))
@@ -591,19 +1322,49 @@ void prepareNotebookImage(RuntimeState& state) {
             trace("notebook-sleep: active notebook path rejected; stock cover preserved");
             return;
         }
-        QImage image = configured.mode == NotebookSleepCurrentPage
-            ? exportedCurrentPage(state, widget)
-            : notebookCover(state, widget, notebookPath);
-        image = fitToPowerView(image);
+        QImage image;
+        bool cacheHit = false;
+        qint64 renderMs = 0;
+        qint64 fitMs = 0;
+        if (configured.mode == NotebookSleepCurrentPage) {
+            quint64 const generation = state.editGeneration;
+            int const pageIndex = currentPageIndex(widget);
+            if (currentPageCacheMatches(state, notebookPath, pageIndex)) {
+                image = state.cachedPageImage;
+                cacheHit = true;
+            } else {
+                QElapsedTimer stageTimer;
+                stageTimer.start();
+                QImage const rendered = exportedCurrentPage(state, widget);
+                renderMs = stageTimer.restart();
+                image = fitToPowerView(rendered);
+                fitMs = stageTimer.elapsed();
+                publishCurrentPageCache(
+                    state, image, notebookPath, pageIndex, generation);
+            }
+        } else {
+            QElapsedTimer stageTimer;
+            stageTimer.start();
+            QImage const rendered = notebookCover(state, widget, notebookPath);
+            renderMs = stageTimer.restart();
+            image = fitToPowerView(rendered);
+            fitMs = stageTimer.elapsed();
+        }
         if (image.isNull()) {
             trace("notebook-sleep: notebook image unavailable; stock cover preserved");
             return;
         }
         state.pendingImage = image;
         state.pendingNotebookImage = true;
-        trace(configured.mode == NotebookSleepCurrentPage
-            ? "notebook-sleep: current page armed for power view"
-            : "notebook-sleep: notebook cover armed for power view");
+        trace((configured.mode == NotebookSleepCurrentPage
+                ? QLatin1String("notebook-sleep: current page armed for power view")
+                : QLatin1String("notebook-sleep: notebook cover armed for power view"))
+            + QLatin1String(" cache=")
+            + (cacheHit ? QLatin1String("hit") : QLatin1String("miss"))
+            + QLatin1String(" renderMs=") + QString::number(renderMs)
+            + QLatin1String(" fitMs=") + QString::number(fitMs)
+            + QLatin1String(" totalMs=")
+            + QString::number(prepareTimer.elapsed()));
     } catch (...) {
         state.pendingImage = QImage();
         state.pendingNotebookImage = false;

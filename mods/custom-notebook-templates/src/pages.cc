@@ -43,6 +43,29 @@ SharedDocument documentForPart(
     return firmware.pageDocument(page.bytes);
 }
 
+QString partStableId(
+        FirmwareApi& firmware,
+        SharedPart const& part) {
+    if (!part || !firmware.partGetId || !firmware.iinkStringToStdString)
+        return QString();
+
+    IInkStringStorage value = {nullptr};
+    try {
+        firmware.partGetId(&value, part.get());
+        if (!value.impl)
+            return QString();
+        std::string utf8;
+        firmware.iinkStringToStdString(&utf8, &value);
+        QString const result = QString::fromUtf8(
+            utf8.data(), static_cast<int>(utf8.size()));
+        delete value.impl;
+        return result;
+    } catch (...) {
+        delete value.impl;
+        return QString();
+    }
+}
+
 bool loadPageContext(
         FirmwareApi& firmware,
         void* widget,

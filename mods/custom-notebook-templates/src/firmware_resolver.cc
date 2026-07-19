@@ -261,6 +261,69 @@ bool resolveFirmwareApis(void* iinknoteHandle) {
             &firmwareApi().uirefEditorWidgetVtable);
     layerState().previewApisReady = iinkSymbols && layerSymbols && layerPreviewSymbols;
 
+    // Best-effort in-memory export capture. This is strictly optional: if any
+    // symbol or vtable slot fails to validate, inMemoryCaptureReady stays false
+    // and the sleep exporter keeps its verified PNG-file round trip. Nothing
+    // here gates previewApisReady.
+    firmwareApi().inMemoryCaptureReady = false;
+    firmwareApi().imagePainterGetImage = nullptr;
+    firmwareApi().imagePainterSaveImage = nullptr;
+    firmwareApi().imagePainterVtableAddressPoint = nullptr;
+    typedef void (*ImagePainterValidationMethod)();
+    ImagePainterValidationMethod prepareImage = nullptr;
+    ImagePainterValidationMethod createCanvas = nullptr;
+    if (iinkUiRefHandle
+            && resolvePinned(iinkUiRefHandle, kImagePainterGetImageSymbol,
+                kImagePainterGetImageVma, &firmwareApi().imagePainterGetImage)
+            && resolvePinned(iinkUiRefHandle, kImagePainterSaveImageSymbol,
+                kImagePainterSaveImageVma, &firmwareApi().imagePainterSaveImage)
+            && resolvePinned(iinkUiRefHandle, kImagePainterPrepareImageSymbol,
+                kImagePainterPrepareImageVma, &prepareImage)
+            && resolvePinned(iinkUiRefHandle, kImagePainterCreateCanvasSymbol,
+                kImagePainterCreateCanvasVma, &createCanvas)) {
+        void* const vtableSymbol = dlsym(
+            iinkUiRefHandle, kImagePainterVtableSymbol);
+        Dl_info vtableImage = {};
+        if (vtableSymbol && dladdr(vtableSymbol, &vtableImage)
+                && vtableImage.dli_fbase) {
+            uintptr_t const base =
+                reinterpret_cast<uintptr_t>(vtableImage.dli_fbase);
+            uintptr_t const symbolAddress =
+                reinterpret_cast<uintptr_t>(vtableSymbol);
+            if (symbolAddress - base == kImagePainterVtableVma) {
+                // Address point is the concrete vtable symbol + 8 (past the
+                // offset-to-top and RTTI words). Validate the slots whose VMAs
+                // are pinned before trusting the table; the Thumb bit is masked
+                // for the comparison.
+                void** const addressPoint =
+                    reinterpret_cast<void**>(symbolAddress + 8);
+                struct SlotCheck { int index; uintptr_t vma; };
+                SlotCheck const checks[] = {
+                    {1, kImagePainterDeletingDestructorVma},
+                    {2, kImagePainterPrepareImageVma},
+                    {3, kImagePainterSaveImageVma},
+                    {4, kImagePainterCreateCanvasVma},
+                };
+                bool slotsMatch = true;
+                for (unsigned i = 0; i < sizeof(checks) / sizeof(checks[0]); ++i) {
+                    uintptr_t const slot = reinterpret_cast<uintptr_t>(
+                        addressPoint[checks[i].index]) & ~uintptr_t(1);
+                    if (slot != base + checks[i].vma) {
+                        slotsMatch = false;
+                        break;
+                    }
+                }
+                if (slotsMatch) {
+                    firmwareApi().imagePainterVtableAddressPoint = addressPoint;
+                    firmwareApi().inMemoryCaptureReady = true;
+                    trace("notebook-sleep: in-memory export capture armed");
+                }
+            }
+        }
+    }
+    if (!firmwareApi().inMemoryCaptureReady)
+        trace("notebook-sleep: in-memory export capture unavailable; PNG path retained");
+
     // Best-effort: the base Eraser::updateSelection lets the diagram eraser
     // commit custom-layer ink. If it cannot be verified the eraser simply
     // keeps stock behavior; selection and pen routing remain unaffected.

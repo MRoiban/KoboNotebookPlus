@@ -6,6 +6,7 @@
 #include <QtGlobal>
 
 class QLocale;
+class QObject;
 class QVariant;
 class QWidget;
 
@@ -53,12 +54,34 @@ struct NativeApi {
 struct RuntimeState {
     NativeApi api;
     QPointer<QWidget> activeNotebook;
+    QPointer<QObject> refreshReceiver;
     QImage pendingImage;
     QString cachedBackgroundType;
     QString cachedBackgroundPath;
     QImage cachedBackgroundImage;
     qint64 cachedBackgroundModifiedMs = -1;
     qint64 cachedBackgroundSize = -1;
+    // One pre-rendered, power-view-sized frame of the active page. The frame
+    // is only reused while the edit generation, notebook path, and page index
+    // all still match; any user input bumps the generation.
+    QImage cachedPageImage;
+    QString cachedPagePath;
+    int cachedPageIndex = -1;
+    quint64 editGeneration = 0;
+    quint64 cachedPageGeneration = 0;
+    bool cachedPageValid = false;
+    // A global pinned sleep page is identified only by the canonical notebook
+    // path and MyScript's stable part ID. Its final power-view frame is
+    // generated solely at a sleep/power-off boundary and may then be reused
+    // when another view is active.
+    QString pinnedNotebookPath;
+    QString pinnedPartId;
+    QImage pinnedPageImage;
+    quint64 pinnedPageGeneration = 0;
+    bool pinnedPageLoaded = false;
+    bool pinnedPageValid = false;
+    bool pinnedPageImageLoaded = false;
+    bool pinnedPageRenderedInSession = false;
     bool pendingNotebookImage = false;
     bool coreHooksReady = false;
     bool settingsHookReady = false;
@@ -70,6 +93,14 @@ bool installHooks(RuntimeState& state);
 void observeNotebookWidget(RuntimeState& state, QWidget* widget);
 void prepareNotebookImage(RuntimeState& state);
 void augmentPowerSettings(RuntimeState& state, QWidget* view);
+QString pinnedPageMenuText(
+    RuntimeState& state,
+    QObject* controller,
+    int maximumPageCount);
+void togglePinnedPageForController(
+    RuntimeState& state,
+    QObject* controller,
+    int maximumPageCount);
 
 } // namespace notebook_sleep
 } // namespace cnt

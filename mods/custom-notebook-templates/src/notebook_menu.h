@@ -5,11 +5,15 @@
 class QMenu;
 class QObject;
 class QPixmap;
+class QString;
 struct FirmwareApi;
 
 namespace cnt {
 namespace cover_cache {
 struct State;
+}
+namespace notebook_sleep {
+struct RuntimeState;
 }
 
 namespace notebook_menu {
@@ -30,6 +34,15 @@ void addPageContribution(
     QMenu* menu,
     QPixmap const& noIcon,
     page_actions::Dependencies dependencies);
+bool addSleepPinContribution(
+    FirmwareApi& firmware,
+    notebook_sleep::RuntimeState& sleepState,
+    void* controller,
+    QObject* controllerObject,
+    QMenu* menu,
+    QPixmap const& noIcon,
+    QString const& text,
+    int maximumPageCount);
 
 } // namespace notebook_menu
 } // namespace cnt
