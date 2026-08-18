@@ -349,10 +349,15 @@ void afterActiveTool(
                 widgetObject,
                 desiredPolicy,
                 hardware ? "hardware-eraser" : "tool-activation");
-        queueActiveEraserReplay(
-            state,
-            widgetObject,
-            stateDependencies);
+        // setActiveTool has returned completely before this wrapper runs, so a
+        // successful post-stock fanout is authoritative. Only retain the
+        // queued path as a guarded fallback when the live engine was not ready.
+        if (!engineUpdated) {
+            queueActiveEraserReplay(
+                state,
+                widgetObject,
+                stateDependencies);
+        }
         QObject* const controller = state.liveSizeController.data();
         if (hardware && engineUpdated && controller
                 && firmware.setBrushSizeIndexOriginal
@@ -378,62 +383,113 @@ void afterActiveTool(
 bool queueActiveEraserReplay(
         RuntimeState& state,
         QObject* widget,
-        layers_eraser::Dependencies const& stateDependencies) {
+        layers_eraser::Dependencies const& stateDependencies,
+        int delayMs) {
     if (!state.sizeMenuHooksReady || !widget
             || !notebook_widget::isNotebookWidget(widget)) {
         return false;
     }
-
-    static char const pendingProperty[] =
-        "_cnt_eraser_state_replay_pending";
-    if (widget->property(pendingProperty).toBool())
+    int const capturedPolicy = activeEraserPolicy(widget);
+    if (capturedPolicy < 0)
         return false;
 
+    // renderVolume can retain the outer QWidget while replacing both of these
+    // private objects. A delayed replay is valid only for the exact lifecycle
+    // snapshot which requested it.
+    void* const capturedEditor = notebook_widget::notePadEditor(widget);
+    void* const capturedEditorControl =
+        notebook_widget::notePadEditorControl(widget);
+    if (!capturedEditor || !capturedEditorControl)
+        return false;
+    qulonglong const capturedGeneration =
+        widget->property(
+            "_cnt_eraser_state_replay_generation").toULongLong();
+
+    if (widget->property(
+            "_cnt_eraser_state_replay_pending").toBool()) {
+        return false;
+    }
+
     try {
-        widget->setProperty(pendingProperty, true);
+        widget->setProperty(
+            "_cnt_eraser_state_replay_pending", true);
         QTimer* const timer = new QTimer(widget);
         timer->setSingleShot(true);
         QPointer<QObject> const guardedWidget(widget);
         QPointer<QTimer> const guardedTimer(timer);
         layers_eraser::Dependencies const dependencies = stateDependencies;
         QObject::connect(timer, &QTimer::timeout,
-            [guardedWidget, guardedTimer, dependencies]() {
+            [guardedWidget,
+             guardedTimer,
+             dependencies,
+             capturedPolicy,
+             capturedEditor,
+             capturedEditorControl,
+             capturedGeneration]() {
                 QObject* const object = guardedWidget.data();
-                if (object && notebook_widget::isNotebookWidget(object)) {
-                    int const policy = activeEraserPolicy(object);
-                    if (policy >= 0) {
-                        try {
-                            bool const applied =
-                                layers_eraser::applyConfiguredEraserStateForWidget(
-                                    dependencies,
-                                    object,
-                                    policy,
-                                    "tool-activation-deferred");
-                            if (!applied) {
-                                trace(QLatin1String(
-                                    "eraser-state: deferred replay unavailable policy=")
-                                    + QString::number(policy));
-                            }
-                        } catch (...) {
-                            trace("eraser-state: deferred replay threw; stock state preserved");
+                bool const currentLifecycle =
+                    object
+                    && notebook_widget::isNotebookWidget(object)
+                    && object->property(
+                        "_cnt_eraser_state_replay_generation")
+                        .toULongLong() == capturedGeneration
+                    && notebook_widget::notePadEditor(object)
+                        == capturedEditor
+                    && notebook_widget::notePadEditorControl(object)
+                        == capturedEditorControl
+                    && activeEraserPolicy(object) == capturedPolicy;
+                if (currentLifecycle) {
+                    try {
+                        bool const applied =
+                            layers_eraser::applyConfiguredEraserStateForWidget(
+                                dependencies,
+                                object,
+                                capturedPolicy,
+                                "tool-activation-deferred");
+                        if (!applied) {
+                            trace(QLatin1String(
+                                "eraser-state: deferred replay unavailable policy=")
+                                + QString::number(capturedPolicy));
                         }
+                    } catch (...) {
+                        trace("eraser-state: deferred replay threw; stock state preserved");
                     }
                 }
                 // Retain the coalescing guard through the complete replay so
-                // a nested firmware callback cannot enqueue another timer.
-                if (object)
+                // a nested firmware callback cannot enqueue another timer. An
+                // obsolete timer must never clear a newer lifecycle's guard.
+                if (object
+                        && object->property(
+                            "_cnt_eraser_state_replay_generation")
+                            .toULongLong() == capturedGeneration) {
                     object->setProperty(
                         "_cnt_eraser_state_replay_pending", false);
+                }
                 if (guardedTimer)
                     guardedTimer->deleteLater();
             });
-        timer->start(0);
+        timer->start(delayMs > 0 ? delayMs : 0);
         return true;
     } catch (...) {
-        widget->setProperty(pendingProperty, false);
+        widget->setProperty(
+            "_cnt_eraser_state_replay_pending", false);
         trace("eraser-state: deferred replay could not be queued");
         return false;
     }
+}
+
+void invalidateActiveEraserReplay(QObject* widget) {
+    if (!widget)
+        return;
+
+    qulonglong const generation =
+        widget->property(
+            "_cnt_eraser_state_replay_generation").toULongLong();
+    widget->setProperty(
+        "_cnt_eraser_state_replay_generation",
+        QVariant::fromValue<qulonglong>(generation + 1));
+    widget->setProperty(
+        "_cnt_eraser_state_replay_pending", false);
 }
 
 } // namespace eraser_menu

@@ -21,6 +21,7 @@ void applyBackingFilePolicy(
     bool& removeBackingFile,
     QString const& contentId);
 void applySyncExclusion(RuntimeState& state, QString& exclusions);
+bool migrateLegacySupportTree();
 void hideLegacyNotebookBackups(char const* coverBackupRoot);
 
 } // namespace visibility

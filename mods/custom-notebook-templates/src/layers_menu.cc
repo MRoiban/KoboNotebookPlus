@@ -110,6 +110,15 @@ void runLayerOperation(
         }
     }
 
+    bool const mutatesLayerState =
+        operation != RefreshLayerPreviewsOperation;
+    if (mutatesLayerState) {
+        // widgetRefresh can synchronously replace the tool and call the theme
+        // hook. Never let that nested callback reuse the pre-operation state.
+        layers_state::invalidateLiveLayerContext(
+            *dependencies.preview.runtime);
+    }
+
     bool succeeded = false;
     try {
         succeeded = layers_preview::performLayerOperation(
@@ -128,6 +137,11 @@ void runLayerOperation(
     if (!succeeded) {
         layers_preview::showLayerError(
             dependencies.preview, context.widget, error);
+    } else if (mutatesLayerState) {
+        layers_state::rememberLiveLayerContext(
+            firmware,
+            *dependencies.preview.runtime,
+            context);
     }
 }
 
@@ -327,6 +341,8 @@ void showPopup(Dependencies dependencies, QObject* controller) {
             dependencies.preview, context.widget, error);
         return;
     }
+    layers_state::rememberLiveLayerContext(
+        firmware, *dependencies.preview.runtime, context);
     QWidget* const parent = qobject_cast<QWidget*>(context.widgetObject.data());
     if (!parent || !firmware.createIInkMenuItem
             || !firmware.addWidgetActionOriginal

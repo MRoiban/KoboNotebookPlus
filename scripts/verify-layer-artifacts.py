@@ -75,8 +75,8 @@ def png_dimensions(path: pathlib.Path) -> tuple[int, int]:
 def main() -> int:
     parser = argparse.ArgumentParser(
         description=(
-            "Validate .kobo/custom/layers metadata and preview cache after a "
-            "device test. ROOT is the mounted Kobo onboard filesystem."
+            "Validate KoboNotebookPlus layer metadata and preview cache after "
+            "a device test. ROOT is the mounted Kobo onboard filesystem."
         )
     )
     parser.add_argument("root", type=pathlib.Path)
@@ -88,7 +88,18 @@ def main() -> int:
     args = parser.parse_args()
 
     root = args.root.resolve()
-    layer_root = root / ".kobo" / "custom" / "layers"
+    layer_candidates = (
+        root
+        / ".kobo"
+        / "iink"
+        / "custom-notebook-templates"
+        / "layers",
+        root / ".kobo" / "custom" / "layers",
+    )
+    layer_root = next(
+        (candidate for candidate in layer_candidates if candidate.is_dir()),
+        layer_candidates[0],
+    )
     if not layer_root.is_dir():
         if args.allow_empty:
             print(f"No layer directory at {layer_root}")

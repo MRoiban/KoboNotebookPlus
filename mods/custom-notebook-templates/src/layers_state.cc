@@ -26,7 +26,8 @@ namespace cnt {
 namespace layers_state {
 namespace {
 
-static char const kLayerRoot[] = "/mnt/onboard/.kobo/custom/layers/";
+static char const kLayerRoot[] =
+    "/mnt/onboard/.kobo/iink/custom-notebook-templates/layers/";
 
 struct PageStorage {
     alignas(8) unsigned char bytes[64];
@@ -440,13 +441,118 @@ bool saveLayerState(layers::LayerState const& state, QString* error) {
     return true;
 }
 
+bool isBaseOnlyLayerState(
+        FirmwareApi& firmware,
+        layers::LayerState const& state) {
+    return state.customLayers.isEmpty()
+        && state.activeId == nativeDocumentLayerId(firmware);
+}
+
+void invalidateLiveLayerContext(layers::RuntimeState& runtime) {
+    runtime.liveLayerStateValid = false;
+    runtime.liveLayerWidget.clear();
+    runtime.liveRawNotebookPath.clear();
+    runtime.liveLayerState = layers::LayerState();
+}
+
+bool rememberLiveLayerContext(
+        FirmwareApi& firmware,
+        layers::RuntimeState& runtime,
+        layers::LayerContext const& context) {
+    invalidateLiveLayerContext(runtime);
+    QObject* const widgetObject = context.widgetObject.data();
+    if (!widgetObject || !context.widget || !context.editor
+            || context.state.partId.isEmpty()
+            || context.state.activeId.isEmpty()) {
+        return false;
+    }
+    try {
+        QString const rawNotebookPath = QDir::cleanPath(
+            firmware.widgetFilePath(context.widget));
+        if (!rawNotebookPath.startsWith(QLatin1String("/mnt/onboard/")))
+            return false;
+        runtime.liveLayerWidget = widgetObject;
+        runtime.liveRawNotebookPath = rawNotebookPath;
+        runtime.liveLayerState = context.state;
+        runtime.liveLayerStateValid = true;
+        return true;
+    } catch (...) {
+        invalidateLiveLayerContext(runtime);
+        return false;
+    }
+}
+
+bool loadCachedRoutingContext(
+        FirmwareApi& firmware,
+        layers::RuntimeState& runtime,
+        QObject* controller,
+        layers::LayerContext* context,
+        QString* error) {
+    if (!runtime.liveLayerStateValid || !context) {
+        if (error)
+            *error = QLatin1String("Layer routing cache is empty.");
+        return false;
+    }
+
+    try {
+        QObject* const widgetObject =
+            notebook_widget::findNotebookWidget(controller);
+        void* const widget = widgetObject;
+        void* const editor = widget
+            ? notebook_widget::notePadEditor(widget) : nullptr;
+        void* const editorControl = widget
+            ? notebook_widget::notePadEditorControl(widget) : nullptr;
+        SharedPart const part = editor
+            ? firmware.editorGetPart(editor) : SharedPart();
+        QString const rawNotebookPath = widget
+            ? QDir::cleanPath(firmware.widgetFilePath(widget))
+            : QString();
+        QString const partId = partStableId(firmware, part);
+        bool const matches = widgetObject
+            && widgetObject == runtime.liveLayerWidget.data()
+            && editor
+            && editorControl
+            && part
+            && rawNotebookPath == runtime.liveRawNotebookPath
+            && partId == runtime.liveLayerState.partId;
+        if (!matches) {
+            invalidateLiveLayerContext(runtime);
+            if (error) {
+                *error = QLatin1String(
+                    "Layer routing cache does not match the live page.");
+            }
+            return false;
+        }
+
+        context->widgetObject = widgetObject;
+        context->widget = widget;
+        context->editor = editor;
+        context->part = part;
+        context->package = firmware.partGetPackage(part.get());
+        context->state = runtime.liveLayerState;
+        if (!context->package) {
+            invalidateLiveLayerContext(runtime);
+            if (error)
+                *error = QLatin1String("Layer routing cache package is missing.");
+            return false;
+        }
+        return true;
+    } catch (...) {
+        invalidateLiveLayerContext(runtime);
+        if (error)
+            *error = QLatin1String("Layer routing cache validation failed.");
+        return false;
+    }
+}
+
 bool loadLayerContext(
         FirmwareApi& firmware,
         layers::RuntimeState const& runtime,
         QObject* controller,
         int maximumNotebookLayers,
         layers::LayerContext* context,
-        QString* error) {
+        QString* error,
+        LayerContextLoadMode mode) {
     if (!runtime.hooksReady || !context) {
         if (error)
             *error = QLatin1String("Layers unavailable: firmware APIs are not ready.");
@@ -489,6 +595,11 @@ bool loadLayerContext(
         + QFileInfo(layerStatePath(notebookPath, partId)).fileName());
     context->state = loadLayerState(
         firmware, notebookPath, partId, maximumNotebookLayers);
+    if (mode == AllowBaseOnlyOpenFastPath
+            && isBaseOnlyLayerState(firmware, context->state)) {
+        trace("layers: base-only notebook open fast path");
+        return true;
+    }
     return reconcileLayerStateWithNativeLayout(
         firmware, context->part, &context->state, error);
 }

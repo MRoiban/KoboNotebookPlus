@@ -1,7 +1,11 @@
 #include "fs_util.h"
+#include "settings.h"
 
 #include <QBuffer>
 #include <QByteArray>
+#include <QCryptographicHash>
+#include <QDateTime>
+#include <QDir>
 #include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
@@ -15,12 +19,88 @@
 
 namespace {
 
-char const kTemplateRoot[] = "/mnt/onboard/.kobo/custom/templates/";
+char const kTemplateRoot[] =
+    "/mnt/onboard/.kobo/iink/custom-notebook-templates/templates/";
 char const kCondorSuffix[] = "_condor.png";
 qint64 const kMaximumAutomaticPngSize = 32 * 1024 * 1024;
 int const kBackgroundWidth = 1404;
 int const kBackgroundHeight = 1872;
 int const kPickerIconSize = 280;
+char const kGeneratedStampSuffix[] = ".cnt-cache";
+char const kCondorCopyVersion[] = "condor-copy-v1";
+char const kPickerIconVersion[] = "picker-280-v1";
+
+QByteArray sampledFileFingerprint(QString const& path, qint64 size) {
+    if (size < 1)
+        return QByteArray();
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly))
+        return QByteArray();
+
+    qint64 const chunkSize = 4096;
+    qint64 offsets[3] = {
+        0,
+        qMax<qint64>(0, size / 2 - chunkSize / 2),
+        qMax<qint64>(0, size - chunkSize),
+    };
+    QCryptographicHash hash(QCryptographicHash::Sha256);
+    qint64 previous = -1;
+    for (int i = 0; i < 3; ++i) {
+        qint64 const offset = offsets[i];
+        if (offset == previous)
+            continue;
+        previous = offset;
+        if (!file.seek(offset))
+            return QByteArray();
+        QByteArray const block = file.read(chunkSize);
+        qint64 const expectedLength = qMin(chunkSize, size - offset);
+        if (block.size() != expectedLength)
+            return QByteArray();
+        hash.addData(QByteArray::number(offset));
+        hash.addData(":", 1);
+        hash.addData(block);
+    }
+    return hash.result().toHex();
+}
+
+QByteArray generatedStampContents(
+        QString const& sourcePath,
+        QString const& destinationPath,
+        char const* conversionVersion) {
+    if (!conversionVersion || conversionVersion[0] == '\0')
+        return QByteArray();
+    QFileInfo const source(sourcePath);
+    QFileInfo const destination(destinationPath);
+    if (!source.isFile() || !destination.isFile())
+        return QByteArray();
+    QByteArray const sourceFingerprint =
+        sampledFileFingerprint(sourcePath, source.size());
+    QByteArray const destinationFingerprint =
+        sampledFileFingerprint(destinationPath, destination.size());
+    if (sourceFingerprint.isEmpty() || destinationFingerprint.isEmpty())
+        return QByteArray();
+
+    QByteArray stamp("cnt-generated-png-cache-v1\n");
+    stamp.append("conversion=");
+    stamp.append(conversionVersion);
+    stamp.append("\nsource-identity=");
+    stamp.append(QCryptographicHash::hash(
+        QDir::cleanPath(source.absoluteFilePath()).toUtf8(),
+        QCryptographicHash::Sha256).toHex());
+    stamp.append("\nsource-size=");
+    stamp.append(QByteArray::number(source.size()));
+    stamp.append("\nsource-mtime-ms=");
+    stamp.append(QByteArray::number(
+        source.lastModified().toMSecsSinceEpoch()));
+    stamp.append("\nsource-sample=");
+    stamp.append(sourceFingerprint);
+    stamp.append("\ndestination-size=");
+    stamp.append(QByteArray::number(destination.size()));
+    stamp.append("\ndestination-sample=");
+    stamp.append(destinationFingerprint);
+    stamp.append('\n');
+    return stamp;
+}
 
 bool filesEqual(QString const& firstPath, QString const& secondPath) {
     QFileInfo const firstInfo(firstPath);
@@ -68,6 +148,7 @@ bool automaticSource(QFileInfo const& info) {
     return info.isFile()
         && info.size() >= 8
         && info.size() <= kMaximumAutomaticPngSize
+        && !name.startsWith(QLatin1String("._"))
         && name.endsWith(QLatin1String(".png"))
         && !lower.endsWith(QLatin1String(kCondorSuffix))
         && !lower.endsWith(QLatin1String("-icon.png"))
@@ -108,14 +189,56 @@ bool hasPngSignature(QString const& path) {
         && memcmp(header.constData(), signature, sizeof(signature)) == 0;
 }
 
+bool generatedPngIsFresh(
+        QString const& sourcePath,
+        QString const& destinationPath,
+        char const* conversionVersion) {
+    QFileInfo const destination(destinationPath);
+    if (!destination.isFile()
+            || destination.size() < 8
+            || destination.size() > kMaximumAutomaticPngSize
+            || !hasPngSignature(destinationPath)) {
+        return false;
+    }
+
+    QFile stampFile(destinationPath + QLatin1String(kGeneratedStampSuffix));
+    if (!stampFile.open(QIODevice::ReadOnly) || stampFile.size() > 2048)
+        return false;
+    QByteArray const stored = stampFile.readAll();
+    QByteArray const expected = generatedStampContents(
+        sourcePath, destinationPath, conversionVersion);
+    return !expected.isEmpty() && stored == expected;
+}
+
+bool rememberGeneratedPng(
+        QString const& sourcePath,
+        QString const& destinationPath,
+        char const* conversionVersion) {
+    QByteArray const stamp = generatedStampContents(
+        sourcePath, destinationPath, conversionVersion);
+    if (stamp.isEmpty())
+        return false;
+    return writeBytesIfChanged(
+        destinationPath + QLatin1String(kGeneratedStampSuffix), stamp);
+}
+
 bool syncCondorVariant(QString const& sourcePath, QString* condorPath) {
     QString destination = sourcePath;
     destination.chop(4);
     destination.append(QLatin1String(kCondorSuffix));
     *condorPath = destination;
 
-    if (filesEqual(sourcePath, destination))
+    if (generatedPngIsFresh(
+            sourcePath, destination, kCondorCopyVersion)) {
         return true;
+    }
+    if (filesEqual(sourcePath, destination)) {
+        if (!rememberGeneratedPng(
+                sourcePath, destination, kCondorCopyVersion)) {
+            trace("asset-cache: condor validation stamp unavailable");
+        }
+        return true;
+    }
 
     QString const temporary = destination + QLatin1String(".tmp");
     QFile::remove(temporary);
@@ -128,6 +251,10 @@ bool syncCondorVariant(QString const& sourcePath, QString* condorPath) {
     if (!QFile::rename(temporary, destination)) {
         QFile::remove(temporary);
         return false;
+    }
+    if (!rememberGeneratedPng(
+            sourcePath, destination, kCondorCopyVersion)) {
+        trace("asset-cache: condor generation stamp unavailable");
     }
     return true;
 }
@@ -170,6 +297,11 @@ bool createPickerIcon(QString const& sourcePath, QString* iconPath) {
     destination.append(QLatin1String("-icon.png"));
     *iconPath = destination;
 
+    if (generatedPngIsFresh(
+            sourcePath, destination, kPickerIconVersion)) {
+        return true;
+    }
+
     QImage page;
     if (!page.load(sourcePath, "PNG"))
         return false;
@@ -196,7 +328,13 @@ bool createPickerIcon(QString const& sourcePath, QString* iconPath) {
     if (!buffer.open(QIODevice::WriteOnly) || !icon.save(&buffer, "PNG"))
         return false;
     buffer.close();
-    return writeBytesIfChanged(destination, encoded);
+    if (!writeBytesIfChanged(destination, encoded))
+        return false;
+    if (!rememberGeneratedPng(
+            sourcePath, destination, kPickerIconVersion)) {
+        trace("asset-cache: picker icon stamp unavailable");
+    }
+    return true;
 }
 
 } // namespace fs_util

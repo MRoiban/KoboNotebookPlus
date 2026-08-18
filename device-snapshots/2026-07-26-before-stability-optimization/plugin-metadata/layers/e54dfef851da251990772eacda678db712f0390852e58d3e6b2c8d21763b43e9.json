@@ -1,0 +1,12 @@
+{
+    "active": "SNT_LAYER",
+    "layers": [
+        {
+            "id": "cnt.layer.01f06e06-1db7-4ea5-83bc-4e868dc2fd6d",
+            "name": "Layer 2"
+        }
+    ],
+    "notebook": "/mnt/onboard/My Notebooks/testing/dot2.nebo",
+    "part": "gneatokd",
+    "version": 1
+}

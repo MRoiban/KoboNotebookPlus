@@ -1,0 +1,16 @@
+{
+    "active": "cnt.layer.bf8ada4e-9712-4d3f-97ad-fd387db218a5",
+    "layers": [
+        {
+            "id": "cnt.layer.bf8ada4e-9712-4d3f-97ad-fd387db218a5",
+            "name": "Layer 2"
+        },
+        {
+            "id": "cnt.layer.3da82475-016b-44ec-a100-b4baaad619eb",
+            "name": "Layer 3"
+        }
+    ],
+    "notebook": "/mnt/onboard/My Notebooks/testing/5556.nebo",
+    "part": "jlkzyrsp",
+    "version": 1
+}

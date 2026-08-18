@@ -18,6 +18,7 @@ signals:
     void duplicatePageRequested(QObject* controller);
     void movePageEarlierRequested(QObject* controller);
     void movePageLaterRequested(QObject* controller);
+    void movePageToRequested(QObject* controller);
     void layersRequested(QObject* controller);
     void sleepPagePinRequested(QObject* controller);
 
@@ -40,6 +41,11 @@ public slots:
     void activateMovePageLater() {
         if (controller_)
             emit movePageLaterRequested(controller_.data());
+    }
+
+    void activateMovePageTo() {
+        if (controller_)
+            emit movePageToRequested(controller_.data());
     }
 
     void activateLayers() {

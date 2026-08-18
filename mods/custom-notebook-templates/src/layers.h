@@ -69,6 +69,14 @@ struct RuntimeState {
     QHash<QString, LayerPreviewCardCacheEntry> previewCardCache;
     quint64 previewCardCacheSequence = 0;
 
+    // Hot lifecycle callbacks cache only stable identities and metadata. Raw
+    // MyScript editor/backend/tool pointers are always reacquired for the
+    // current event-loop turn and never retained here.
+    QPointer<QObject> liveLayerWidget;
+    QString liveRawNotebookPath;
+    LayerState liveLayerState;
+    bool liveLayerStateValid = false;
+
     // Synchronous, single-GUI-thread channel used by the ImagePainter saveImage
     // interception. The exporter arms this immediately around one exportToPNG
     // call and disarms it afterward; the thunk consults it via pluginState().

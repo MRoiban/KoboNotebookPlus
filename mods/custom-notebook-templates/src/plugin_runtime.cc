@@ -22,23 +22,30 @@ PluginState* gPluginState = nullptr;
 std::map<void*, std::string> const kMapDestructorParityAnchor;
 
 char const kCoverBackupRoot[] =
-    "/mnt/onboard/.kobo/custom/covers/backups/";
+    "/mnt/onboard/.kobo/iink/custom-notebook-templates/covers/backups/";
 char const kPageBackupRoot[] =
-    "/mnt/onboard/.kobo/custom/page-manager/backups/";
+    "/mnt/onboard/.kobo/iink/custom-notebook-templates/page-manager/backups/";
 char const kPageTransactionRoot[] =
-    "/mnt/onboard/.kobo/custom/page-manager/transactions/";
+    "/mnt/onboard/.kobo/iink/custom-notebook-templates/page-manager/transactions/";
+char const kExportRangeRoot[] =
+    "/mnt/onboard/.kobo/iink/custom-notebook-templates/export-range/";
+char const kExportQualityPath[] =
+    "/mnt/onboard/.kobo/iink/custom-notebook-templates/export-quality";
 int const kMaximumNotebookPages = 4096;
 int const kMaximumDestinationNotebooks = 512;
 int const kMaximumNotebookLayers = 16;
 uintptr_t const kMenuLoadViewVma = 0x4984c;
 uintptr_t const kMenuLoadViewSize = 0xe5e;
+uintptr_t const kExportMenuLoadViewVma = 0x4879c;
+uintptr_t const kExportMenuLoadViewSize = 0x318;
+uintptr_t const kExportMenuFullActionReturnVma = 0x4893a;
 uintptr_t const kVolumeInPixmapViewOffset = 0xac;
 uintptr_t const kThumbnailCallbackReturnVma = 0x5433e;
 uintptr_t const kNeboBackendPageControllerOffset = 0x14;
 
 cnt::layers_preview::Pins const kLayerPreviewPins = {
-    "/mnt/onboard/.kobo/custom/layers/backups/",
-    "/mnt/onboard/.kobo/custom/layers/previews/",
+    "/mnt/onboard/.kobo/iink/custom-notebook-templates/layers/backups/",
+    "/mnt/onboard/.kobo/iink/custom-notebook-templates/layers/previews/",
     kMaximumNotebookLayers,
     qint64(8) * 1024 * 1024,
     54,
@@ -217,11 +224,18 @@ HookRuntimeState& hookState() { return pluginState().hooks; }
 char const* coverBackupRoot() { return kCoverBackupRoot; }
 char const* pageBackupRoot() { return kPageBackupRoot; }
 char const* pageTransactionRoot() { return kPageTransactionRoot; }
+char const* exportRangeRoot() { return kExportRangeRoot; }
+char const* exportQualityPath() { return kExportQualityPath; }
 int maximumNotebookPages() { return kMaximumNotebookPages; }
 int maximumDestinationNotebooks() { return kMaximumDestinationNotebooks; }
 int maximumNotebookLayers() { return kMaximumNotebookLayers; }
 uintptr_t menuLoadViewVma() { return kMenuLoadViewVma; }
 uintptr_t menuLoadViewSize() { return kMenuLoadViewSize; }
+uintptr_t exportMenuLoadViewVma() { return kExportMenuLoadViewVma; }
+uintptr_t exportMenuLoadViewSize() { return kExportMenuLoadViewSize; }
+uintptr_t exportMenuFullActionReturnVma() {
+    return kExportMenuFullActionReturnVma;
+}
 uintptr_t volumeInPixmapViewOffset() { return kVolumeInPixmapViewOffset; }
 uintptr_t thumbnailCallbackReturnVma() { return kThumbnailCallbackReturnVma; }
 uintptr_t neboBackendPageControllerOffset() {

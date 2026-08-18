@@ -1,0 +1,16 @@
+{
+    "active": "SNT_LAYER",
+    "layers": [
+        {
+            "id": "cnt.layer.1f6edcf4-1039-42a7-9f69-5846f0bcc1b3",
+            "name": "Layer 2"
+        },
+        {
+            "id": "cnt.layer.ecb985ae-e74d-4fda-9f17-3ca0672be988",
+            "name": "Layer 3"
+        }
+    ],
+    "notebook": "/mnt/onboard/My Notebooks/testing/rr.nebo",
+    "part": "kqzjlajl",
+    "version": 1
+}

@@ -42,7 +42,13 @@ class ArtifactVerifierTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
         self.root = pathlib.Path(self.temporary.name)
-        self.layers = self.root / ".kobo" / "custom" / "layers"
+        self.layers = (
+            self.root
+            / ".kobo"
+            / "iink"
+            / "custom-notebook-templates"
+            / "layers"
+        )
         (self.layers / "previews").mkdir(parents=True)
         (self.root / "sample.nebo").write_bytes(b"notebook fixture")
         self.notebook = "/mnt/onboard/sample.nebo"
@@ -110,6 +116,15 @@ class ArtifactVerifierTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("macOS metadata ignored", result.stdout)
         self.assertIn("1 preview(s)", result.stdout)
+
+    def test_legacy_layer_root_remains_verifiable(self) -> None:
+        self.write_state()
+        self.write_preview()
+        legacy = self.root / ".kobo" / "custom" / "layers"
+        legacy.parent.mkdir(parents=True)
+        self.layers.rename(legacy)
+        result = self.run_verifier()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 
 if __name__ == "__main__":

@@ -197,6 +197,17 @@ typedef void (*CreateBrushSizeRow)(
 typedef void (*SetBrushSizeIndex)(void* controller, int index);
 typedef void (*SetActiveTool)(void* widget, int tool);
 typedef void (*RenderVolume)(void* widget, void const* volume);
+typedef void (*IInkNotePadHistoryAction)(void* widget);
+typedef void (*IInkExportMenuControllerExportNotebook)(
+    void* controller,
+    bool fullNotebook);
+typedef void (*IInkNotePadExporterConstructor)(void* exporter);
+typedef void (*IInkNotePadExporterExportVolume)(
+    void* exporter,
+    void const* volume,
+    QString const& destination,
+    bool fullNotebook,
+    int partIndex);
 typedef void (*WidgetSave)(void* widget);
 typedef QString (*WidgetFilePath)(void const* widget);
 typedef void (*WidgetRefresh)(void* widget);
@@ -407,6 +418,16 @@ union RenderVolumeAddress {
     void* pointer;
 };
 
+union IInkNotePadExporterExportVolumeAddress {
+    IInkNotePadExporterExportVolume function;
+    void* pointer;
+};
+
+union IInkNotePadExporterConstructorAddress {
+    IInkNotePadExporterConstructor function;
+    void* pointer;
+};
+
 union ToolMenuConstructorAddress {
     ToolMenuConstructor function;
     void* pointer;
@@ -471,6 +492,17 @@ void _cnt_set_tool_theme_hook(void* widget, void* theme);
 
 extern "C" __attribute__((visibility("default")))
 void _cnt_render_volume_hook(void* widget, void const* volume);
+
+extern "C" __attribute__((visibility("default")))
+void _cnt_export_volume_hook(
+    void* exporter,
+    void const* volume,
+    QString const& destination,
+    bool fullNotebook,
+    int partIndex);
+
+extern "C" __attribute__((visibility("default")))
+void _cnt_exporter_constructor_hook(void* exporter);
 
 extern "C" __attribute__((visibility("default")))
 void _cnt_tool_menu_constructor_hook(

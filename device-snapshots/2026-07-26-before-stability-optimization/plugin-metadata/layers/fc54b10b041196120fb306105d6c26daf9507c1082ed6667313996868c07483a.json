@@ -1,0 +1,12 @@
+{
+    "active": "SNT_LAYER",
+    "layers": [
+        {
+            "id": "cnt.layer.0ad0655e-5b95-474b-a4a1-8c713401ca61",
+            "name": "Layer 2"
+        }
+    ],
+    "notebook": "/mnt/onboard/My Notebooks/Ideapad.nebo",
+    "part": "upnmsjfl",
+    "version": 1
+}

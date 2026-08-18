@@ -11,8 +11,6 @@
 #include <QString>
 #include <QVector>
 
-#include <cstdio>
-
 namespace cnt {
 namespace notebook_hook_services {
 
@@ -74,39 +72,53 @@ void routeParserImage(
         return;
     }
 
-    QElapsedTimer timer;
-    timer.start();
-    QString const notebookPath = cover_cache::notebookPathFromContentId(
-        firmware.contentGetId(volume));
-    double const pathResolveMs = fs_util::elapsedMs(timer);
-    if (notebookPath.isEmpty()) {
-        firmware.parserImageParsedOriginal(parser, volume, image);
-        return;
-    }
+    QImage replacement;
+    bool useReplacement = false;
+    try {
+        QElapsedTimer timer;
+        timer.start();
+        QString const notebookPath = cover_cache::notebookPathFromContentId(
+            firmware.contentGetId(volume));
+        double const pathResolveMs = fs_util::elapsedMs(timer);
+        if (!notebookPath.isEmpty()) {
+            QString type;
+            if (coverState.hooksReady
+                    && cover_cache::zipApisReady(coverState)
+                    && cover_cache::cachedNotebookCoverType(
+                        coverState, notebookPath, &type, pathResolveMs)) {
+                QImage const composed =
+                    cover_cache::composeCoverWithRenderedInk(
+                        coverState, type, image);
+                if (!composed.isNull()) {
+                    cover_cache::cacheRenderedCoverImage(
+                        coverState, notebookPath, type, composed);
+                    replacement = composed;
+                    useReplacement = true;
+                } else {
+                    trace(
+                        "covers: cover-and-ink composition failed; "
+                        "stock preview preserved");
+                }
+            }
 
-    QString type;
-    if (coverState.hooksReady
-            && cover_cache::zipApisReady(coverState)
-            && cover_cache::cachedNotebookCoverType(
-                coverState, notebookPath, &type, pathResolveMs)) {
-        QImage const composed = cover_cache::composeCoverWithRenderedInk(
-            coverState, type, image);
-        if (!composed.isNull()) {
-            cover_cache::cacheRenderedCoverImage(
-                coverState, notebookPath, type, composed);
-            firmware.parserImageParsedOriginal(parser, volume, composed);
-            trace("covers: custom cover composed with rendered page ink");
-            return;
+            if (!useReplacement) {
+                // Keep Kobo's own page-zero render for notebooks without a
+                // plugin cover. The empty type annotation distinguishes stock
+                // page zero from a composed custom cover.
+                cover_cache::cacheRenderedCoverImage(
+                    coverState, notebookPath, QString(), image);
+            }
         }
-        trace("covers: cover-and-ink composition failed; stock preview preserved");
+    } catch (...) {
+        replacement = QImage();
+        useReplacement = false;
+        trace("covers: parser augmentation threw; stock preview preserved");
     }
 
-    // Keep Kobo's own page-zero render for notebooks without a plugin cover.
-    // The empty type annotation intentionally distinguishes stock page zero
-    // from a composed custom cover in the shared persisted cache.
-    cover_cache::cacheRenderedCoverImage(
-        coverState, notebookPath, QString(), image);
-    firmware.parserImageParsedOriginal(parser, volume, image);
+    if (useReplacement)
+        firmware.parserImageParsedOriginal(parser, volume, replacement);
+    else
+        firmware.parserImageParsedOriginal(parser, volume, image);
 }
 
 void augmentNotebookGridCover(
@@ -123,40 +135,35 @@ void augmentNotebookGridCover(
         return;
     }
 
-    void const* const volume = static_cast<char const*>(view)
-        + volumeInPixmapViewOffset;
-    QElapsedTimer timer;
-    timer.start();
-    QString const notebookPath = cover_cache::notebookPathFromContentId(
-        firmware.contentGetId(volume));
-    double const pathResolveMs = fs_util::elapsedMs(timer);
-    QString type;
-    if (notebookPath.isEmpty()
-            || !cover_cache::cachedNotebookCoverType(
-                coverState, notebookPath, &type, pathResolveMs)) {
-        return;
-    }
+    try {
+        void const* const volume = static_cast<char const*>(view)
+            + volumeInPixmapViewOffset;
+        QElapsedTimer timer;
+        timer.start();
+        QString const notebookPath = cover_cache::notebookPathFromContentId(
+            firmware.contentGetId(volume));
+        double const pathResolveMs = fs_util::elapsedMs(timer);
+        QString type;
+        if (notebookPath.isEmpty()
+                || !cover_cache::cachedNotebookCoverType(
+                    coverState, notebookPath, &type, pathResolveMs)) {
+            return;
+        }
 
-    QImage preview = cover_cache::cachedRenderedCoverImage(
-        coverState, notebookPath, type);
-    if (preview.isNull()) {
-        preview = cover_cache::cleanCustomCoverImage(coverState, type);
-        if (!preview.isNull())
-            trace("covers: clean cover used until ink preview is rendered");
-    }
-    if (preview.isNull()) {
-        trace("covers: no rendered or clean preview; stock card preserved");
-        return;
-    }
+        QImage preview = cover_cache::cachedRenderedCoverImage(
+            coverState, notebookPath, type);
+        if (preview.isNull())
+            preview = cover_cache::cleanCustomCoverImage(coverState, type);
+        if (preview.isNull()) {
+            trace("covers: no rendered or clean preview; stock card preserved");
+            return;
+        }
 
-    QString const imageId = firmware.contentGetImageId(volume);
-    timer.restart();
-    firmware.pixmapSetImage(view, preview, imageId);
-    char line[128];
-    snprintf(line, sizeof(line),
-        "covers: live notebook card replaced (set-image=%.1fms)",
-        fs_util::elapsedMs(timer));
-    trace(line);
+        QString const imageId = firmware.contentGetImageId(volume);
+        firmware.pixmapSetImage(view, preview, imageId);
+    } catch (...) {
+        trace("covers: grid augmentation threw; stock card preserved");
+    }
 }
 
 } // namespace notebook_hook_services

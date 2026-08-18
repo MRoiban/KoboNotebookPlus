@@ -36,6 +36,7 @@
 #include <QRectF>
 #include <QSaveFile>
 #include <QSize>
+#include <QStringList>
 #include <QTransform>
 #include <QVariant>
 #include <QVBoxLayout>
@@ -77,9 +78,9 @@ enum LayoutPin {
 };
 
 char const kPinnedPageStatePath[] =
-    "/mnt/onboard/.kobo/custom/templates/pinned-sleep-page.json";
+    "/mnt/onboard/.kobo/iink/custom-notebook-templates/notebook-sleep/pinned-page.json";
 char const kPinnedPageImagePath[] =
-    "/mnt/onboard/.kobo/custom/templates/pinned-sleep-page.png";
+    "/mnt/onboard/.kobo/iink/custom-notebook-templates/notebook-sleep/pinned-page.png";
 
 template <typename Function>
 void* functionPointer(Function function) {
@@ -146,6 +147,58 @@ static QString canonicalNotebookPath(QString const& path) {
         ? info.absoluteFilePath() : canonical);
 }
 
+static bool migrateLegacyPinnedFile(
+        QString const& legacyPath,
+        QString const& destinationPath) {
+    if (!QFileInfo(legacyPath).exists())
+        return true;
+    if (QFileInfo(destinationPath).exists())
+        return QFile::remove(legacyPath);
+    if (!QDir().mkpath(QFileInfo(destinationPath).absolutePath()))
+        return false;
+    if (QFile::rename(legacyPath, destinationPath))
+        return true;
+    if (!QFile::copy(legacyPath, destinationPath))
+        return false;
+    return QFile::remove(legacyPath);
+}
+
+static void removeLegacyPinnedTemplateArtifacts() {
+    QFile::remove(QLatin1String(
+        "/mnt/onboard/.kobo/iink/custom-notebook-templates/templates/pinned-sleep-page-icon.png"));
+    QFile::remove(QLatin1String(
+        "/mnt/onboard/.kobo/iink/custom-notebook-templates/templates/pinned-sleep-page_condor.png"));
+}
+
+static void migrateLegacyPinnedPageFiles() {
+    QString const legacyState = QLatin1String(
+        "/mnt/onboard/.kobo/iink/custom-notebook-templates/templates/pinned-sleep-page.json");
+    QString const legacyImage = QLatin1String(
+        "/mnt/onboard/.kobo/iink/custom-notebook-templates/templates/pinned-sleep-page.png");
+    bool const hadLegacy = QFileInfo(legacyState).exists()
+        || QFileInfo(legacyImage).exists()
+        || QFileInfo(QLatin1String(
+            "/mnt/onboard/.kobo/iink/custom-notebook-templates/templates/pinned-sleep-page-icon.png"))
+            .exists()
+        || QFileInfo(QLatin1String(
+            "/mnt/onboard/.kobo/iink/custom-notebook-templates/templates/pinned-sleep-page_condor.png"))
+            .exists();
+    if (!hadLegacy)
+        return;
+
+    bool const stateMigrated = migrateLegacyPinnedFile(
+        legacyState,
+        QLatin1String(kPinnedPageStatePath));
+    bool const imageMigrated = migrateLegacyPinnedFile(
+        legacyImage,
+        QLatin1String(kPinnedPageImagePath));
+    removeLegacyPinnedTemplateArtifacts();
+    if (stateMigrated && imageMigrated)
+        cnt::trace("notebook-sleep: legacy pinned cache migrated");
+    else
+        cnt::trace("notebook-sleep: legacy pinned cache migration incomplete");
+}
+
 static void clearPinnedPageMemory(
         cnt::notebook_sleep::RuntimeState& state) {
     state.pinnedNotebookPath.clear();
@@ -164,7 +217,13 @@ static void loadPinnedPageState(
     state.pinnedPageLoaded = true;
     clearPinnedPageMemory(state);
 
-    QString const statePath = QLatin1String(kPinnedPageStatePath);
+    QString statePath = QLatin1String(kPinnedPageStatePath);
+    if (!QFileInfo(statePath).exists()) {
+        QString const legacyPath = QLatin1String(
+            "/mnt/onboard/.kobo/iink/custom-notebook-templates/templates/pinned-sleep-page.json");
+        if (QFileInfo(legacyPath).exists())
+            statePath = legacyPath;
+    }
     QFile file(statePath);
     QFileInfo const info(file);
     if (!info.exists()) {
@@ -208,17 +267,30 @@ static void loadPinnedPageState(
 
 static bool removePinnedPageState(
         cnt::notebook_sleep::RuntimeState& state) {
-    QString const statePath = QLatin1String(kPinnedPageStatePath);
-    if (QFileInfo(statePath).exists() && !QFile::remove(statePath))
-        return false;
-
-    QString const imagePath = QLatin1String(kPinnedPageImagePath);
-    if (QFileInfo(imagePath).exists() && !QFile::remove(imagePath)) {
-        cnt::trace("notebook-sleep: orphaned pinned image could not be removed");
+    bool removed = true;
+    QStringList const statePaths = QStringList()
+        << QLatin1String(kPinnedPageStatePath)
+        << QLatin1String(
+            "/mnt/onboard/.kobo/iink/custom-notebook-templates/templates/pinned-sleep-page.json");
+    for (QString const& statePath : statePaths) {
+        if (QFileInfo(statePath).exists() && !QFile::remove(statePath))
+            removed = false;
     }
+
+    QStringList const imagePaths = QStringList()
+        << QLatin1String(kPinnedPageImagePath)
+        << QLatin1String(
+            "/mnt/onboard/.kobo/iink/custom-notebook-templates/templates/pinned-sleep-page.png");
+    for (QString const& imagePath : imagePaths) {
+        if (QFileInfo(imagePath).exists() && !QFile::remove(imagePath)) {
+            cnt::trace(
+                "notebook-sleep: orphaned pinned image could not be removed");
+        }
+    }
+    removeLegacyPinnedTemplateArtifacts();
     clearPinnedPageMemory(state);
     state.pinnedPageLoaded = true;
-    return true;
+    return removed;
 }
 
 static void discardUnavailablePinnedPage(
@@ -238,8 +310,9 @@ static bool persistPinnedPageState(
         QString const& partId) {
     if (!validPinnedNotebookPath(notebookPath)
             || !validPinnedPartId(partId)
-            || !QDir().mkpath(QLatin1String(
-                "/mnt/onboard/.kobo/custom/templates/"))) {
+            || !QDir().mkpath(
+                QFileInfo(QLatin1String(kPinnedPageStatePath))
+                    .absolutePath())) {
         return false;
     }
 
@@ -262,6 +335,10 @@ static bool persistPinnedPageState(
     bytes.append('\n');
     if (file.write(bytes) != bytes.size() || !file.commit())
         return false;
+
+    QFile::remove(QLatin1String(
+        "/mnt/onboard/.kobo/iink/custom-notebook-templates/templates/pinned-sleep-page.json"));
+    removeLegacyPinnedTemplateArtifacts();
 
     clearPinnedPageMemory(state);
     state.pinnedPageLoaded = true;
@@ -706,7 +783,13 @@ static QImage loadPinnedPageImage(
     state.pinnedPageImageLoaded = true;
     state.pinnedPageImage = QImage();
 
-    QString const imagePath = QLatin1String(kPinnedPageImagePath);
+    QString imagePath = QLatin1String(kPinnedPageImagePath);
+    if (!QFileInfo(imagePath).exists()) {
+        QString const legacyPath = QLatin1String(
+            "/mnt/onboard/.kobo/iink/custom-notebook-templates/templates/pinned-sleep-page.png");
+        if (QFileInfo(legacyPath).exists())
+            imagePath = legacyPath;
+    }
     QFileInfo const info(imagePath);
     if (!info.isFile() || info.size() <= 0
             || info.size() > MaximumBackgroundPngBytes) {
@@ -732,12 +815,17 @@ static bool persistPinnedPageImage(QImage const& image) {
         return false;
     }
     QString const imagePath = QLatin1String(kPinnedPageImagePath);
+    if (!QDir().mkpath(QFileInfo(imagePath).absolutePath()))
+        return false;
     QSaveFile file(imagePath);
     if (!file.open(QIODevice::WriteOnly)
             || !image.save(&file, "PNG")
             || !file.commit()) {
         return false;
     }
+    QFile::remove(QLatin1String(
+        "/mnt/onboard/.kobo/iink/custom-notebook-templates/templates/pinned-sleep-page.png"));
+    removeLegacyPinnedTemplateArtifacts();
     return true;
 }
 
@@ -1046,10 +1134,20 @@ bool NotebookSleepRefreshReceiver::eventFilter(
         }
         break;
     }
+    case QEvent::Hide:
+    case QEvent::Destroy:
+        if (watched == state.activeNotebook.data()
+                && !state.cachedPageImage.isNull()) {
+            // A hidden/closing notebook no longer needs to pin a full-screen
+            // ~10 MiB frame. The persisted pinned-page image remains the
+            // authoritative fallback outside the live notebook view.
+            invalidateCurrentPageCache(state);
+        }
+        break;
     default:
         break;
     }
-    return QObject::eventFilter(watched, event);
+    return false;
 }
 
 NotebookSleepSettingsReceiver::NotebookSleepSettingsReceiver(
@@ -1088,6 +1186,11 @@ namespace cnt {
 namespace notebook_sleep {
 
 bool installHooks(RuntimeState& state) {
+    // This runs before automatic template discovery. Move caches created by
+    // earlier builds out of the template directory before Nickel can expose
+    // their full-page PNG as a notebook paper.
+    migrateLegacyPinnedPageFiles();
+
     void* const handle = dlopen(
         "libnickel.so.1.0.0", RTLD_LAZY | RTLD_NOLOAD);
     if (!handle) {

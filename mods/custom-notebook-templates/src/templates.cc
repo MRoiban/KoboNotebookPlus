@@ -15,6 +15,7 @@
 #include <QJsonObject>
 #include <QJsonParseError>
 #include <QString>
+#include <QStringList>
 #include <QtGlobal>
 
 #include <NickelHook.h>
@@ -26,12 +27,14 @@ namespace templates {
 namespace {
 
 char const kManifest[] =
-    "/mnt/onboard/.kobo/custom/templates/templates.json";
-char const kTemplateRoot[] = "/mnt/onboard/.kobo/custom/templates/";
+    "/mnt/onboard/.kobo/iink/custom-notebook-templates/templates/templates.json";
+char const kTemplateRoot[] =
+    "/mnt/onboard/.kobo/iink/custom-notebook-templates/templates/";
 char const kCondorSuffix[] = "_condor.png";
 int const kMaximumCustomTemplates = 32;
 int const kBackgroundWidth = 1404;
 int const kBackgroundHeight = 1872;
+char const kTemplateOverlayVersion[] = "template-overlay-v2";
 
 // Binary Ninja image addresses minus its 0x10000 analysis base.
 uintptr_t const kBackgroundOptionsVma = 0x78c9c;
@@ -53,6 +56,11 @@ bool syncTemplateOverlay(QString const& sourcePath, QString* condorPath) {
     destination.append(QLatin1String(kCondorSuffix));
     *condorPath = destination;
 
+    if (fs_util::generatedPngIsFresh(
+            sourcePath, destination, kTemplateOverlayVersion)) {
+        return true;
+    }
+
     QImage page;
     if (!page.load(sourcePath, "PNG"))
         return false;
@@ -68,8 +76,19 @@ bool syncTemplateOverlay(QString const& sourcePath, QString* condorPath) {
             QRgb const* const row =
                 reinterpret_cast<QRgb const*>(overlay.constScanLine(y));
             for (int x = 0; x < overlay.width(); ++x) {
-                if (qAlpha(row[x]) != 255)
-                    return fs_util::syncCondorVariant(sourcePath, condorPath);
+                if (qAlpha(row[x]) != 255) {
+                    if (!fs_util::syncCondorVariant(
+                            sourcePath, condorPath)) {
+                        return false;
+                    }
+                    if (!fs_util::rememberGeneratedPng(
+                            sourcePath,
+                            *condorPath,
+                            kTemplateOverlayVersion)) {
+                        trace("asset-cache: transparent template stamp unavailable");
+                    }
+                    return true;
+                }
             }
         }
     }
@@ -87,7 +106,10 @@ bool syncTemplateOverlay(QString const& sourcePath, QString* condorPath) {
     buffer.close();
     if (!fs_util::writeBytesIfChanged(destination, encoded))
         return false;
-    trace("automatic: opaque paper converted to transparent overlay");
+    if (!fs_util::rememberGeneratedPng(
+            sourcePath, destination, kTemplateOverlayVersion)) {
+        trace("asset-cache: template overlay stamp unavailable");
+    }
     return true;
 }
 
@@ -214,10 +236,10 @@ bool loadManifest(
         CustomTemplate const& value = parsed.at(i);
         rendererMap.insert(value.id, value.backgroundBase);
         state.customTemplates.append(value);
-        nh_log("loaded custom notebook template '%s' as '%s'",
-            qPrintable(value.id), qPrintable(value.label));
     }
-    trace("manifest: templates inserted into renderer map");
+    trace(QLatin1String("manifest: loaded templates count=")
+        + QString::number(parsed.size()));
+    nh_log("loaded %d custom notebook templates from manifest", parsed.size());
     return true;
 }
 
@@ -226,8 +248,10 @@ void loadAutomaticTemplates(
         TemplateRuntimeState& state) {
     QDir directory(QString::fromLatin1(kTemplateRoot));
     QFileInfoList const files = directory.entryInfoList(
+        QStringList() << QLatin1String("*.png"),
         QDir::Files | QDir::NoSymLinks,
         QDir::Name | QDir::IgnoreCase);
+    int loadedCount = 0;
 
     for (int i = 0; i < files.size(); ++i) {
         if (state.customTemplates.size() >= kMaximumCustomTemplates) {
@@ -236,6 +260,11 @@ void loadAutomaticTemplates(
         }
 
         QFileInfo const& info = files.at(i);
+        if (info.fileName().compare(
+                QLatin1String("pinned-sleep-page.png"),
+                Qt::CaseInsensitive) == 0) {
+            continue;
+        }
         if (!fs_util::automaticSource(info))
             continue;
 
@@ -280,10 +309,11 @@ void loadAutomaticTemplates(
         rendererMap.insert(id, sourcePath);
         state.customTemplates.append(
             CustomTemplate{id, label, iconPath, sourcePath});
-        trace("automatic: PNG template loaded");
-        nh_log("automatically loaded notebook template '%s' as '%s'",
-            qPrintable(info.fileName()), qPrintable(label));
+        ++loadedCount;
     }
+    trace(QLatin1String("automatic: loaded templates count=")
+        + QString::number(loadedCount));
+    nh_log("automatically loaded %d notebook templates", loadedCount);
 }
 
 } // namespace templates

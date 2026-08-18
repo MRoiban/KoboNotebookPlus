@@ -19,6 +19,13 @@ struct FirmwareApi {
     SetBackgroundType setBackgroundTypeOriginal;
     SetToolTheme setToolThemeOriginal;
     RenderVolume renderVolumeOriginal;
+    IInkNotePadHistoryAction notePadUndo;
+    IInkNotePadHistoryAction notePadRedo;
+    IInkExportMenuControllerExportNotebook
+        iInkExportMenuControllerExportNotebook;
+    IInkNotePadExporterConstructor iInkNotePadExporterConstructorOriginal;
+    IInkNotePadExporterExportVolume iInkNotePadExporterExportVolumeOriginal;
+    void* iInkNotePadExporterVtable;
     ToolMenuConstructor toolMenuConstructorOriginal;
     CreateBrushSizeRow createBrushSizeRowOriginal;
     SetBrushSizeIndex setBrushSizeIndexOriginal;

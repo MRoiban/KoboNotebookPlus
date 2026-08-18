@@ -25,9 +25,14 @@ from typing import Counter, Iterable, Sequence, Tuple
 
 Symbol = Tuple[str, str]
 SymbolCounts = Counter[Symbol]
-EXPECTED_DELTA_KEYS = frozenset((
+EXPECTED_DELTA_REQUIRED_KEYS = frozenset((
     "candidate_only_exports",
     "candidate_only_imports",
+))
+EXPECTED_DELTA_OPTIONAL_KEYS = frozenset((
+    "reference_only_exports",
+    "reference_only_imports",
+    "candidate_needed_libraries",
 ))
 
 
@@ -241,9 +246,44 @@ def parse_expected_symbols(value: object, key: str) -> SymbolCounts:
     return symbols
 
 
-def load_expected_symbol_delta(path: pathlib.Path | None) -> tuple[SymbolCounts, SymbolCounts]:
+def parse_expected_libraries(value: object) -> list[str]:
+    if not isinstance(value, list):
+        raise VerificationError(
+            "candidate_needed_libraries must be a JSON list"
+        )
+    result: list[str] = []
+    for index, entry in enumerate(value):
+        if (not isinstance(entry, str)
+                or not entry
+                or any(char.isspace() for char in entry)):
+            raise VerificationError(
+                f"candidate_needed_libraries[{index}] is invalid"
+            )
+        if entry in result:
+            raise VerificationError(
+                f"candidate_needed_libraries contains duplicate: {entry}"
+            )
+        result.append(entry)
+    return result
+
+
+def load_expected_symbol_delta(
+    path: pathlib.Path | None,
+) -> tuple[
+    SymbolCounts,
+    SymbolCounts,
+    SymbolCounts,
+    SymbolCounts,
+    list[str] | None,
+]:
     if path is None:
-        return collections.Counter(), collections.Counter()
+        return (
+            collections.Counter(),
+            collections.Counter(),
+            collections.Counter(),
+            collections.Counter(),
+            None,
+        )
     try:
         document = json.loads(path.read_text(encoding="utf-8"))
     except OSError as exc:
@@ -252,10 +292,20 @@ def load_expected_symbol_delta(path: pathlib.Path | None) -> tuple[SymbolCounts,
         raise VerificationError(
             f"expected symbol delta is not valid JSON: {path}: {exc}"
         ) from exc
-    if not isinstance(document, dict) or set(document) != EXPECTED_DELTA_KEYS:
+    if not isinstance(document, dict):
         raise VerificationError(
-            "expected symbol delta must contain exactly "
+            "expected symbol delta must be a JSON object"
+        )
+    keys = set(document)
+    missing = EXPECTED_DELTA_REQUIRED_KEYS - keys
+    unexpected = keys - (
+        EXPECTED_DELTA_REQUIRED_KEYS | EXPECTED_DELTA_OPTIONAL_KEYS
+    )
+    if missing or unexpected:
+        raise VerificationError(
+            "expected symbol delta must contain exactly the required "
             "candidate_only_exports and candidate_only_imports"
+            ", with only the documented optional keys"
         )
     return (
         parse_expected_symbols(
@@ -263,6 +313,21 @@ def load_expected_symbol_delta(path: pathlib.Path | None) -> tuple[SymbolCounts,
         ),
         parse_expected_symbols(
             document["candidate_only_imports"], "candidate_only_imports"
+        ),
+        parse_expected_symbols(
+            document.get("reference_only_exports", []),
+            "reference_only_exports",
+        ),
+        parse_expected_symbols(
+            document.get("reference_only_imports", []),
+            "reference_only_imports",
+        ),
+        (
+            parse_expected_libraries(
+                document["candidate_needed_libraries"]
+            )
+            if "candidate_needed_libraries" in document
+            else None
         ),
     )
 
@@ -272,25 +337,43 @@ def report_symbol_difference(
     reference: SymbolCounts,
     candidate: SymbolCounts,
     expected_candidate_only: SymbolCounts | None = None,
+    expected_reference_only: SymbolCounts | None = None,
 ) -> bool:
-    expected = expected_candidate_only or collections.Counter()
+    expected_candidate = (
+        expected_candidate_only or collections.Counter()
+    )
+    expected_reference = (
+        expected_reference_only or collections.Counter()
+    )
     reference_only = reference - candidate
     candidate_only = candidate - reference
-    if not reference_only and candidate_only == expected:
+    if (reference_only == expected_reference
+            and candidate_only == expected_candidate):
         suffix = ""
-        if expected:
-            suffix = f" + {sum(expected.values())} approved additions"
+        if expected_candidate or expected_reference:
+            suffix = (
+                f" + {sum(expected_candidate.values())} approved additions"
+                f", {sum(expected_reference.values())} approved removals"
+            )
         print(f"PASS {title}: {sum(reference.values())} reference entries{suffix}")
         return True
     print(f"FAIL {title}", file=sys.stderr)
-    for symbol in sorted(reference_only.elements(), key=lambda item: (item[1], item[0])):
-        print(f"  reference only: {symbol_label(symbol)}", file=sys.stderr)
-    for symbol in expanded_difference(expected, candidate_only):
+    for symbol in expanded_difference(expected_reference, reference_only):
+        print(
+            f"  approved reference removal missing: {symbol_label(symbol)}",
+            file=sys.stderr,
+        )
+    for symbol in expanded_difference(reference_only, expected_reference):
+        print(
+            f"  unapproved reference only: {symbol_label(symbol)}",
+            file=sys.stderr,
+        )
+    for symbol in expanded_difference(expected_candidate, candidate_only):
         print(
             f"  approved candidate addition missing: {symbol_label(symbol)}",
             file=sys.stderr,
         )
-    for symbol in expanded_difference(candidate_only, expected):
+    for symbol in expanded_difference(candidate_only, expected_candidate):
         print(
             f"  unapproved candidate only: {symbol_label(symbol)}",
             file=sys.stderr,
@@ -298,17 +381,38 @@ def report_symbol_difference(
     return False
 
 
-def report_needed_difference(reference: list[str], candidate: list[str]) -> bool:
-    if reference == candidate:
-        print(f"PASS DT_NEEDED: {len(reference)} entries (including order)")
+def report_needed_difference(
+    reference: list[str],
+    candidate: list[str],
+    expected_candidate: list[str] | None = None,
+) -> bool:
+    expected = (
+        reference if expected_candidate is None else expected_candidate
+    )
+    if candidate == expected:
+        suffix = (
+            ""
+            if expected_candidate is None
+            else " (approved candidate manifest)"
+        )
+        print(
+            f"PASS DT_NEEDED: {len(candidate)} entries "
+            f"(including order){suffix}"
+        )
         return True
-    print("FAIL DT_NEEDED differs (order is significant)", file=sys.stderr)
-    width = max(len(reference), len(candidate))
+    print(
+        "FAIL DT_NEEDED differs (order is significant) from expected candidate",
+        file=sys.stderr,
+    )
+    width = max(len(expected), len(candidate))
     for index in range(width):
-        old = reference[index] if index < len(reference) else "<missing>"
+        old = expected[index] if index < len(expected) else "<missing>"
         new = candidate[index] if index < len(candidate) else "<missing>"
         marker = " " if old == new else "!"
-        print(f"  {marker} [{index}] {old} -> {new}", file=sys.stderr)
+        print(
+            f"  {marker} [{index}] expected {old}; candidate {new}",
+            file=sys.stderr,
+        )
     return False
 
 
@@ -390,8 +494,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--expected-symbol-delta",
         type=pathlib.Path,
         help=(
-            "JSON manifest of exact candidate-only exports and imports; "
-            "reference-only symbols and unlisted additions still fail"
+            "JSON manifest of exact approved candidate/reference symbol "
+            "deltas and, optionally, the exact candidate DT_NEEDED list"
         ),
     )
     parser.add_argument(
@@ -420,9 +524,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         candidate_exports = dynamic_symbols(nm, args.candidate, True)
         reference_imports = dynamic_symbols(nm, args.reference, False)
         candidate_imports = dynamic_symbols(nm, args.candidate, False)
-        expected_exports, expected_imports = load_expected_symbol_delta(
-            args.expected_symbol_delta
-        )
+        (
+            expected_exports,
+            expected_imports,
+            expected_removed_exports,
+            expected_removed_imports,
+            expected_needed,
+        ) = load_expected_symbol_delta(args.expected_symbol_delta)
         reference_needed = needed_libraries(objdump, args.reference)
         candidate_needed = needed_libraries(objdump, args.candidate)
         reference_sections = section_sizes(objdump, args.reference)
@@ -434,14 +542,20 @@ def main(argv: Sequence[str] | None = None) -> int:
                 reference_exports,
                 candidate_exports,
                 expected_exports,
+                expected_removed_exports,
             ),
             report_symbol_difference(
                 "dynamic undefined imports",
                 reference_imports,
                 candidate_imports,
                 expected_imports,
+                expected_removed_imports,
             ),
-            report_needed_difference(reference_needed, candidate_needed),
+            report_needed_difference(
+                reference_needed,
+                candidate_needed,
+                expected_needed,
+            ),
         ]
         report_section_drift(reference_sections, candidate_sections)
 

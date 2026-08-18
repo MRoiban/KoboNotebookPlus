@@ -16,6 +16,14 @@ bool automaticSource(QFileInfo const& info);
 bool safeId(QString const& id);
 bool safeTemplatePath(QString const& path);
 bool hasPngSignature(QString const& path);
+bool generatedPngIsFresh(
+    QString const& sourcePath,
+    QString const& destinationPath,
+    char const* conversionVersion);
+bool rememberGeneratedPng(
+    QString const& sourcePath,
+    QString const& destinationPath,
+    char const* conversionVersion);
 bool syncCondorVariant(QString const& sourcePath, QString* condorPath);
 bool writeBytesIfChanged(QString const& destination, QByteArray const& contents);
 bool createPickerIcon(QString const& sourcePath, QString* iconPath);

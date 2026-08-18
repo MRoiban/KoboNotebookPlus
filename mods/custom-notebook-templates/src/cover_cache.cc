@@ -28,7 +28,7 @@ namespace cover_cache {
 namespace {
 
 char const kRenderedPreviewRoot[] =
-    "/mnt/onboard/.kobo/custom/previews/";
+    "/mnt/onboard/.kobo/iink/custom-notebook-templates/previews/";
 int const kBackgroundWidth = 1404;
 int const kBackgroundHeight = 1872;
 int const kMaximumPageMetadataSize = 256 * 1024;
@@ -412,11 +412,6 @@ bool cachedNotebookCoverType(
                     && found.value().size == size) {
                 *coverType = found.value().type;
                 bool const hasCover = found.value().hasCover;
-                locker.unlock();
-                snprintf(line, sizeof(line),
-                    "cover-cache: hit (%s) path-resolve=%.1fms",
-                    hasCover ? "cover" : "no cover", pathResolveMs);
-                trace(line);
                 return hasCover;
             }
             state.scanCache.remove(notebookPath);
@@ -450,7 +445,6 @@ bool cachedNotebookCoverType(
         QMutexLocker locker(&state.cacheMutex);
         if (state.scanCache.size() >= kMaximumScanCacheEntries) {
             state.scanCache.clear();
-            trace("cover-cache: scan cache cleared (entry limit)");
         }
         CoverScanEntry entry;
         entry.modifiedMs = modifiedMs;
@@ -488,7 +482,6 @@ static void pruneRenderedPreviewFiles() {
         QFileInfo const oldest = files.takeLast();
         if (!QFile::remove(oldest.absoluteFilePath()))
             break;
-        trace("cover-cache: persisted preview pruned");
     }
 }
 
@@ -510,7 +503,6 @@ static void persistRenderedCoverImage(
         return;
     }
     pruneRenderedPreviewFiles();
-    trace("cover-cache: composed preview persisted");
 }
 
 static QImage loadPersistedCoverImage(
@@ -537,11 +529,9 @@ void invalidateNotebookScanEntry(
         State& state,
         QString const& notebookPath) {
     QString const key = QDir::cleanPath(notebookPath);
-    if (QFile::remove(renderedPreviewFilePath(key)))
-        trace("cover-cache: persisted preview removed after cover change");
+    QFile::remove(renderedPreviewFilePath(key));
     QMutexLocker locker(&state.cacheMutex);
-    if (state.scanCache.remove(key) > 0)
-        trace("cover-cache: entry invalidated after plugin cover change");
+    state.scanCache.remove(key);
     state.renderedCache.remove(key);
 }
 
@@ -565,7 +555,7 @@ static templates::CustomTemplate const* customCoverForType(
 // while black handwriting remains black. The result is deliberately opaque,
 // matching the full-page cover images accepted by the existing callback.
 QImage composeCoverWithRenderedInk(
-    State const& state,
+    State& state,
     QString const& type,
     QImage const& renderedInk) {
     templates::CustomTemplate const* const cover =
@@ -573,7 +563,7 @@ QImage composeCoverWithRenderedInk(
     if (!cover || renderedInk.isNull())
         return QImage();
 
-    QImage composed(cover->backgroundBase);
+    QImage composed = cleanCustomCoverImage(state, type);
     if (composed.isNull()
             || composed.width() != kBackgroundWidth
             || composed.height() != kBackgroundHeight) {
@@ -631,7 +621,6 @@ static void evictCleanCoverImagesLocked(State& state) {
         }
         total -= oldest.value().image.byteCount();
         state.cleanCache.erase(oldest);
-        trace("cover-cache: clean cover evicted (memory bound)");
     }
 }
 
@@ -702,7 +691,6 @@ static void evictRenderedCoverImagesLocked(State& state) {
         }
         total -= oldest.value().image.byteCount();
         state.renderedCache.erase(oldest);
-        trace("cover-cache: rendered preview evicted (memory bound)");
     }
 }
 
@@ -770,12 +758,6 @@ QImage cachedRenderedCoverImage(
                 // A cover change through this plugin explicitly clears the
                 // entry in invalidateNotebookScanEntry(), and a type mismatch
                 // above also clears it.
-                if (found.value().notebookModifiedMs
-                            != info.lastModified().toMSecsSinceEpoch()
-                        || found.value().notebookSize != info.size()) {
-                    trace("cover-cache: retaining rendered ink across final "
-                          "notebook save");
-                }
                 found.value().sequence = ++state.renderedSequence;
                 return found.value().image;
             }
@@ -795,7 +777,6 @@ QImage cachedRenderedCoverImage(
     entry.sequence = ++state.renderedSequence;
     state.renderedCache.insert(key, entry);
     evictRenderedCoverImagesLocked(state);
-    trace("cover-cache: persisted preview restored");
     return persisted;
 }
 
@@ -803,8 +784,14 @@ QString notebookPathFromContentId(QString const& contentId) {
     QString path = contentId;
     if (path.startsWith(QLatin1String("file:")))
         path = QUrl(path).toLocalFile();
-    if (!path.endsWith(QLatin1String(".nebo"), Qt::CaseInsensitive))
+    if (!path.endsWith(QLatin1String(".nebo"), Qt::CaseInsensitive)) {
+        // Ordinary EPUB/PDF/image tiles can never resolve to a notebook.
+        // Reject them lexically instead of issuing a failed onboard stat for
+        // every Home/My Books card.
+        if (QFileInfo(path).fileName().contains(QLatin1Char('.')))
+            return QString();
         path.append(QLatin1String(".nebo"));
+    }
     path = QDir::cleanPath(path);
     if (!path.startsWith(QLatin1String("/mnt/onboard/"))
             || !QFileInfo(path).isFile()) {

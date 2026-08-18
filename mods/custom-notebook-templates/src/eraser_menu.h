@@ -65,7 +65,9 @@ void afterActiveTool(
 bool queueActiveEraserReplay(
     RuntimeState& state,
     QObject* widget,
-    layers_eraser::Dependencies const& stateDependencies);
+    layers_eraser::Dependencies const& stateDependencies,
+    int delayMs = 0);
+void invalidateActiveEraserReplay(QObject* widget);
 
 } // namespace eraser_menu
 } // namespace cnt

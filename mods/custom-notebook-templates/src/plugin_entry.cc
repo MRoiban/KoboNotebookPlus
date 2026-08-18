@@ -2,8 +2,10 @@
 #include "cover_cache.h"
 #include "covers.h"
 #include "eraser_menu.h"
+#include "export_range.h"
 #include "firmware_api.h"
 #include "firmware_resolver.h"
+#include "notebook_gestures.h"
 #include "notebook_sleep.h"
 #include "plugin_runtime.h"
 #include "plugin_state.h"
@@ -37,6 +39,24 @@ uintptr_t const kSetToolThemeVma = 0x62200;
 char const kRenderVolumeSymbol[] =
     "_ZN17IInkNotePadWidget12renderVolumeERK6Volume";
 uintptr_t const kRenderVolumeVma = 0x66720;
+char const kNotebookGestureUndoSymbol[] =
+    "_ZN17IInkNotePadWidget4undoEv";
+uintptr_t const kNotebookGestureUndoVma = 0x64074;
+char const kNotebookGestureRedoSymbol[] =
+    "_ZN17IInkNotePadWidget4redoEv";
+uintptr_t const kNotebookGestureRedoVma = 0x64158;
+char const kIInkExportMenuControllerExportNotebookSymbol[] =
+    "_ZN24IInkExportMenuController14exportNotebookEb";
+uintptr_t const kIInkExportMenuControllerExportNotebookVma = 0x4868c;
+char const kIInkNotePadExporterExportVolumeSymbol[] =
+    "_ZN19IInkNotePadExporter12exportVolumeERK6VolumeRK7QStringbi";
+uintptr_t const kIInkNotePadExporterExportVolumeVma = 0x513c0;
+char const kIInkNotePadExporterConstructorSymbol[] =
+    "_ZN19IInkNotePadExporterC1Ev";
+uintptr_t const kIInkNotePadExporterConstructorVma = 0x51390;
+char const kIInkNotePadExporterVtableSymbol[] =
+    "_ZTV19IInkNotePadExporter";
+uintptr_t const kIInkNotePadExporterVtableVma = 0xa52d8;
 char const kSetDialogTitleSymbol[] = "_ZN8N3Dialog8setTitleERK7QString";
 uintptr_t const kSetDialogTitleVma = 0x10e4168;
 char const kParserImageParsedSymbol[] =
@@ -100,6 +120,24 @@ static void installHookAfterNaturalLoad() {
     trace("delayed backgroundOptions hook installed");
 
     if (resolveFirmwareApis(handle)) {
+        bool const historyGestureSymbols =
+            resolvePinned(
+                handle,
+                kNotebookGestureUndoSymbol,
+                kNotebookGestureUndoVma,
+                &firmwareApi().notePadUndo)
+            && resolvePinned(
+                handle,
+                kNotebookGestureRedoSymbol,
+                kNotebookGestureRedoVma,
+                &firmwareApi().notePadRedo);
+        pluginState().notebookGestures.actionsReady =
+            historyGestureSymbols;
+        if (historyGestureSymbols)
+            trace("notebook-gesture: stock undo/redo actions resolved");
+        else
+            trace("notebook-gesture: stock history actions unavailable");
+
         AddWidgetAction resolvedAction = nullptr;
         void* original = nullptr;
         if (firmwareApi().createIInkMenuItem && firmwareApi().iinknoteBase
@@ -126,7 +164,75 @@ static void installHookAfterNaturalLoad() {
             trace("layers: native action hook unavailable; feature disabled");
         }
 
-        if (layerState().hooksReady || eraserState().sizeApisReady
+        IInkExportMenuControllerExportNotebook resolvedExportNotebook = nullptr;
+        IInkNotePadExporterExportVolume resolvedExportVolume = nullptr;
+        IInkNotePadExporterConstructor resolvedExporterConstructor = nullptr;
+        void* resolvedExporterVtable = nullptr;
+        void* originalExporterConstructor = nullptr;
+        bool const exportRangeSymbols =
+            pointerMatchesVma(original, kAddWidgetActionVma)
+            && firmwareApi().nickelTouchMenuConstructor
+            && firmwareApi().nickelTouchMenuSetAlignment
+            && firmwareApi().touchMenuSetCustomPopupPositionOffset
+            && firmwareApi().abstractNickelMenuControllerPopupFromWidget
+            && firmwareApi().nickelTouchMenuPopupPosition
+            && resolvePinned(
+                handle,
+                kIInkExportMenuControllerExportNotebookSymbol,
+                kIInkExportMenuControllerExportNotebookVma,
+                &resolvedExportNotebook)
+            && resolvePinned(
+                handle,
+                kIInkNotePadExporterExportVolumeSymbol,
+                kIInkNotePadExporterExportVolumeVma,
+                &resolvedExportVolume)
+            && resolvePinned(
+                handle,
+                kIInkNotePadExporterConstructorSymbol,
+                kIInkNotePadExporterConstructorVma,
+                &resolvedExporterConstructor)
+            && resolvePinned(
+                handle,
+                kIInkNotePadExporterVtableSymbol,
+                kIInkNotePadExporterVtableVma,
+                &resolvedExporterVtable);
+        if (exportRangeSymbols) {
+            firmwareApi().iInkExportMenuControllerExportNotebook =
+                resolvedExportNotebook;
+            firmwareApi().iInkNotePadExporterExportVolumeOriginal =
+                resolvedExportVolume;
+            firmwareApi().iInkNotePadExporterConstructorOriginal =
+                resolvedExporterConstructor;
+            firmwareApi().iInkNotePadExporterVtable = resolvedExporterVtable;
+            if (cnt::export_range::prepareExporterVtable(
+                    firmwareApi(),
+                    pluginState().exportRange,
+                    resolvedExporterVtable,
+                    _cnt_export_volume_hook)) {
+                IInkNotePadExporterConstructorAddress replacement;
+                replacement.function = _cnt_exporter_constructor_hook;
+                originalExporterConstructor = nh_dlhook(
+                    handle,
+                    kIInkNotePadExporterConstructorSymbol,
+                    replacement.pointer);
+            }
+            if (pointerMatchesVma(
+                    originalExporterConstructor,
+                    kIInkNotePadExporterConstructorVma)) {
+                firmwareApi().iInkNotePadExporterConstructorOriginal =
+                    reinterpret_cast<IInkNotePadExporterConstructor>(
+                        originalExporterConstructor);
+                pluginState().exportRange.hooksReady = true;
+                cnt::export_range::cleanupStaleFiles(
+                    exportRangeRoot(), exportQualityPath());
+                trace("export-range: guarded menu and exporter-constructor hooks installed");
+            }
+        }
+        if (!pluginState().exportRange.hooksReady)
+            trace("export-range: pinned hook validation failed; feature disabled");
+
+        if (pluginState().notebookGestures.actionsReady
+                || layerState().hooksReady || eraserState().sizeApisReady
                 || pluginState().notebookSleep.coreHooksReady) {
             SetToolTheme resolvedTheme = nullptr;
             RenderVolume resolvedRender = nullptr;
@@ -176,6 +282,7 @@ static void installHookAfterNaturalLoad() {
                 if (pluginState().notebookSleep.coreHooksReady)
                     trace("notebook-sleep: notebook-open observer hook installed");
             } else {
+                pluginState().notebookGestures.actionsReady = false;
                 if (layerState().hooksReady)
                     trace("layers: lifecycle hook validation failed; feature disabled");
                 if (eraserState().sizeApisReady) {
@@ -192,6 +299,10 @@ static void installHookAfterNaturalLoad() {
             eraserState().sizeApisReady = false;
             trace("eraser-size: popup augmentation unavailable; feature disabled");
         }
+
+        pluginState().notebookGestures.actionsReady =
+            hookState().notebookLifecycleHooksReady
+            && historyGestureSymbols;
 
         if (layerState().hooksReady
                 && !cnt::cover_cache::loadZipApis(coverState())) {
@@ -314,6 +425,7 @@ static void installHookAfterNaturalLoad() {
 
 static int initialize() {
     publishPluginState(new PluginState());
+    cnt::visibility::migrateLegacySupportTree();
     trace("NickelHook init entered");
     cnt::notebook_sleep::installHooks(pluginState().notebookSleep);
     cnt::visibility_hooks::install();
@@ -331,11 +443,10 @@ static struct nh_info info = {
     "Adds notebook papers, covers, page tools, and experimental native layers.",
     "/mnt/onboard/.kobo/custom/templates/uninstall-plugin",
     nullptr,
-    // The insertion and thumbnail hooks have passed their disposable-notebook
-    // test. Keep a short startup-crash window without leaving the plugin
-    // renamed for ten minutes and accidentally disabling it on a normal
-    // follow-up restart.
-    30,
+    // Disarm synchronously once initialization has completed. An init-time
+    // failure still leaves the failsafe image in place, while a later native
+    // notebook crash can no longer make the plugin disappear on next boot.
+    0,
 };
 
 } // namespace

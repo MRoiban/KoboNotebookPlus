@@ -34,6 +34,10 @@ void runForController(
     QObject* controller,
     PageOperation operation);
 
+void runMoveToForController(
+    Dependencies dependencies,
+    QObject* controller);
+
 void runForWidget(
     FirmwareApi& firmware,
     cover_cache::State& coverCache,

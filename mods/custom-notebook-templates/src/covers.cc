@@ -7,6 +7,7 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QString>
+#include <QStringList>
 #include <QtGlobal>
 
 #include <NickelHook.h>
@@ -17,7 +18,8 @@ namespace cnt {
 namespace covers {
 namespace {
 
-char const kCoverRoot[] = "/mnt/onboard/.kobo/custom/covers/";
+char const kCoverRoot[] =
+    "/mnt/onboard/.kobo/iink/custom-notebook-templates/covers/";
 int const kMaximumCustomCovers = 32;
 int const kBackgroundWidth = 1404;
 int const kBackgroundHeight = 1872;
@@ -29,8 +31,10 @@ void loadAutomaticCovers(
         QVector<templates::CustomTemplate>& customCovers) {
     QDir directory(QString::fromLatin1(kCoverRoot));
     QFileInfoList const files = directory.entryInfoList(
+        QStringList() << QLatin1String("*.png"),
         QDir::Files | QDir::NoSymLinks,
         QDir::Name | QDir::IgnoreCase);
+    int loadedCount = 0;
 
     for (int i = 0; i < files.size(); ++i) {
         if (customCovers.size() >= kMaximumCustomCovers) {
@@ -81,10 +85,11 @@ void loadAutomaticCovers(
         rendererMap.insert(id, sourcePath);
         customCovers.append(
             templates::CustomTemplate{id, label, iconPath, sourcePath});
-        trace("covers: PNG cover loaded");
-        nh_log("automatically loaded notebook cover '%s' as '%s'",
-            qPrintable(info.fileName()), qPrintable(label));
+        ++loadedCount;
     }
+    trace(QLatin1String("covers: loaded count=")
+        + QString::number(loadedCount));
+    nh_log("automatically loaded %d notebook covers", loadedCount);
 }
 
 } // namespace covers

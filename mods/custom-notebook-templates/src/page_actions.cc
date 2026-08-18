@@ -1,6 +1,7 @@
 #include "page_actions.h"
 
 #include "cover_cache.h"
+#include "export_range.h"
 #include "firmware_api.h"
 #include "notebook_widget.h"
 #include "pages.h"
@@ -10,6 +11,7 @@
 #include <QPointer>
 #include <QString>
 #include <QVariant>
+#include <QWidget>
 
 #include <exception>
 
@@ -66,6 +68,93 @@ void runForController(
         operation,
         dependencies.maximumNotebookPages,
         dependencies.backupRoot);
+}
+
+void runMoveToForController(
+        Dependencies dependencies,
+        QObject* controller) {
+    if (!controller || !dependencies.firmware || !dependencies.coverCache
+            || !dependencies.backupRoot) {
+        return;
+    }
+    QObject* const widgetObject = notebook_widget::findNotebookWidget(controller);
+    if (!widgetObject)
+        return;
+    if (widgetObject->property("_cnt_page_operation_active").toBool())
+        return;
+
+    PageOperationActiveGuard const activeGuard(widgetObject);
+    FirmwareApi& firmware = *dependencies.firmware;
+    QString error;
+    try {
+        firmware.widgetSave(widgetObject);
+        pages::PageContext context;
+        if (!pages::loadPageContext(
+                firmware,
+                widgetObject,
+                dependencies.maximumNotebookPages,
+                &context,
+                &error)) {
+            showOperationError(firmware, widgetObject, error);
+            return;
+        }
+        if (context.count == 1) {
+            if (firmware.showErrorPopup) {
+                firmware.showErrorPopup(
+                    widgetObject,
+                    QLatin1String("This notebook has only one page."));
+            }
+            return;
+        }
+
+        QWidget* const anchor =
+            firmware.abstractNickelMenuControllerPopupFromWidget
+                ? firmware.abstractNickelMenuControllerPopupFromWidget(controller)
+                : nullptr;
+        int selectedPage = 0;
+        bool const selected = export_range::choosePage(
+            firmware,
+            controller,
+            anchor,
+            QLatin1String("Move to"),
+            1,
+            context.count,
+            &selectedPage,
+            &error);
+        if (!selected) {
+            if (!error.isEmpty())
+                showOperationError(firmware, widgetObject, error);
+            else
+                trace("pages: move-to selection cancelled");
+            return;
+        }
+
+        int const target = selectedPage - 1;
+        if (target == context.index) {
+            trace("pages: move-to selected the current position");
+            return;
+        }
+        if (!pages::reorderCurrentPage(
+                firmware,
+                *dependencies.coverCache,
+                widgetObject,
+                target,
+                dependencies.maximumNotebookPages,
+                dependencies.backupRoot,
+                &error)) {
+            showOperationError(firmware, widgetObject, error);
+        }
+    } catch (std::exception const&) {
+        showOperationError(
+            firmware,
+            widgetObject,
+            QLatin1String("Page move failed: the notebook engine rejected it."));
+    } catch (...) {
+        showOperationError(
+            firmware,
+            widgetObject,
+            QLatin1String("Page move failed: unexpected notebook error."));
+    }
 }
 
 void runForWidget(

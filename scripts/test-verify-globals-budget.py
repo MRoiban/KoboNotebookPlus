@@ -284,7 +284,9 @@ class RepositoryGlobalsBudgetTests(unittest.TestCase):
             promoted.names("mutable"), frozenset(("gPluginState", "info"))
         )
         self.assertEqual(promoted.count("mutex"), 0)
-        self.assertEqual(promoted.count("immutable"), 90)
+        # Versioned artifact-cache tags, gesture settle constants, export-name
+        # bounds, and notebook-open labels are immutable POD/string data only.
+        self.assertEqual(promoted.count("immutable"), 127)
         self.assertEqual(
             {
                 (declaration.path.name, declaration.name)
@@ -298,7 +300,11 @@ class RepositoryGlobalsBudgetTests(unittest.TestCase):
                 ("fs_util.cc", "kBackgroundWidth"),
                 ("fs_util.cc", "kBackgroundHeight"),
                 ("fs_util.cc", "kPickerIconSize"),
+                ("fs_util.cc", "kGeneratedStampSuffix"),
+                ("fs_util.cc", "kCondorCopyVersion"),
+                ("fs_util.cc", "kPickerIconVersion"),
                 ("settings.cc", "kTrace"),
+                ("settings.cc", "kPreviousTrace"),
                 ("settings.cc", "kTemplateRoot"),
                 ("settings.cc", "kEraserSizeSettings"),
                 ("templates.cc", "kManifest"),
@@ -307,6 +313,7 @@ class RepositoryGlobalsBudgetTests(unittest.TestCase):
                 ("templates.cc", "kMaximumCustomTemplates"),
                 ("templates.cc", "kBackgroundWidth"),
                 ("templates.cc", "kBackgroundHeight"),
+                ("templates.cc", "kTemplateOverlayVersion"),
                 ("templates.cc", "kBackgroundOptionsVma"),
                 ("templates.cc", "kRendererMapVma"),
                 ("templates.cc", "kExpectedBuiltinMapSize"),
@@ -323,11 +330,22 @@ class RepositoryGlobalsBudgetTests(unittest.TestCase):
                 ("cover_cache.cc", "kMaximumPersistedPreviews"),
                 ("notebook_sleep.cc", "kPinnedPageStatePath"),
                 ("notebook_sleep.cc", "kPinnedPageImagePath"),
+                ("passive_input_router.cc", "kActionSettleDelayMs"),
+                ("passive_input_router.cc", "kActionCooldownMs"),
                 ("visibility.cc", "kCustomAssetExcludePattern"),
                 ("visibility.cc", "kCustomAssetOnboardContentPrefix"),
                 ("visibility.cc", "kCustomAssetOnboardExternalContentPrefix"),
                 ("visibility.cc", "kCustomAssetSdContentPrefix"),
                 ("visibility.cc", "kCustomAssetSdExternalContentPrefix"),
+                ("visibility.cc", "kCanonicalAssetOnboardContentPrefix"),
+                ("visibility.cc", "kCanonicalAssetOnboardExternalContentPrefix"),
+                ("visibility.cc", "kCanonicalAssetSdContentPrefix"),
+                ("visibility.cc", "kCanonicalAssetSdExternalContentPrefix"),
+                ("visibility.cc", "kLegacySupportRoot"),
+                ("visibility.cc", "kCanonicalSupportRoot"),
+                ("visibility.cc", "kCanonicalTemplateRoot"),
+                ("visibility.cc", "kLegacyPathPrefix"),
+                ("visibility.cc", "kCanonicalPathPrefix"),
                 ("eraser_menu.cc", "kToolMenuConstructorSymbol"),
                 ("eraser_menu.cc", "kCreateBrushSizeRowSymbol"),
                 ("eraser_menu.cc", "kSetBrushSizeIndexSymbol"),
@@ -344,11 +362,16 @@ class RepositoryGlobalsBudgetTests(unittest.TestCase):
                 ("plugin_runtime.cc", "kCoverBackupRoot"),
                 ("plugin_runtime.cc", "kPageBackupRoot"),
                 ("plugin_runtime.cc", "kPageTransactionRoot"),
+                ("plugin_runtime.cc", "kExportRangeRoot"),
+                ("plugin_runtime.cc", "kExportQualityPath"),
                 ("plugin_runtime.cc", "kMaximumNotebookPages"),
                 ("plugin_runtime.cc", "kMaximumDestinationNotebooks"),
                 ("plugin_runtime.cc", "kMaximumNotebookLayers"),
                 ("plugin_runtime.cc", "kMenuLoadViewVma"),
                 ("plugin_runtime.cc", "kMenuLoadViewSize"),
+                ("plugin_runtime.cc", "kExportMenuLoadViewVma"),
+                ("plugin_runtime.cc", "kExportMenuLoadViewSize"),
+                ("plugin_runtime.cc", "kExportMenuFullActionReturnVma"),
                 ("plugin_runtime.cc", "kVolumeInPixmapViewOffset"),
                 ("plugin_runtime.cc", "kThumbnailCallbackReturnVma"),
                 ("plugin_runtime.cc", "kNeboBackendPageControllerOffset"),
@@ -364,6 +387,18 @@ class RepositoryGlobalsBudgetTests(unittest.TestCase):
                 ("plugin_entry.cc", "kSetToolThemeVma"),
                 ("plugin_entry.cc", "kRenderVolumeSymbol"),
                 ("plugin_entry.cc", "kRenderVolumeVma"),
+                ("plugin_entry.cc", "kNotebookGestureUndoSymbol"),
+                ("plugin_entry.cc", "kNotebookGestureUndoVma"),
+                ("plugin_entry.cc", "kNotebookGestureRedoSymbol"),
+                ("plugin_entry.cc", "kNotebookGestureRedoVma"),
+                ("plugin_entry.cc", "kIInkExportMenuControllerExportNotebookSymbol"),
+                ("plugin_entry.cc", "kIInkExportMenuControllerExportNotebookVma"),
+                ("plugin_entry.cc", "kIInkNotePadExporterExportVolumeSymbol"),
+                ("plugin_entry.cc", "kIInkNotePadExporterExportVolumeVma"),
+                ("plugin_entry.cc", "kIInkNotePadExporterConstructorSymbol"),
+                ("plugin_entry.cc", "kIInkNotePadExporterConstructorVma"),
+                ("plugin_entry.cc", "kIInkNotePadExporterVtableSymbol"),
+                ("plugin_entry.cc", "kIInkNotePadExporterVtableVma"),
                 ("plugin_entry.cc", "kSetDialogTitleSymbol"),
                 ("plugin_entry.cc", "kSetDialogTitleVma"),
                 ("plugin_entry.cc", "kParserImageParsedSymbol"),
@@ -376,6 +411,10 @@ class RepositoryGlobalsBudgetTests(unittest.TestCase):
                 ("plugin_entry.cc", "kPixmapSetImageVma"),
                 ("plugin_entry.cc", "kVolumeLoadCoverSymbol"),
                 ("plugin_entry.cc", "kVolumeLoadCoverVma"),
+                ("export_naming.cc", "kMaximumFileNameBytes"),
+                ("export_range.cc", "kPickerChoiceCount"),
+                ("export_range.cc", "kNativeMenuBytes"),
+                ("export_range.cc", "kControllerViewOffset"),
                 ("visibility_hooks.cc", "kExcludeSyncFoldersSymbol"),
                 ("visibility_hooks.cc", "kExcludeSyncFoldersVma"),
                 ("visibility_hooks.cc", "kContentGetIdSymbol"),
@@ -406,7 +445,7 @@ class RepositoryGlobalsBudgetTests(unittest.TestCase):
             result.stdout,
         )
         self.assertIn(
-            "promoted-TU immutable namespace objects: 90",
+            "promoted-TU immutable namespace objects: 127",
             result.stdout,
         )
         self.assertIn("Globals budget verified", result.stdout)

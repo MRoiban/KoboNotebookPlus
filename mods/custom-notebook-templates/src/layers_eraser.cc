@@ -53,57 +53,6 @@ static bool pointerMatchesVma(void* pointer, uintptr_t expectedVma) {
     return address - base == expectedVma;
 }
 
-static QString pointerIdentity(void* pointer) {
-    Dl_info image = {};
-    if (!pointer || !dladdr(pointer, &image) || !image.dli_fbase)
-        return QLatin1String("unmapped");
-    uintptr_t const base = reinterpret_cast<uintptr_t>(image.dli_fbase);
-    uintptr_t const address =
-        reinterpret_cast<uintptr_t>(pointer) & ~uintptr_t(1);
-    QString identity = QLatin1String("0x")
-        + QString::number(address - base, 16);
-    if (image.dli_sname && image.dli_sname[0] != '\0')
-        identity += QLatin1String(":") + QString::fromLatin1(image.dli_sname);
-    return identity;
-}
-
-static QString toolIdentity(
-        Dependencies const& dependencies,
-        void* tool,
-        bool includeSelectionSlot) {
-    Pins const& pins = firmwarePins(dependencies);
-    if (!tool)
-        return QLatin1String("missing");
-    void* const vptr = *reinterpret_cast<void**>(tool);
-    if (!vptr)
-        return QLatin1String("null-vptr");
-    QString identity = QLatin1String("vptr=") + pointerIdentity(vptr)
-        + QLatin1String(" penDown=")
-        + pointerIdentity(*reinterpret_cast<void**>(
-            static_cast<char*>(vptr) + pins.diagramPenPenDownVtableSlot))
-        + QLatin1String(" restrict=")
-        + pointerIdentity(*reinterpret_cast<void**>(
-            static_cast<char*>(vptr) + pins.toolRestrictToLayerVtableSlot))
-        + QLatin1String(" restricted=")
-        + pointerIdentity(*reinterpret_cast<void**>(
-            static_cast<char*>(vptr) + pins.toolRestrictedLayerVtableSlot));
-    if (includeSelectionSlot) {
-        identity += QLatin1String(" selection=")
-            + pointerIdentity(*reinterpret_cast<void**>(
-                static_cast<char*>(vptr)
-                    + pins.drawingEraserSelectionFromPointsVtableSlot))
-            + QLatin1String(" update=")
-            + pointerIdentity(*reinterpret_cast<void**>(
-                static_cast<char*>(vptr)
-                    + pins.diagramEraserUpdateSelectionVtableSlot))
-            + QLatin1String(" erase=")
-            + pointerIdentity(*reinterpret_cast<void**>(
-                static_cast<char*>(vptr)
-                    + pins.diagramEraserEraseSelectionVtableSlot));
-    }
-    return identity;
-}
-
 // Virtual atk::core::Tool::restrictToLayer(std::string const&) via vtable slot
 // +0x54 on the concrete tool. For a Pen it stores the string penDown reads; for
 // a ToolDispatcher (diagram backends) it runs the override. Returns false only
@@ -166,17 +115,21 @@ static bool layerGuardedDiagramPenDown(
     std::string before;
     std::string after;
     bool corrected = false;
+    bool const diagnosticsEnabled =
+        layerState(dependencies).diagramPenTraceBudget > 0;
     try {
         before = restrictedToolLayer(dependencies, pen);
         if (!desired.empty() && before != desired) {
             corrected = restrictToolToLayerImpl(dependencies, pen, desired);
         }
-        after = restrictedToolLayer(dependencies, pen);
+        if (diagnosticsEnabled)
+            after = restrictedToolLayer(dependencies, pen);
     } catch (...) {
         trace("layers: diagram pen-down layer guard threw; stock pen-down preserved");
     }
 
-    if (layerState(dependencies).diagramPenTraceBudget > 0) {
+    if (diagnosticsEnabled
+            && layerState(dependencies).diagramPenTraceBudget > 0) {
         --layerState(dependencies).diagramPenTraceBudget;
         trace(QLatin1String("layers: diagram pen-down layer guard desired=")
             + QString::fromUtf8(
@@ -261,7 +214,9 @@ static bool armLayerGuardedDiagramPen(
         QMutexLocker locker(&layerState(dependencies).desiredDiagramPenLayersMutex);
         layerState(dependencies).desiredDiagramPenLayers[pen] = layerId;
     }
-    layerState(dependencies).diagramPenTraceBudget = 8;
+    // Input-path trace budgets stay disabled in production. Logging from
+    // penDown adds storage work to the latency-critical stroke path.
+    layerState(dependencies).diagramPenTraceBudget = 0;
     return restrictToolToLayerImpl(dependencies, pen, layerId);
 }
 
@@ -310,10 +265,17 @@ static void filterLayerAwareEraserSelection(
             clearLayerAwareEraserSelection(dependencies, result);
             return;
         }
-        bool const emptyBefore = firmwareApi(dependencies).selectionIsEmpty(result);
+        bool const diagnosticsEnabled =
+            layerState(dependencies).eraserTraceBudget > 0;
+        bool emptyBefore = false;
+        if (diagnosticsEnabled)
+            emptyBefore = firmwareApi(dependencies).selectionIsEmpty(result);
         firmwareApi(dependencies).selectionSelectLayer(result, activeLayer, firmwarePins(dependencies).selectionModeIntersect);
-        bool const emptyAfter = firmwareApi(dependencies).selectionIsEmpty(result);
-        if (layerState(dependencies).eraserTraceBudget > 0) {
+        bool emptyAfter = false;
+        if (diagnosticsEnabled)
+            emptyAfter = firmwareApi(dependencies).selectionIsEmpty(result);
+        if (diagnosticsEnabled
+                && layerState(dependencies).eraserTraceBudget > 0) {
             --layerState(dependencies).eraserTraceBudget;
             trace(QLatin1String(
                 "layers: eraser selection intersected active layer id=")
@@ -415,9 +377,15 @@ static void* layerAwareDiagramEraserSelectionFromPoints(
             return result;
         }
 
-        bool const stockEmpty = firmwareApi(dependencies).selectionIsEmpty(result);
+        bool const diagnosticsEnabled =
+            layerState(dependencies).eraserTraceBudget > 0;
+        bool stockEmpty = false;
+        if (diagnosticsEnabled)
+            stockEmpty = firmwareApi(dependencies).selectionIsEmpty(result);
         firmwareApi(dependencies).selectionSelectLayer(result, activeLayer, firmwarePins(dependencies).selectionModeReplace);
-        bool const layerEmpty = firmwareApi(dependencies).selectionIsEmpty(result);
+        bool layerEmpty = false;
+        if (diagnosticsEnabled)
+            layerEmpty = firmwareApi(dependencies).selectionIsEmpty(result);
 
         float const width = *reinterpret_cast<float const*>(
             static_cast<char const*>(eraser) + firmwarePins(dependencies).eraserWidthOffset)
@@ -456,10 +424,12 @@ static void* layerAwareDiagramEraserSelectionFromPoints(
             // scoped Selection; it does not perform a fresh page hit-test.
             firmwareApi(dependencies).selectionAdjustToStrokeBoundaries(result, 0.0f);
             boundaryAdjusted = true;
-            geometryEmpty = firmwareApi(dependencies).selectionIsEmpty(result);
+            if (diagnosticsEnabled)
+                geometryEmpty = firmwareApi(dependencies).selectionIsEmpty(result);
         }
 
-        if (layerState(dependencies).eraserTraceBudget > 0) {
+        if (diagnosticsEnabled
+                && layerState(dependencies).eraserTraceBudget > 0) {
             --layerState(dependencies).eraserTraceBudget;
             trace(QLatin1String(
                 "layers: diagram eraser layer-first selection id=")
@@ -524,9 +494,14 @@ static uint32_t layerAwareDiagramEraserUpdateSelection(
     int committedAfterEmpty = -1;
     bool haveRestrict = false;
     std::string activeLayer;
+    bool const diagnosticsEnabled =
+        layerState(dependencies).diagramEraserObserverTraceBudget > 0;
     try {
-        if (firmwareApi(dependencies).selectionIsEmpty && selection)
+        if (diagnosticsEnabled
+                && firmwareApi(dependencies).selectionIsEmpty
+                && selection) {
             incomingEmpty = firmwareApi(dependencies).selectionIsEmpty(selection) ? 1 : 0;
+        }
         void* const vptr = *reinterpret_cast<void**>(eraser);
         if (vptr) {
             typedef std::string const& (*ToolRestrictedLayerFn)(void const*);
@@ -561,7 +536,9 @@ static uint32_t layerAwareDiagramEraserUpdateSelection(
             eraser, selection, points);
     }
 
-    if (firmwareApi(dependencies).selectionIsEmpty && eraser) {
+    if (diagnosticsEnabled
+            && firmwareApi(dependencies).selectionIsEmpty
+            && eraser) {
         try {
             committedBeforeEmpty = firmwareApi(dependencies).selectionIsEmpty(
                 static_cast<char*>(eraser)
@@ -570,7 +547,8 @@ static uint32_t layerAwareDiagramEraserUpdateSelection(
             committedBeforeEmpty = -1;
         }
     }
-    if (layerState(dependencies).diagramEraserObserverTraceBudget > 0) {
+    if (diagnosticsEnabled
+            && layerState(dependencies).diagramEraserObserverTraceBudget > 0) {
         --layerState(dependencies).diagramEraserObserverTraceBudget;
         trace(QLatin1String("layers: diagram eraser core-only enter id=")
             + QString::fromUtf8(
@@ -584,7 +562,9 @@ static uint32_t layerAwareDiagramEraserUpdateSelection(
     uint32_t result = 0;
     try {
         result = firmwareApi(dependencies).coreEraserUpdateSelection(eraser, selection, points);
-        if (firmwareApi(dependencies).selectionIsEmpty && eraser) {
+        if (diagnosticsEnabled
+                && firmwareApi(dependencies).selectionIsEmpty
+                && eraser) {
             committedAfterEmpty = firmwareApi(dependencies).selectionIsEmpty(
                 static_cast<char*>(eraser)
                     + firmwarePins(dependencies).eraserFinalSelectionOffset) ? 1 : 0;
@@ -598,7 +578,8 @@ static uint32_t layerAwareDiagramEraserUpdateSelection(
         return 0;
     }
 
-    if (layerState(dependencies).diagramEraserObserverTraceBudget > 0) {
+    if (diagnosticsEnabled
+            && layerState(dependencies).diagramEraserObserverTraceBudget > 0) {
         --layerState(dependencies).diagramEraserObserverTraceBudget;
         trace(QLatin1String("layers: diagram eraser core-only exit id=")
             + QString::fromUtf8(
@@ -620,6 +601,13 @@ static int32_t layerAwareDiagramEraserEraseSelection(
         void* eraser) {
     if (!firmwareApi(dependencies).diagramEraserEraseSelectionOriginal)
         return 0;
+
+    // Production trace budgets are zero. Avoid every diagnostic vtable call
+    // and string copy on the eraser pen-up path when no observation is wanted.
+    if (layerState(dependencies).diagramEraserObserverTraceBudget <= 0) {
+        return firmwareApi(dependencies)
+            .diagramEraserEraseSelectionOriginal(eraser);
+    }
 
     int committedBeforeEmpty = -1;
     std::string activeLayer;
@@ -875,10 +863,23 @@ static bool applyConfigurationToExactEraser(
     }
 
     try {
-        int const beforePolicy = firmwareApi(dependencies).eraserPolicy ? firmwareApi(dependencies).eraserPolicy(tool) : -1;
+        float const beforeRadius =
+            firmwareApi(dependencies).eraserRadius(tool);
+        int const beforePolicy = firmwareApi(dependencies).eraserPolicy
+            ? firmwareApi(dependencies).eraserPolicy(tool) : -1;
+        float beforeDifference = beforeRadius - desiredRadius;
+        if (beforeDifference < 0.0f)
+            beforeDifference = -beforeDifference;
+        bool const radiusAlreadyApplied = beforeDifference < 0.001f;
+        bool const policyAlreadyApplied =
+            !applyPolicy || beforePolicy == desiredPolicy;
+        if (radiusAlreadyApplied && policyAlreadyApplied)
+            return true;
+
         std::string const beforeLayer = restrictedToolLayer(dependencies, tool);
-        firmwareApi(dependencies).eraserSetRadius(tool, desiredRadius);
-        if (applyPolicy)
+        if (!radiusAlreadyApplied)
+            firmwareApi(dependencies).eraserSetRadius(tool, desiredRadius);
+        if (applyPolicy && !policyAlreadyApplied)
             firmwareApi(dependencies).eraserSetPolicy(tool, desiredPolicy);
         float const afterRadius = firmwareApi(dependencies).eraserRadius(tool);
         int const afterPolicy = firmwareApi(dependencies).eraserPolicy ? firmwareApi(dependencies).eraserPolicy(tool) : -1;
@@ -1203,7 +1204,8 @@ static bool armLayerAwareDrawingEraser(
                 "layers: diagram eraser custom-layer core-only hook unavailable"));
             return false;
         }
-        layerState(dependencies).diagramEraserObserverTraceBudget = 6;
+        // Keep native eraser callbacks free of diagnostic file I/O.
+        layerState(dependencies).diagramEraserObserverTraceBudget = 0;
     }
     if (currentVptr == stockVptr)
         *reinterpret_cast<void**>(tool) = layerVptr;
@@ -1224,8 +1226,6 @@ static bool armLayerAwareDrawingErasersImpl(
     bool* currentIsEraser) {
     bool const currentEraser =
         isLayerAwareDrawingEraser(dependencies, currentTool);
-    trace(QLatin1String("layers: eraser probe current ")
-        + toolIdentity(dependencies, currentTool, false));
     if (currentIsEraser)
         *currentIsEraser = currentEraser;
 
@@ -1290,16 +1290,6 @@ static bool armLayerAwareDrawingErasersImpl(
 
             SharedTool const eraser = getTool(backend, 4, emptyId);
             void* const raw = eraser.get();
-            trace(QLatin1String("layers: eraser probe backend=")
-                + QString::fromUtf8(
-                    it->first.data(), static_cast<int>(it->first.size()))
-                + QLatin1String(" backend-vptr=") + pointerIdentity(vptr)
-                + QLatin1String(" getTool=")
-                + pointerIdentity(*reinterpret_cast<void**>(
-                    static_cast<char*>(vptr)
-                        + firmwarePins(dependencies).activeBackendGetToolVtableSlot))
-                + QLatin1String(" kind4 ")
-                + toolIdentity(dependencies, raw, true));
             ConcreteDrawingEraserKind const rawKind =
                 concreteDrawingEraserKind(dependencies, raw);
 
@@ -1323,18 +1313,6 @@ static bool armLayerAwareDrawingErasersImpl(
                     ++diagramPenCount;
                 if (penRestricted)
                     ++diagramPenRestrictedCount;
-                trace(QLatin1String(
-                    "layers: diagram cached pen(kind0) backend=")
-                    + QString::fromUtf8(
-                        it->first.data(), static_cast<int>(it->first.size()))
-                    + QLatin1String(" ")
-                    + toolIdentity(dependencies, penRaw, false)
-                    + QLatin1String(" exact-or-guarded=")
-                    + (exactDiagramPen
-                        ? QLatin1String("yes") : QLatin1String("no"))
-                    + QLatin1String(" restricted=")
-                    + (penRestricted
-                        ? QLatin1String("yes") : QLatin1String("no")));
             }
             if (!isLayerAwareDrawingEraser(dependencies, raw)
                     || std::find(seen.begin(), seen.end(), raw) != seen.end()) {
@@ -1359,7 +1337,7 @@ static bool armLayerAwareDrawingErasersImpl(
     }
 
     if (armedCount > 0)
-        layerState(dependencies).eraserTraceBudget = 2;
+        layerState(dependencies).eraserTraceBudget = 0;
     bool const diagramRoutingReady = diagramEraserCount == 0
         || diagramPenRestrictedCount > 0;
     trace(QLatin1String("layers: eraser adapters backends=")

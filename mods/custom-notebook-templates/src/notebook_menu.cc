@@ -110,6 +110,13 @@ void addPageContribution(
                     target,
                     page_actions::MovePageLaterOperation);
         });
+    QObject::connect(
+        pageReceiver,
+        &CoverMenuReceiver::movePageToRequested,
+        [dependencies](QObject* target) {
+            if (target)
+                page_actions::runMoveToForController(dependencies, target);
+        });
 
     QWidget* const duplicateItem = firmware.createIInkMenuItem(
         controller,
@@ -168,10 +175,31 @@ void addPageContribution(
             SLOT(activateMovePageLater()),
             true,
             true,
-            true);
+            false);
         trace("pages: native move-later menu item added");
     } else {
         trace("pages: native move-later menu item creation failed");
+    }
+
+    QWidget* const moveToItem = firmware.createIInkMenuItem(
+        controller,
+        menu,
+        QLatin1String("Move page to") + QChar(0x2026),
+        noIcon,
+        false);
+    if (moveToItem) {
+        firmware.addWidgetActionOriginal(
+            controller,
+            menu,
+            moveToItem,
+            pageReceiver,
+            SLOT(activateMovePageTo()),
+            true,
+            true,
+            true);
+        trace("pages: native move-to menu item added");
+    } else {
+        trace("pages: native move-to menu item creation failed");
     }
 }
 

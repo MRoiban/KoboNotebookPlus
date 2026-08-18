@@ -1,0 +1,12 @@
+{
+    "active": "SNT_LAYER",
+    "layers": [
+        {
+            "id": "cnt.layer.ae6edad7-e52f-4561-b582-7bc48aa70b84",
+            "name": "Layer 2"
+        }
+    ],
+    "notebook": "/mnt/onboard/My Notebooks/testing/ll.nebo",
+    "part": "hdnifxla",
+    "version": 1
+}

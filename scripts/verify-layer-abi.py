@@ -311,6 +311,11 @@ PINNED_INSTRUCTIONS = {
 }
 
 EXPECTED_IINKNOTE = {
+    "_ZN24IInkExportMenuController14exportNotebookEb": 0x4868C,
+    "_ZN24IInkExportMenuController8loadViewEv": 0x4879C,
+    "_ZN19IInkNotePadExporterC1Ev": 0x51390,
+    "_ZN19IInkNotePadExporter12exportVolumeERK6VolumeRK7QStringbi": 0x513C0,
+    "_ZTV19IInkNotePadExporter": 0xA52D8,
     "_ZN17IInkNotePadWidget12setToolThemeER13IInkToolTheme": 0x62200,
     "_ZN17IInkNotePadWidget12renderVolumeERK6Volume": 0x66720,
     "_ZN26IInkDropdownMenuController18createIInkMenuItemEP5QMenuRK7QStringRK7QPixmapb": 0x46BC4,
@@ -327,6 +332,21 @@ EXPECTED_IINKNOTE = {
     "_ZN11IInkToolBar18onToolButtonTappedEb": 0x70D28,
     "_ZN18IInkToolMenuWidgetC1EP7QWidget": 0x761AC,
     "_ZN18IInkToolMenuWidget11setSelectedEb": 0x76580,
+}
+
+EXPECTED_IINKNOTE_SIZES = {
+    "_ZTV19IInkNotePadExporter": 0x3C,
+}
+
+EXPECTED_IINKNOTE_JUMP_SLOTS = {
+    "_ZN19IInkNotePadExporterC1Ev": 0xA7D50,
+}
+
+EXPECTED_IINKNOTE_EXPORTER_VTABLE_RELOCATIONS = {
+    0xA5310: (
+        "R_ARM_ABS32",
+        "_ZN19IInkNotePadExporter12exportVolumeERK6VolumeRK7QStringbi",
+    ),
 }
 
 EXPECTED_IINKUIREF = {
@@ -399,6 +419,20 @@ PINNED_IINKUIREF_INSTRUCTIONS = {
 # virtual setPart call. These prove the wrapper runs after the live editor,
 # selected part, backend, and concrete tool are coherent.
 PINNED_IINKNOTE_INSTRUCTIONS = {
+    # Export-menu loadView adds the stock full-notebook row through this call.
+    # Its return address is the exact caller pin used to insert Export range
+    # immediately after that row rather than into another IInk menu.
+    0x48936: bytes.fromhex("eef7dcee2846"),
+    # exportVolume obtains the source URL through Volume's virtual slot +0x1c,
+    # with a hidden QString result in r0. The range path supplies only that
+    # proven slot on a short-lived shim and then enters the untouched exporter.
+    0x513F4: bytes.fromhex("5046db697c449847"),
+    # IInkNotePadPlugin::exporter creates a fresh 0x10-byte object through the
+    # constructor PLT seam. The concrete constructor then publishes the stock
+    # vtable+8 address point, which the plugin replaces per instance only after
+    # verifying the full vtable and exportVolume relocation above.
+    0x566FC: bytes.fromhex("e0f754ef"),
+    0x513A6: bytes.fromhex("aa5808322260"),
     0x4DA82: bytes.fromhex("e7f75eed"),
     0x6289C: bytes.fromhex("d4f77aea"),
     0x66A92: bytes.fromhex("d1f74aec"),
@@ -479,6 +513,9 @@ PINNED_IINKNOTE_INSTRUCTIONS = {
 }
 
 EXPECTED_NICKEL = {
+    "_ZN12GestureMixin16touchEventHasPenEPK11QTouchEvent": 0xAFC600,
+    "_ZN13StylusManager14sharedInstanceEv": 0x7C8E0C,
+    "_ZNK13StylusManager23isCurrentToolTaskButtonEv": 0x7C84C8,
     "_ZN22AbstractMenuController15addWidgetActionEP5QMenuP7QWidgetP7QObjectPKcbbb": 0xB3CE80,
     "_ZN22AbstractMenuController14grabTapGestureEP15GestureReceiver": 0xB3CFAC,
     "_ZN22AbstractMenuController10tapGestureEP15GestureReceiverP10TapGesture": 0xB3D00C,
@@ -927,6 +964,9 @@ def main() -> int:
     found = symbols(args.library)
     found_sizes = symbol_sizes(args.library)
     found_iinknote = symbols(args.iinknote)
+    found_iinknote_sizes = symbol_sizes(args.iinknote)
+    found_iinknote_jump_slots = jump_slots(args.iinknote)
+    found_iinknote_relocations = relocations(args.iinknote)
     found_nickel = symbols(args.nickel)
     found_nickel_sizes = symbol_sizes(args.nickel)
     found_nickel_jump_slots = jump_slots(args.nickel)
@@ -961,6 +1001,30 @@ def main() -> int:
         elif actual != expected:
             failures.append(
                 f"VMA mismatch {name}: 0x{actual:x}, expected 0x{expected:x}"
+            )
+    for name, expected in EXPECTED_IINKNOTE_SIZES.items():
+        actual = found_iinknote_sizes.get(name)
+        if actual is None:
+            failures.append(f"missing libiinknote size for {name}")
+        elif actual != expected:
+            failures.append(
+                f"libiinknote size mismatch {name}: {actual}, expected {expected}"
+            )
+    for name, expected in EXPECTED_IINKNOTE_JUMP_SLOTS.items():
+        actual = found_iinknote_jump_slots.get(name)
+        if actual is None:
+            failures.append(f"missing libiinknote R_ARM_JUMP_SLOT for {name}")
+        elif actual != expected:
+            failures.append(
+                f"libiinknote jump-slot mismatch {name}: "
+                f"0x{actual:x}, expected 0x{expected:x}"
+            )
+    for offset, expected in EXPECTED_IINKNOTE_EXPORTER_VTABLE_RELOCATIONS.items():
+        actual = found_iinknote_relocations.get(offset)
+        if actual != expected:
+            failures.append(
+                f"libiinknote exporter vtable relocation 0x{offset:x}: "
+                f"{actual}, expected {expected}"
             )
     for name, expected in EXPECTED_NICKEL.items():
         actual = found_nickel.get(name)
@@ -1013,10 +1077,12 @@ def main() -> int:
     print(
         "Layer ABI verified: "
         f"{len(EXPECTED) + len(EXPECTED_IINKNOTE) + len(EXPECTED_NICKEL) + len(EXPECTED_IINKUIREF)} "
-        f"symbols, {len(VTABLE_SIZES)} vtable size, and {slot_count} "
+        f"symbols, {len(VTABLE_SIZES) + len(EXPECTED_IINKNOTE_SIZES)} vtable sizes, and {slot_count} "
         f"vtable slots plus "
         f"{len(PINNED_INSTRUCTIONS) + len(PINNED_IINKNOTE_INSTRUCTIONS) + len(PINNED_NICKEL_INSTRUCTIONS) + len(PINNED_IINKUIREF_INSTRUCTIONS)} "
-        f"instruction pins, {len(EXPECTED_NICKEL_JUMP_SLOTS)} jump slots, and "
+        f"instruction pins, "
+        f"{len(EXPECTED_IINKNOTE_JUMP_SLOTS) + len(EXPECTED_NICKEL_JUMP_SLOTS)} jump slots, "
+        f"{len(EXPECTED_IINKNOTE_EXPORTER_VTABLE_RELOCATIONS)} exporter vtable relocation, and "
         f"{len(EXPECTED_IINKUIREF_IMAGE_PAINTER_VTABLE_RELOCATIONS)} "
         "ImagePainter vtable relocations "
         "match pinned libraries"

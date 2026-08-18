@@ -2,8 +2,10 @@
 
 #include "cover_cache.h"
 #include "eraser_menu.h"
+#include "export_range.h"
 #include "firmware_api.h"
 #include "layers.h"
+#include "notebook_gestures.h"
 #include "notebook_sleep.h"
 #include "settings.h"
 #include "templates.h"
@@ -18,6 +20,7 @@ struct PageRuntimeState {
 struct HookRuntimeState {
     QTimer* timer = nullptr;
     bool notebookLifecycleHooksReady = false;
+    int renderVolumeDepth = 0;
 
     void stopTimer() {
         if (!timer)
@@ -36,9 +39,11 @@ struct PluginState {
     cnt::templates::TemplateRuntimeState templates;
     cnt::cover_cache::State covers;
     PageRuntimeState pages;
+    cnt::export_range::RuntimeState exportRange;
     cnt::layers::RuntimeState layers;
     cnt::eraser_menu::RuntimeState eraser;
     cnt::SettingsStore settings;
+    cnt::notebook_gestures::RuntimeState notebookGestures;
     cnt::notebook_sleep::RuntimeState notebookSleep;
     cnt::visibility::RuntimeState visibility;
     HookRuntimeState hooks;

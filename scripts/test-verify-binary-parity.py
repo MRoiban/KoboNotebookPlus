@@ -54,6 +54,8 @@ if "--defined-only" in sys.argv:
 elif "--undefined-only" in sys.argv:
     print("         U dlopen@GLIBC_2.4")
     print("         w _ITM_registerTMCloneTable")
+    if not candidate and os.environ.get("FAKE_REFERENCE_IMPORT_DRIFT"):
+        print("         U removed_import")
     if candidate and os.environ.get("FAKE_IMPORT_DRIFT"):
         print("         U intentional_import")
 """
@@ -106,15 +108,20 @@ class BinaryParityTests(unittest.TestCase):
         self,
         exports: list[dict[str, str]] | None = None,
         imports: list[dict[str, str]] | None = None,
+        reference_imports: list[dict[str, str]] | None = None,
+        needed: list[str] | None = None,
     ) -> pathlib.Path:
+        document = {
+            "candidate_only_exports": exports or [],
+            "candidate_only_imports": imports or [],
+        }
+        if reference_imports is not None:
+            document["reference_only_imports"] = reference_imports
+        if needed is not None:
+            document["candidate_needed_libraries"] = needed
         path = self.root / "expected-symbol-delta.json"
         path.write_text(
-            json.dumps(
-                {
-                    "candidate_only_exports": exports or [],
-                    "candidate_only_imports": imports or [],
-                }
-            ),
+            json.dumps(document),
             encoding="utf-8",
         )
         return path
@@ -171,6 +178,23 @@ class BinaryParityTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("1 approved additions", result.stdout)
+
+    def test_exact_expected_removal_and_needed_delta_passes(self) -> None:
+        manifest = self.write_delta_manifest(
+            reference_imports=[
+                {"kind": "U", "name": "removed_import"}
+            ],
+            needed=["libc.so.6", "libQt5Core.so.5"],
+        )
+        result = self.run_verifier(
+            "--expected-symbol-delta",
+            str(manifest),
+            FAKE_REFERENCE_IMPORT_DRIFT="1",
+            FAKE_NEEDED_DRIFT="1",
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("1 approved removals", result.stdout)
+        self.assertIn("approved candidate manifest", result.stdout)
 
     def test_missing_expected_symbol_delta_fails(self) -> None:
         manifest = self.write_delta_manifest(

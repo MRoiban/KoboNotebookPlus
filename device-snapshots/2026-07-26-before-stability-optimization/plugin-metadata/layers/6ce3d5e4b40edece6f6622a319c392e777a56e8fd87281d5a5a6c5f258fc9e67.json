@@ -1,0 +1,12 @@
+{
+    "active": "SNT_LAYER",
+    "layers": [
+        {
+            "id": "cnt.layer.0fcc4ea9-b0c5-43ed-801a-6e5923a502a9",
+            "name": "Layer 2"
+        }
+    ],
+    "notebook": "/mnt/onboard/My Notebooks/Leather.nebo",
+    "part": "bgsetrhc",
+    "version": 1
+}

@@ -13,6 +13,11 @@ struct State;
 
 namespace layers_state {
 
+enum LayerContextLoadMode {
+    RequireNativeReconciliation,
+    AllowBaseOnlyOpenFastPath,
+};
+
 struct LayoutStorage {
     // atk::core::Layout contains a shared document-layout pointer followed by
     // an atk::core::Page. The pinned destructor accesses the Page at +0x8.
@@ -47,13 +52,28 @@ void traceSerializedLayerProbe(
     QString const& id,
     char const* phase);
 bool saveLayerState(layers::LayerState const& state, QString* error);
+bool isBaseOnlyLayerState(
+    FirmwareApi& firmware,
+    layers::LayerState const& state);
+void invalidateLiveLayerContext(layers::RuntimeState& runtime);
+bool rememberLiveLayerContext(
+    FirmwareApi& firmware,
+    layers::RuntimeState& runtime,
+    layers::LayerContext const& context);
+bool loadCachedRoutingContext(
+    FirmwareApi& firmware,
+    layers::RuntimeState& runtime,
+    QObject* controller,
+    layers::LayerContext* context,
+    QString* error);
 bool loadLayerContext(
     FirmwareApi& firmware,
     layers::RuntimeState const& runtime,
     QObject* controller,
     int maximumNotebookLayers,
     layers::LayerContext* context,
-    QString* error);
+    QString* error,
+    LayerContextLoadMode mode = RequireNativeReconciliation);
 
 } // namespace layers_state
 } // namespace cnt

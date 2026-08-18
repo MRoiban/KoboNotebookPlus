@@ -67,6 +67,10 @@ Click any preview to view it at full size.
   thumbnails and independent pen/eraser routing per layer.
 - **Eraser controls** — brush and object eraser modes plus a five-step
   eraser-size row; the hardware (stylus) eraser follows the configured size.
+- **Three-finger notebook gestures** — glide three fingers left to undo,
+  or right to redo. The reusable passive-input router never consumes Kobo's
+  touch events, and it queues custom actions until the current Kobo event
+  finishes dispatching.
 - **Custom paper templates** — drop in your own full-page PNG templates.
 - **Writable covers** — custom notebook covers you can write on as a first
   page.
@@ -74,7 +78,8 @@ Click any preview to view it at full size.
   Advanced Notebook, show either its cover (page zero) or its current page,
   including the active built-in or custom paper template; books and every
   non-notebook view retain Kobo's stock cover behavior.
-- **Page operations** — duplicate and reorder notebook pages.
+- **Page operations** — duplicate pages, move them one step, or insert the
+  current page at an exact page number.
 - **Clean library** — plugin support images stay out of Home/My Books
   without touching the Kobo database.
 
@@ -103,10 +108,10 @@ changing only the version check is unsafe.
 
 The source repository contains no firmware images, Binary Ninja databases,
 device backups, notebooks, or generated build products. Firmware-pinned alpha
-releases provide a checksum file and a complete `KoboRoot.tgz` containing only
-the ARM plugin and the exact stock `libiinknote.so` required by the supported
-firmware. Source builders can instead supply their own matching firmware
-libraries using the process below.
+releases provide a checksum file and a complete `KoboRoot.tgz` containing the
+ARM plugin, exact stock `libiinknote.so`, and pinned Best/Fast exporter payload
+required by the supported firmware. Source builders can instead supply their
+own matching firmware files using the process below.
 
 ## Building
 
@@ -125,6 +130,7 @@ extracted/rootfs/usr/local/Kobo/libiink.so
 extracted/rootfs/usr/local/Kobo/libiinknote.so
 extracted/rootfs/usr/local/Kobo/libnickel.so.1.0.0
 extracted/rootfs/usr/local/Kobo/libiinkuiref.so.1.0.0
+extracted/rootfs/usr/local/Kobo/iink
 mods/custom-notebook-templates/package/libiinknote.so
 ```
 
@@ -133,6 +139,16 @@ Expected stock `libiinknote.so` SHA-256 for the supported firmware:
 ```text
 f80a7de7a1c482173a89b18f2bb8164fcfb53b8fab9b2a75bd23998813a528ea
 ```
+
+Expected stock `iink` SHA-256:
+
+```text
+98bb2032f47f75bd1c3796f3cda2f016edc43a57435007035d6b5b8657dd7bb1
+```
+
+The build generates size-preserving `iink-export-best` and
+`iink-export-fast` executables only after every pinned patch-byte precondition
+matches that stock image.
 
 Run the ABI gates before every build:
 
@@ -164,7 +180,8 @@ Download `KoboRoot.tgz` and its adjacent `.sha256` file from the matching
 [GitHub release](https://github.com/MRoiban/KoboNotebookPlus/releases). Verify
 the checksum before installing. Never install a package built for a different
 device or firmware. Source builders should also inspect the archive and confirm
-it contains only the compiled ARM plugin and the exact stock library.
+it contains the compiled ARM plugin, exact stock library, two pinned exporter
+variants, and their launcher.
 
 1. Back up `/mnt/onboard/.kobo/KoboReader.sqlite`, `Kobo eReader.conf`, and
    your notebooks.
@@ -183,22 +200,50 @@ If Nickel crash-loops or notebooks misbehave after install:
 ## Usage
 
 - **Templates** — copy a full-size (`1404 x 1872`) paper PNG to
-  `/mnt/onboard/.kobo/custom/templates/Example.png`.
+  `/mnt/onboard/.kobo/iink/custom-notebook-templates/templates/Example.png`.
 - **Covers** — copy a full-size cover PNG to
-  `/mnt/onboard/.kobo/custom/covers/Example.png`.
+  `/mnt/onboard/.kobo/iink/custom-notebook-templates/covers/Example.png`.
 - Restart the Kobo after changing templates or covers.
 - Inside an Advanced Notebook, the notebook menu gains Covers, Layers, and
-  page operations. The eraser popup shows the stock mode choices plus the
-  size row.
+  page operations. **Move page to…** reuses the Export range page picker; the
+  current page is inserted at the selected number and the displaced pages
+  shift by one. The eraser popup shows the stock mode choices plus the size
+  row.
+- In an Advanced Notebook, place three fingers together and glide at least
+  roughly one eighth of the short screen dimension: left performs Undo and
+  right performs Redo. No one-finger, two-finger, vertical, or held-input
+  custom gestures are registered.
+- Additional touch gestures can implement the Qt-independent
+  `GestureRecognizer` interface and register with the same
+  `PassiveInputRouter`; see
+  [`notes/PASSIVE_INPUT.md`](notes/PASSIVE_INPUT.md). Custom recognition can
+  resolve its own conflicts, but it cannot cancel or replace a stock Kobo
+  gesture.
+- In both normal and Advanced Notebooks, opening export first asks for **Fast**
+  or **Best quality**. The normal export menu then opens with **Export this
+  page**, **Export full notebook**, and **Export range**. Fast renders PDF pages
+  at `1240 x 1754` instead of `2480 x 3508`; Best preserves Kobo's stock
+  resolution. Export range then asks for the start and end page as usual.
+  Exports to visible onboard storage are named `NotebookName-ddMMyyyy`; range
+  exports add `-pSTART-pEND`, for example
+  `Leather-26072026-p49-p66.pdf`. A repeated same-day export adds `-2`, `-3`,
+  and so on instead of overwriting an earlier file. Google Drive and Dropbox
+  exports retain Kobo's provider-managed filename so their upload transaction
+  receives the completed PDF instead of an empty placeholder.
 - Under **Settings → Energy saving and privacy**, enable **Show notebook on
   sleep**, then choose **Cover** or **Current page** under **Notebook sleep
   image**. The selector is disabled until the toggle is enabled. Rendering
   failure or a busy/hidden notebook falls back to Kobo's normal book cover.
 
-Layer metadata and preview caches live under `.kobo/custom/layers/`; native
-ink stays inside the `.nebo` document. Backups created by cover, page, and
-layer operations use the `.nebo.backup` extension so Nickel does not import
-them as duplicate notebooks.
+All plugin support files live below
+`.kobo/iink/custom-notebook-templates/`, a notebook-related tree which
+Nickel excludes before plugins load. Existing `.kobo/custom/` installations
+are migrated automatically. Layer metadata and preview caches live in its
+`layers/` directory; native ink stays inside the `.nebo` document. Backups
+created by cover, page, and layer operations use the `.nebo.backup` extension
+so Nickel does not import them as duplicate notebooks. The pinned sleep-page
+cache lives separately in `notebook-sleep/` and is never scanned as a paper
+template.
 
 ## Repository layout
 

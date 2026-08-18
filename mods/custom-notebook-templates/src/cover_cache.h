@@ -101,7 +101,7 @@ bool cachedNotebookCoverType(
     double pathResolveMs);
 void invalidateNotebookScanEntry(State& state, QString const& notebookPath);
 QImage composeCoverWithRenderedInk(
-    State const& state,
+    State& state,
     QString const& type,
     QImage const& renderedInk);
 QImage cleanCustomCoverImage(State& state, QString const& type);

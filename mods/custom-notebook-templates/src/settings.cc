@@ -12,30 +12,53 @@
 #include <QSaveFile>
 #include <QString>
 
+#include <cstdio>
 #include <cstring>
+#include <dlfcn.h>
 #include <fcntl.h>
 #include <unistd.h>
 
 namespace {
 
 char const kTrace[] =
-    "/mnt/onboard/.kobo/custom/templates/plugin-status.txt";
-char const kTemplateRoot[] = "/mnt/onboard/.kobo/custom/templates/";
+    "/mnt/onboard/.kobo/iink/custom-notebook-templates/templates/plugin-status.txt";
+char const kPreviousTrace[] =
+    "/mnt/onboard/.kobo/iink/custom-notebook-templates/templates/plugin-status.previous.txt";
+char const kTemplateRoot[] =
+    "/mnt/onboard/.kobo/iink/custom-notebook-templates/templates/";
 char const kEraserSizeSettings[] =
-    "/mnt/onboard/.kobo/custom/templates/eraser-size.json";
+    "/mnt/onboard/.kobo/iink/custom-notebook-templates/templates/eraser-size.json";
 
 } // namespace
 
 namespace cnt {
 
 void trace(char const* message, bool truncate) {
+    if (!message)
+        return;
     int const flags = O_WRONLY | O_CREAT | (truncate ? O_TRUNC : O_APPEND);
     int const fd = open(kTrace, flags, 0644);
     if (fd < 0)
         return;
-    write(fd, message, strlen(message));
-    write(fd, "\n", 1);
-    fsync(fd);
+
+    // Tracing is called from notebook-open and input callbacks. A flash
+    // barrier for every informational line can stall Nickel's GUI thread and
+    // widen lifecycle races around touch release. Keep each record to one
+    // bounded append and make only the once-per-process session header durable.
+    size_t const length = strnlen(message, 1024);
+    char record[1025];
+    memcpy(record, message, length);
+    record[length] = '\n';
+    size_t written = 0;
+    while (written < length + 1) {
+        ssize_t const result = write(
+            fd, record + written, length + 1 - written);
+        if (result <= 0)
+            break;
+        written += static_cast<size_t>(result);
+    }
+    if (truncate)
+        fsync(fd);
     close(fd);
 }
 
@@ -156,7 +179,7 @@ NotebookSleepSettings SettingsStore::configuredNotebookSleep() {
     NotebookSleepSettings loaded;
     bool validFile = false;
     QString const settingsPath = QLatin1String(
-        "/mnt/onboard/.kobo/custom/templates/notebook-sleep.json");
+        "/mnt/onboard/.kobo/iink/custom-notebook-templates/templates/notebook-sleep.json");
     QFile file(settingsPath);
     QFileInfo const info(file);
     if (!info.exists()) {
@@ -224,7 +247,7 @@ bool SettingsStore::persistNotebookSleep(
         return false;
     }
     QSaveFile file(QLatin1String(
-        "/mnt/onboard/.kobo/custom/templates/notebook-sleep.json"));
+        "/mnt/onboard/.kobo/iink/custom-notebook-templates/templates/notebook-sleep.json"));
     if (!file.open(QIODevice::WriteOnly)) {
         trace("notebook-sleep: setting could not be opened; selection kept in memory");
         return false;
@@ -252,5 +275,30 @@ bool SettingsStore::persistNotebookSleep(
 } // namespace cnt
 
 __attribute__((constructor(101))) static void traceLibraryLoad() {
+    Dl_info image = {};
+    if (dladdr(
+            reinterpret_cast<void const*>(&traceLibraryLoad),
+            &image)
+            && image.dli_fname) {
+        char const suffix[] = ".failsafe";
+        size_t const pathLength = strlen(image.dli_fname);
+        size_t const suffixLength = sizeof(suffix) - 1;
+        if (pathLength >= suffixLength
+                && !strcmp(
+                    image.dli_fname + pathLength - suffixLength,
+                    suffix)) {
+            // Qt may scan imageformats again while NickelHook has temporarily
+            // renamed the active image. Do not let that inert load erase the
+            // healthy process trace which explains a later native crash.
+            cnt::trace(
+                "plugin library loaded from failsafe; active session trace preserved");
+            return;
+        }
+    }
+
+    // Preserve the previous Nickel session so a restart after a native crash
+    // does not erase the evidence we need before the device is remounted.
+    unlink(kPreviousTrace);
+    rename(kTrace, kPreviousTrace);
     cnt::trace("plugin library loaded", true);
 }
