@@ -281,7 +281,7 @@ class HotPathPolicyTests(unittest.TestCase):
             theme.index("queueActiveEraserReplay("),
         )
 
-    def test_failsafe_is_disarmed_synchronously_after_successful_init(
+    def test_failsafe_is_restored_immediately_after_successful_init(
         self,
     ) -> None:
         entry = text("plugin_entry.cc")
@@ -296,9 +296,15 @@ class HotPathPolicyTests(unittest.TestCase):
         )
         self.assertRegex(descriptor, r"\n\s*0,\n};")
 
+        # Upstream NickelHook (the pinned submodule) passes failsafe_delay to
+        # nh_failsafe_destroy, which restores the library on a detached thread
+        # after sleeping that many seconds; with 0 the rename happens at once.
         nickelhook = (
             ROOT / "third_party" / "NickelHook" / "nh.c"
         ).read_text(encoding="utf-8")
+        self.assertIn(
+            "nh_failsafe_destroy(fs, nh->info->failsafe_delay);", nickelhook
+        )
         destroy_definition = nickelhook[
             nickelhook.rindex(
                 "void nh_failsafe_destroy(nh_failsafe_t *fs, int delay)"
@@ -309,10 +315,18 @@ class HotPathPolicyTests(unittest.TestCase):
             "void nh_failsafe_destroy(nh_failsafe_t *fs, int delay)",
         )
         self.assertLess(
-            destroy.index("if (delay <= 0)"),
+            destroy.index("fs->delay = delay;"),
             destroy.index("pthread_create("),
         )
-        self.assertIn("_nh_failsafe_destroy(fs);", destroy)
+        self.assertIn("PTHREAD_CREATE_DETACHED", destroy)
+        restore = function_body(
+            nickelhook,
+            "static void *_nh_failsafe_destroy(void *_fs)",
+        )
+        self.assertLess(
+            restore.index("sleep(fs->delay);"),
+            restore.index("rename(fs->tmp, fs->orig)"),
+        )
 
     def test_home_tiles_skip_obvious_non_notebooks_and_hit_logging(self) -> None:
         cache = text("cover_cache.cc")

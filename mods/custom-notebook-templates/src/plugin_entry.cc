@@ -448,7 +448,8 @@ static struct nh_info info = {
     "Adds notebook papers, covers, page tools, and experimental native layers.",
     "/mnt/onboard/.kobo/custom/templates/uninstall-plugin",
     nullptr,
-    // Disarm synchronously once initialization has completed. An init-time
+    // Restore the library immediately (0 s; NickelHook renames it back on a
+    // detached thread) once initialization has completed. An init-time
     // failure still leaves the failsafe image in place, while a later native
     // notebook crash can no longer make the plugin disappear on next boot.
     0,
