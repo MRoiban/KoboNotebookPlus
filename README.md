@@ -255,8 +255,10 @@ plugin's own last successful operation of the same kind: then the backup taken
 before that operation is reused. Any ink or other change in between makes a
 fresh backup, so a reused backup can only lose plugin structure edits (page
 moves, duplicates, added layers), never handwriting. Each backup folder keeps
-the 10 newest backups per notebook file name; older ones are deleted when a
-new backup of that notebook is written. The pinned sleep-page
+the 10 newest backups per notebook; older ones are deleted when a new backup
+of that notebook is written. Backup names carry a short tag derived from the
+notebook's path, so same-named notebooks in different folders and backups
+from older plugin versions are never pruned. The pinned sleep-page
 cache lives separately in `notebook-sleep/` and is never scanned as a paper
 template.
 

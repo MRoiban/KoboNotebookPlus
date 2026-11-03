@@ -11,7 +11,11 @@
 //    Restoring the kept backup can therefore only undo structural plugin edits
 //    (moves, duplicates, layer add/delete), never handwriting.
 //  * After a new backup is written, only the newest kMaxBackupsPerNotebook
-//    backups of that notebook file name are kept in that folder.
+//    backups of that same notebook are kept in that folder. New backups are
+//    named "<stamp>[-N]-h<8 hex of the notebook path's SHA-1>-<file>.backup";
+//    the helpers below take that "h<hex>-<file>" identity as the notebook
+//    name, so same-named notebooks in other folders and older untagged
+//    backups are never pruned.
 
 #include <cstddef>
 #include <cstdint>

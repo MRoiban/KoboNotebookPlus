@@ -202,6 +202,25 @@ void testPrune() {
     require(pruned[1] == "20261102-000000000-a.nebo.backup", "next oldest pruned");
 
     require(backupsToPrune(names, "b.nebo", 0, none).size() == 1, "other notebook");
+
+    // Path-tagged identities: same file name in two folders, plus an older
+    // untagged backup, never prune each other.
+    std::vector<std::string> tagged;
+    tagged.push_back("20261103-000000001-h1111aaaa-Notes.nebo.backup");
+    tagged.push_back("20261103-000000002-h1111aaaa-Notes.nebo.backup");
+    tagged.push_back("20261103-000000003-h2222bbbb-Notes.nebo.backup");
+    tagged.push_back("20261103-000000004-2-h2222bbbb-Notes.nebo.backup");
+    tagged.push_back("20261101-000000000-Notes.nebo.backup");
+    std::vector<std::string> first = backupsToPrune(tagged, "h1111aaaa-Notes.nebo", 1, none);
+    require(first.size() == 1 && first[0] == "20261103-000000001-h1111aaaa-Notes.nebo.backup",
+        "only the same-path notebook is pruned");
+    std::vector<std::string> second = backupsToPrune(tagged, "h2222bbbb-Notes.nebo", 1, none);
+    require(second.size() == 1 && second[0] == "20261103-000000003-h2222bbbb-Notes.nebo.backup",
+        "collision suffix kept within the same identity");
+    require(backupsToPrune(tagged, "h1111aaaa-Notes.nebo", 0, none).size() == 2,
+        "untagged and other-folder backups are never candidates");
+    require(!isBackupOf("20261103-000000001-h1111aaaa-Notes.nebo.backup", "Notes.nebo"),
+        "a tagged backup is not an untagged notebook's backup");
     require(backupsToPrune(names, "c.nebo", 0, none).empty(), "unknown notebook");
 }
 

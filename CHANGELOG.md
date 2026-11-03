@@ -29,7 +29,9 @@ All notable changes to KoboNotebookPlus will be documented in this file.
   previous operation of the same kind, detected from a digest of the archive's
   central directory (entry names, CRC-32s and sizes; 0.5 ms). A new backup
   costs ~90 ms on a 5 MB notebook (copy plus flash sync). Each backup folder
-  now keeps only the 10 newest backups per notebook.
+  now keeps only the 10 newest backups per notebook (identified by a tag of
+  its path in the backup name; older untagged backups are never pruned). The
+  free-space check still runs when a backup is reused.
 - First notebook open after boot ~39% faster (tap to settled screen, median
   of 3 cold boots: **1876 → 1147 ms**). After boot, while idle, the plugin
   reads the notebook engine libraries ahead, loads Nickel's notebook plugin

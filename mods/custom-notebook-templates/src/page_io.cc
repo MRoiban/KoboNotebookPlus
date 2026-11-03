@@ -35,9 +35,21 @@ BackupMemo& memoFor(QString const& path) {
     return pluginState().backups.notebooks[notebookKey(path)];
 }
 
-// Keeps the newest backups of this notebook in `backupRoot`; never touches
-// the backup just written. Failures only leave extra files behind.
-void pruneBackups(QString const& backupRoot, QString const& notebookFileName,
+// "h<8 hex of SHA-1(canonical path)>-<file name>": distinguishes notebooks
+// with the same file name in different folders. The leading 'h' can never be
+// read as a "-N-" collision suffix. Untagged (older) backups never match, so
+// pruning leaves them alone.
+QString backupIdentity(QString const& notebookPath, QString const& fileName) {
+    QByteArray const digest = QCryptographicHash::hash(
+        notebookKey(notebookPath).toUtf8(), QCryptographicHash::Sha1).toHex();
+    return QLatin1Char('h') + QString::fromLatin1(digest.left(8))
+        + QLatin1Char('-') + fileName;
+}
+
+// Keeps the newest backups of this exact notebook (same identity) in
+// `backupRoot`; never touches the backup just written. Failures only leave
+// extra files behind.
+void pruneBackups(QString const& backupRoot, QString const& identity,
         QString const& keepPath) {
     perf::PhaseScope phase("backup-prune");
     QStringList const entries = QDir(backupRoot).entryList(
@@ -50,7 +62,7 @@ void pruneBackups(QString const& backupRoot, QString const& notebookFileName,
     protectedNames.push_back(QFileInfo(keepPath).fileName().toUtf8().constData());
     std::vector<std::string> const doomed = backup_policy::backupsToPrune(
         names,
-        notebookFileName.toUtf8().constData(),
+        identity.toUtf8().constData(),
         backup_policy::kMaxBackupsPerNotebook,
         protectedNames);
     int removed = 0;
@@ -138,27 +150,6 @@ bool backupNotebookPath(
 
     perf::note("notebook-bytes", source.size());
 
-    // Reuse the previous backup only when nothing but this plugin's own last
-    // successful edit has changed the notebook since it was taken.
-    QByteArray fingerprint;
-    try {
-        BackupMemo& memo = memoFor(sourcePath);
-        QByteArray const committed = memo.committedFingerprint;
-        memo.committedFingerprint.clear();
-        if (!committed.isEmpty() && memo.root == backupRoot
-                && QFileInfo(memo.backupPath).isFile()) {
-            fingerprint = notebookFingerprint(sourcePath);
-            if (fingerprint == committed) {
-                *backupPath = memo.backupPath;
-                perf::note("backup-reused", 1);
-                trace("notebook safety backup reused: unchanged since last plugin edit");
-                return true;
-            }
-        }
-    } catch (...) {
-        // Fall through to a full backup.
-    }
-
     QDir root;
     if (!root.mkpath(backupRoot)) {
         *error = operation
@@ -183,16 +174,38 @@ bool backupNotebookPath(
         return false;
     }
 
+    // Reuse the previous backup only when nothing but this plugin's own last
+    // successful edit has changed the notebook since it was taken. The
+    // free-space check above still applies: it also protects the engine's
+    // own save of the edit.
+    QByteArray fingerprint;
+    try {
+        BackupMemo& memo = memoFor(sourcePath);
+        QByteArray const committed = memo.committedFingerprint;
+        memo.committedFingerprint.clear();
+        if (!committed.isEmpty() && memo.root == backupRoot
+                && QFileInfo(memo.backupPath).isFile()) {
+            fingerprint = notebookFingerprint(sourcePath);
+            if (fingerprint == committed) {
+                *backupPath = memo.backupPath;
+                perf::note("backup-reused", 1);
+                trace("notebook safety backup reused: unchanged since last plugin edit");
+                return true;
+            }
+        }
+    } catch (...) {
+        // Fall through to a full backup.
+    }
+
     QString const stamp = QDateTime::currentDateTimeUtc()
         .toString(QLatin1String("yyyyMMdd-HHmmsszzz"));
+    QString const identity = backupIdentity(sourcePath, source.fileName());
     QString destination = backupRoot
-        + stamp + QLatin1Char('-') + source.fileName()
-        + QLatin1String(".backup");
+        + stamp + QLatin1Char('-') + identity + QLatin1String(".backup");
     for (int suffix = 1; QFileInfo(destination).exists(); ++suffix) {
         destination = backupRoot
             + stamp + QLatin1Char('-') + QString::number(suffix)
-            + QLatin1Char('-') + source.fileName()
-            + QLatin1String(".backup");
+            + QLatin1Char('-') + identity + QLatin1String(".backup");
     }
 
     QString const temporary = destination + QLatin1String(".tmp");
@@ -226,7 +239,7 @@ bool backupNotebookPath(
         memo.root = backupRoot;
         memo.backupPath = destination;
         memo.committedFingerprint.clear();
-        pruneBackups(backupRoot, source.fileName(), destination);
+        pruneBackups(backupRoot, identity, destination);
     } catch (...) {
         // The backup itself is complete; bookkeeping is best effort.
     }

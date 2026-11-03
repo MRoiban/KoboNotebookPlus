@@ -157,7 +157,7 @@ class RefreshExperimentPolicyTests(unittest.TestCase):
 
     def test_backup_reuse_requires_matching_commit_and_existing_backup(self):
         backup = body(text('page_io.cc'), 'bool backupNotebookPath(')
-        reuse = backup[backup.index('BackupMemo& memo = memoFor(sourcePath);'):backup.index('QDir root;')]
+        reuse = backup[backup.index('BackupMemo& memo = memoFor(sourcePath);'):backup.index('QString const stamp')]
         self.assertIn('memo.committedFingerprint.clear();', reuse)
         self.assertLess(reuse.index('memo.committedFingerprint.clear();'), reuse.index('return true;'))
         for required in ('!committed.isEmpty()', 'memo.root == backupRoot',
@@ -165,7 +165,14 @@ class RefreshExperimentPolicyTests(unittest.TestCase):
             self.assertIn(required, reuse)
         tail = backup[backup.index('*backupPath = destination;'):]
         self.assertIn('memo.backupPath = destination;', tail)
-        self.assertIn('pruneBackups(backupRoot, source.fileName(), destination);', tail)
+        self.assertIn('pruneBackups(backupRoot, identity, destination);', tail)
+        self.assertLess(backup.index('statvfs(qPrintable(backupRoot)'),
+                        backup.index('BackupMemo& memo = memoFor(sourcePath);'))
+        self.assertLess(backup.index('available < required'),
+                        backup.index('perf::note("backup-reused", 1);'))
+        identity = body(text('page_io.cc'), 'QString backupIdentity(')
+        self.assertIn("QLatin1Char('h')", identity)
+        self.assertIn('notebookKey(notebookPath)', identity)
         committed = body(text('page_io.cc'), 'void notebookCommitted(')
         self.assertIn('if (memo.backupPath != backupPath)', committed)
         self.assertIn('if (backupPath.isEmpty())', committed)
