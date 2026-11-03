@@ -3,6 +3,7 @@
 #include "cover_cache.h"
 #include "firmware_api.h"
 #include "notebook_widget.h"
+#include "perf_trace.h"
 #include "settings.h"
 
 #include <QByteArray>
@@ -379,6 +380,7 @@ void traceSerializedLayerProbe(
         layers::LayerState const& state,
         QString const& id,
         char const* phase) {
+    perf::PhaseScope phaseScope("archive-probe");
     int const marker = cover_cache::notebookArchiveContainsLayerId(
         coverState, state.notebookPath, state.partId, id);
     QString markerText = QLatin1String("indeterminate");
@@ -398,6 +400,7 @@ void traceSerializedLayerProbe(
 }
 
 bool saveLayerState(layers::LayerState const& state, QString* error) {
+    perf::PhaseScope phase("layer-state-save");
     if (state.notebookPath.isEmpty() || state.partId.isEmpty()) {
         if (error)
             *error = QLatin1String("Layer state not saved: page identity is missing.");

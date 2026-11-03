@@ -3,6 +3,7 @@
 #include "abi_types.h"
 #include "firmware_api.h"
 #include "firmware_resolver.h"
+#include "nickel_pins.h"
 #include "plugin_runtime.h"
 #include "settings.h"
 
@@ -14,12 +15,9 @@ namespace {
 
 char const kExcludeSyncFoldersSymbol[] =
     "_ZN15FeatureSettings18excludeSyncFoldersEv";
-uintptr_t const kExcludeSyncFoldersVma = 0xa04650;
 char const kContentGetIdSymbol[] = "_ZNK7Content5getIdEv";
-uintptr_t const kContentGetIdVma = 0x953d84;
 char const kRemoveCommonBookDataSymbol[] =
     "_ZN13VolumeManager20removeCommonBookDataERK6DeviceR6Volumeb";
-uintptr_t const kRemoveCommonBookDataVma = 0xa6ec74;
 
 } // namespace
 
@@ -44,11 +42,11 @@ bool install() {
     RemoveCommonBookData resolvedRemoveCommonBookData = nullptr;
     ExcludeSyncFolders resolvedExcludeSyncFolders = nullptr;
     if (!resolvePinned(handle, kExcludeSyncFoldersSymbol,
-            kExcludeSyncFoldersVma, &resolvedExcludeSyncFolders)
+            cnt::nickelVma(cnt::NickelPin::FeatureSettingsExcludeSyncFolders), &resolvedExcludeSyncFolders)
             || !resolvePinned(handle, kContentGetIdSymbol,
-                kContentGetIdVma, &resolvedContentGetId)
+                cnt::nickelVma(cnt::NickelPin::ContentGetId), &resolvedContentGetId)
             || !resolvePinned(handle, kRemoveCommonBookDataSymbol,
-                kRemoveCommonBookDataVma, &resolvedRemoveCommonBookData)) {
+                cnt::nickelVma(cnt::NickelPin::VolumeManagerRemoveCommonBookData), &resolvedRemoveCommonBookData)) {
         trace("asset-visibility: preservation symbols mismatch; scanner unchanged");
         dlclose(handle);
         return false;
@@ -61,7 +59,7 @@ bool install() {
     void* const originalPreservation = nh_dlhook(
         handle, kRemoveCommonBookDataSymbol, preservationReplacement.pointer);
     if (!pointerMatchesVma(
-            originalPreservation, kRemoveCommonBookDataVma)) {
+            originalPreservation, cnt::nickelVma(cnt::NickelPin::VolumeManagerRemoveCommonBookData))) {
         // nh_dlhook returns dlsym(stock), not the displaced GOT entry. If it
         // returned a usable stock address after patching an unexpected image,
         // write that stock target back; otherwise exclusion stays disabled.
@@ -70,7 +68,7 @@ bool install() {
             void* const rollbackResult = nh_dlhook(
                 handle, kRemoveCommonBookDataSymbol, originalPreservation);
             restored = pointerMatchesVma(
-                rollbackResult, kRemoveCommonBookDataVma);
+                rollbackResult, cnt::nickelVma(cnt::NickelPin::VolumeManagerRemoveCommonBookData));
         }
         trace(restored
             ? "asset-visibility: preservation hook mismatch; stock target restored"
@@ -89,19 +87,19 @@ bool install() {
     exclusionReplacement.function = _cnt_exclude_sync_folders_hook;
     void* const originalExclusion = nh_dlhook(
         handle, kExcludeSyncFoldersSymbol, exclusionReplacement.pointer);
-    if (!pointerMatchesVma(originalExclusion, kExcludeSyncFoldersVma)) {
+    if (!pointerMatchesVma(originalExclusion, cnt::nickelVma(cnt::NickelPin::FeatureSettingsExcludeSyncFolders))) {
         bool exclusionRestored = false;
         if (originalExclusion) {
             void* const rollbackResult = nh_dlhook(
                 handle, kExcludeSyncFoldersSymbol, originalExclusion);
             exclusionRestored = pointerMatchesVma(
-                rollbackResult, kExcludeSyncFoldersVma);
+                rollbackResult, cnt::nickelVma(cnt::NickelPin::FeatureSettingsExcludeSyncFolders));
         }
         void* const preservationRollback = nh_dlhook(
             handle, kRemoveCommonBookDataSymbol, originalPreservation);
         bool const preservationRestored =
             pointerMatchesVma(
-                preservationRollback, kRemoveCommonBookDataVma);
+                preservationRollback, cnt::nickelVma(cnt::NickelPin::VolumeManagerRemoveCommonBookData));
         trace(exclusionRestored && preservationRestored
             ? "asset-visibility: exclusion mismatch; both stock targets restored"
             : "asset-visibility: exclusion mismatch; scanner unchanged, rollback unverified");

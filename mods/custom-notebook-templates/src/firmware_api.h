@@ -33,8 +33,13 @@ struct FirmwareApi {
     WidgetSave widgetSave;
     WidgetFilePath widgetFilePath;
     WidgetRefresh widgetRefresh;
+    WidgetPositionUpdated widgetPositionUpdated;
     ShowErrorPopup showErrorPopup;
     BackgroundType backgroundType;
+    // Optional (open pre-warm); null when the pins do not match.
+    BackgroundWidgetCtor backgroundWidgetCtor;
+    BackgroundWidgetDelete backgroundWidgetDelete;
+    BackgroundWidgetSetType backgroundWidgetSetType;
     IInkToolMenuWidgetConstructor iInkToolMenuWidgetConstructor;
     IInkToolMenuWidgetSetSelected iInkToolMenuWidgetSetSelected;
 

@@ -5,10 +5,13 @@
 #include "export_range.h"
 #include "firmware_api.h"
 #include "firmware_resolver.h"
+#include "nickel_pins.h"
 #include "notebook_gestures.h"
 #include "notebook_sleep.h"
 #include "plugin_runtime.h"
+#include "perf_trace.h"
 #include "plugin_state.h"
+#include "prewarm.h"
 #include "settings.h"
 #include "templates.h"
 #include "visibility.h"
@@ -18,6 +21,7 @@
 
 #include <QCoreApplication>
 #include <QObject>
+#include <QElapsedTimer>
 #include <QTimer>
 
 #include <cstdint>
@@ -32,7 +36,6 @@ char const kBackgroundOptionsSymbol[] =
 uintptr_t const kBackgroundOptionsVma = 0x78c9c;
 char const kAddWidgetActionSymbol[] =
     "_ZN22AbstractMenuController15addWidgetActionEP5QMenuP7QWidgetP7QObjectPKcbbb";
-uintptr_t const kAddWidgetActionVma = 0xb3ce80;
 char const kSetToolThemeSymbol[] =
     "_ZN17IInkNotePadWidget12setToolThemeER13IInkToolTheme";
 uintptr_t const kSetToolThemeVma = 0x62200;
@@ -58,25 +61,22 @@ char const kIInkNotePadExporterVtableSymbol[] =
     "_ZTV19IInkNotePadExporter";
 uintptr_t const kIInkNotePadExporterVtableVma = 0xa52d8;
 char const kSetDialogTitleSymbol[] = "_ZN8N3Dialog8setTitleERK7QString";
-uintptr_t const kSetDialogTitleVma = 0x10e4168;
 char const kParserImageParsedSymbol[] =
     "_ZN15ParserInterface11imageParsedERK6VolumeRK6QImage";
-uintptr_t const kParserImageParsedVma = 0x118f714;
 char const kContentGetIdSymbol[] = "_ZNK7Content5getIdEv";
-uintptr_t const kContentGetIdVma = 0x953d84;
 char const kContentGetImageIdSymbol[] = "_ZNK7Content10getImageIdEv";
-uintptr_t const kContentGetImageIdVma = 0x957628;
 char const kPixmapSetImageSymbol[] =
     "_ZN10PixmapView8setImageERK6QImageRK7QString";
-uintptr_t const kPixmapSetImageVma = 0x10fa084;
 char const kVolumeLoadCoverSymbol[] = "_ZN16VolumePixmapView9loadCoverEv";
-uintptr_t const kVolumeLoadCoverVma = 0xc73388;
 
 static void installHookAfterNaturalLoad() {
     void* const handle = dlopen("libiinknote.so", RTLD_LAZY | RTLD_NOLOAD);
     if (!handle)
         return;
 
+    QElapsedTimer delayedInit;
+    delayedInit.start();
+    cnt::perf::stamp("libiinknote-observed");
     trace("libiinknote observed after natural load");
     BackgroundOptions resolvedBackgroundOptions = nullptr;
     if (!resolvePinned(handle, kBackgroundOptionsSymbol,
@@ -142,7 +142,7 @@ static void installHookAfterNaturalLoad() {
         void* original = nullptr;
         if (firmwareApi().createIInkMenuItem && firmwareApi().iinknoteBase
                 && resolvePinned(handle, kAddWidgetActionSymbol,
-                    kAddWidgetActionVma, &resolvedAction)) {
+                    cnt::nickelVma(cnt::NickelPin::AbstractMenuControllerAddWidgetAction), &resolvedAction)) {
             firmwareApi().addWidgetActionOriginal = resolvedAction;
             AddWidgetActionAddress actionReplacement;
             actionReplacement.function = _cnt_add_widget_action_hook;
@@ -150,12 +150,12 @@ static void installHookAfterNaturalLoad() {
                 handle,
                 kAddWidgetActionSymbol,
                 actionReplacement.pointer);
-            if (pointerMatchesVma(original, kAddWidgetActionVma)) {
+            if (pointerMatchesVma(original, cnt::nickelVma(cnt::NickelPin::AbstractMenuControllerAddWidgetAction))) {
                 firmwareApi().addWidgetActionOriginal =
                     reinterpret_cast<AddWidgetAction>(original);
             }
         }
-        if (pointerMatchesVma(original, kAddWidgetActionVma)) {
+        if (pointerMatchesVma(original, cnt::nickelVma(cnt::NickelPin::AbstractMenuControllerAddWidgetAction))) {
             pluginState().pages.hooksReady = true;
             trace("pages: guarded notebook-menu hook installed");
         } else {
@@ -170,7 +170,7 @@ static void installHookAfterNaturalLoad() {
         void* resolvedExporterVtable = nullptr;
         void* originalExporterConstructor = nullptr;
         bool const exportRangeSymbols =
-            pointerMatchesVma(original, kAddWidgetActionVma)
+            pointerMatchesVma(original, cnt::nickelVma(cnt::NickelPin::AbstractMenuControllerAddWidgetAction))
             && firmwareApi().nickelTouchMenuConstructor
             && firmwareApi().nickelTouchMenuSetAlignment
             && firmwareApi().touchMenuSetCustomPopupPositionOffset
@@ -317,7 +317,7 @@ static void installHookAfterNaturalLoad() {
         ParserImageParsed resolvedImageParsed = nullptr;
         if (firmwareApi().contentGetId
                 && resolvePinned(handle, kParserImageParsedSymbol,
-                    kParserImageParsedVma, &resolvedImageParsed)) {
+                    cnt::nickelVma(cnt::NickelPin::ParserImageParsed), &resolvedImageParsed)) {
             firmwareApi().parserImageParsedOriginal = resolvedImageParsed;
             ParserImageParsedAddress imageReplacement;
             imageReplacement.function = _cnt_parser_image_parsed_hook;
@@ -326,7 +326,7 @@ static void installHookAfterNaturalLoad() {
                 kParserImageParsedSymbol,
                 imageReplacement.pointer);
             if (pointerMatchesVma(
-                    originalImageParsed, kParserImageParsedVma)) {
+                    originalImageParsed, cnt::nickelVma(cnt::NickelPin::ParserImageParsed))) {
                 firmwareApi().parserImageParsedOriginal =
                     reinterpret_cast<ParserImageParsed>(originalImageParsed);
                 coverState().parserHookReady = true;
@@ -341,7 +341,7 @@ static void installHookAfterNaturalLoad() {
             SetDialogTitle resolvedTitle = nullptr;
             bool const coverHookSymbols =
                 resolvePinned(handle, kSetDialogTitleSymbol,
-                    kSetDialogTitleVma, &resolvedTitle);
+                    cnt::nickelVma(cnt::NickelPin::DialogSetTitle), &resolvedTitle);
             void* originalTitle = nullptr;
             if (coverHookSymbols) {
                 firmwareApi().setDialogTitleOriginal = resolvedTitle;
@@ -352,7 +352,7 @@ static void installHookAfterNaturalLoad() {
                     handle,
                     kSetDialogTitleSymbol,
                     titleReplacement.pointer);
-                if (pointerMatchesVma(originalTitle, kSetDialogTitleVma)) {
+                if (pointerMatchesVma(originalTitle, cnt::nickelVma(cnt::NickelPin::DialogSetTitle))) {
                     firmwareApi().setDialogTitleOriginal =
                         reinterpret_cast<SetDialogTitle>(originalTitle);
                 }
@@ -365,13 +365,13 @@ static void installHookAfterNaturalLoad() {
                 VolumeLoadCover resolvedLoadCover = nullptr;
                 bool const gridSymbols =
                     resolvePinned(nickelHandle, kContentGetIdSymbol,
-                        kContentGetIdVma, &firmwareApi().contentGetId)
+                        cnt::nickelVma(cnt::NickelPin::ContentGetId), &firmwareApi().contentGetId)
                     && resolvePinned(nickelHandle, kContentGetImageIdSymbol,
-                        kContentGetImageIdVma, &firmwareApi().contentGetImageId)
+                        cnt::nickelVma(cnt::NickelPin::ContentGetImageId), &firmwareApi().contentGetImageId)
                     && resolvePinned(nickelHandle, kPixmapSetImageSymbol,
-                        kPixmapSetImageVma, &firmwareApi().pixmapSetImage)
+                        cnt::nickelVma(cnt::NickelPin::PixmapViewSetImage), &firmwareApi().pixmapSetImage)
                     && resolvePinned(nickelHandle, kVolumeLoadCoverSymbol,
-                        kVolumeLoadCoverVma, &resolvedLoadCover);
+                        cnt::nickelVma(cnt::NickelPin::VolumePixmapViewLoadCover), &resolvedLoadCover);
                 if (gridSymbols) {
                     firmwareApi().volumeLoadCoverOriginal = resolvedLoadCover;
                     VolumeLoadCoverAddress loadCoverReplacement;
@@ -381,12 +381,12 @@ static void installHookAfterNaturalLoad() {
                         kVolumeLoadCoverSymbol,
                         loadCoverReplacement.pointer);
                     if (pointerMatchesVma(
-                            originalLoadCover, kVolumeLoadCoverVma)) {
+                            originalLoadCover, cnt::nickelVma(cnt::NickelPin::VolumePixmapViewLoadCover))) {
                         firmwareApi().volumeLoadCoverOriginal =
                             reinterpret_cast<VolumeLoadCover>(originalLoadCover);
                     }
                     if (pointerMatchesVma(
-                            originalLoadCover, kVolumeLoadCoverVma)) {
+                            originalLoadCover, cnt::nickelVma(cnt::NickelPin::VolumePixmapViewLoadCover))) {
                         coverState().gridHookReady = true;
                         trace("covers: live notebook-card load hook installed");
                     } else {
@@ -404,8 +404,8 @@ static void installHookAfterNaturalLoad() {
             // load hook independently checks its exact libnickel VMA, lets Kobo
             // load first, then reads only the view's own Volume and .nebo path
             // (including notebook subfolders).
-            if (pointerMatchesVma(original, kAddWidgetActionVma)
-                    && pointerMatchesVma(originalTitle, kSetDialogTitleVma)
+            if (pointerMatchesVma(original, cnt::nickelVma(cnt::NickelPin::AbstractMenuControllerAddWidgetAction))
+                    && pointerMatchesVma(originalTitle, cnt::nickelVma(cnt::NickelPin::DialogSetTitle))
                     && coverState().parserHookReady) {
                 coverState().hooksReady = true;
                 trace("covers: guarded menu, picker-title, and parser-thumbnail hooks installed");
@@ -420,6 +420,8 @@ static void installHookAfterNaturalLoad() {
         trace("pages: pinned notebook APIs did not resolve");
     }
     trace("delayed hook initialization complete");
+    cnt::perf::stamp("delayed-init-done", delayedInit.elapsed());
+    cnt::prewarm::notebookEngineLoaded();
     hookState().stopTimer();
 }
 
@@ -427,6 +429,8 @@ static int initialize() {
     publishPluginState(new PluginState());
     cnt::visibility::migrateLegacySupportTree();
     trace("NickelHook init entered");
+    // Must precede every libnickel resolution and hook below.
+    cnt::detectNickelProfile();
     cnt::notebook_sleep::installHooks(pluginState().notebookSleep);
     cnt::visibility_hooks::install();
     cnt::visibility::hideLegacyNotebookBackups(coverBackupRoot());
@@ -434,6 +438,7 @@ static int initialize() {
     hookState().timer->setInterval(100);
     QObject::connect(hookState().timer, &QTimer::timeout, installHookAfterNaturalLoad);
     hookState().timer->start();
+    cnt::prewarm::schedule();
     trace("NickelHook init complete; waiting for natural libiinknote load");
     return 0;
 }
@@ -443,7 +448,8 @@ static struct nh_info info = {
     "Adds notebook papers, covers, page tools, and experimental native layers.",
     "/mnt/onboard/.kobo/custom/templates/uninstall-plugin",
     nullptr,
-    // Disarm synchronously once initialization has completed. An init-time
+    // Restore the library immediately (0 s; NickelHook renames it back on a
+    // detached thread) once initialization has completed. An init-time
     // failure still leaves the failsafe image in place, while a later native
     // notebook crash can no longer make the plugin disappear on next boot.
     0,

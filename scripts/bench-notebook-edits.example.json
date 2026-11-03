@@ -1,0 +1,128 @@
+{
+  "note": "Verify a current-session backup first. Open a notebook with toolbar visible on an interior page. Duplicate changes the notebook; move-pair is net zero. Recalibrate menu coordinates before use. Use --set-experiment \"settle=1\" for settled-paint records with shipped defaults; --set-experiment \"move=stock dup=stock layer-activate=stock settle=1\" measures the stock baseline.",
+  "scenarios": [
+    {
+      "name": "duplicate",
+      "op": "page-duplicate",
+      "steps": [
+        {
+          "tap": [
+            1252,
+            112
+          ],
+          "wait_s": 0.5
+        },
+        {
+          "tap": [
+            990,
+            512
+          ],
+          "wait_s": 0.1
+        }
+      ]
+    },
+    {
+      "name": "move-earlier",
+      "op": "page-move-earlier",
+      "steps": [
+        {
+          "tap": [
+            1252,
+            112
+          ],
+          "wait_s": 0.5
+        },
+        {
+          "tap": [
+            1010,
+            582
+          ],
+          "wait_s": 0.1
+        }
+      ]
+    },
+    {
+      "name": "move-later",
+      "op": "page-move-later",
+      "steps": [
+        {
+          "tap": [
+            1252,
+            112
+          ],
+          "wait_s": 0.5
+        },
+        {
+          "tap": [
+            998,
+            652
+          ],
+          "wait_s": 0.1
+        }
+      ]
+    },
+    {
+      "name": "move-pair",
+      "op": "page-move-later",
+      "steps": [
+        {
+          "tap": [
+            1252,
+            112
+          ],
+          "wait_s": 0.5
+        },
+        {
+          "tap": [
+            998,
+            652
+          ],
+          "wait_s": 0.1,
+          "expect_op": "page-move-later"
+        },
+        {
+          "tap": [
+            1252,
+            112
+          ],
+          "wait_s": 0.5
+        },
+        {
+          "tap": [
+            1010,
+            582
+          ],
+          "wait_s": 0.1,
+          "expect_op": "page-move-earlier"
+        }
+      ]
+    },
+    {
+      "name": "layer-activate",
+      "op": "layer-activate",
+      "steps": [
+        {
+          "tap": [
+            1252,
+            112
+          ],
+          "wait_s": 0.5
+        },
+        {
+          "tap": [
+            936,
+            361
+          ],
+          "wait_s": 1.5
+        },
+        {
+          "tap": [
+            990,
+            211
+          ],
+          "wait_s": 0.1
+        }
+      ]
+    }
+  ]
+}

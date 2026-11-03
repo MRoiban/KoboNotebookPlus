@@ -12,8 +12,10 @@ src/page_actions.o: src/page_actions.cc src/page_actions.h \
  /tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QMutex \
  src/export_range.h \
  /tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QPointer \
- src/firmware_api.h src/notebook_widget.h src/pages.h src/settings.h \
+ src/firmware_api.h src/notebook_widget.h src/pages.h src/perf_trace.h \
+ /tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QElapsedTimer \
  /tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QObject \
+ src/settings.h \
  /tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QVariant \
  /tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtWidgets/QWidget \
  /tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtWidgets/qwidget.h
@@ -54,9 +56,13 @@ src/notebook_widget.h:
 
 src/pages.h:
 
-src/settings.h:
+src/perf_trace.h:
+
+/tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QElapsedTimer:
 
 /tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QObject:
+
+src/settings.h:
 
 /tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QVariant:
 

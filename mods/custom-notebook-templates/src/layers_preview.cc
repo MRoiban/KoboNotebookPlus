@@ -7,6 +7,7 @@
 #include "page_io.h"
 #include "plugin_runtime.h"
 #include "plugin_state.h"
+#include "perf_trace.h"
 #include "settings.h"
 
 #include <QByteArray>
@@ -599,6 +600,7 @@ static bool generateLayerPreview(
     bool exported = false;
     trace(QLatin1String("layers: isolated preview export begin id=") + id);
     try {
+        perf::PhaseScope phase("preview-export");
         std::string const output = temporaryPath.toUtf8().constData();
         exported = firmware.pageControllerExportToPng(
             pageController, SharedBox(), output, opaqueProxy, 0);
@@ -628,6 +630,7 @@ static bool generateLayerPreview(
         }
         return false;
     }
+    perf::PhaseScope decodePhase("preview-decode");
     QImageReader validationReader(temporaryPath);
     QSize const decodedSize = validationReader.size();
     if (!decodedSize.isValid() || decodedSize.width() > 4096
@@ -649,6 +652,7 @@ static bool generateLayerPreview(
     // exact page-shaped payload it displays so future popup opens read only a
     // few kilobytes. Keep the full export as a safe fallback if Qt cannot
     // encode the derivative for any reason.
+    perf::PhaseScope cardPhase("preview-card");
     QString const cardTemporaryPath = finalPath
         + QLatin1String(".card-") + uniqueSuffix + QLatin1String(".png");
     QFile::remove(cardTemporaryPath);
@@ -1233,6 +1237,7 @@ static bool addNotebookLayer(
         QString* error) {
     FirmwareApi& firmware = *dependencies.firmware;
     Pins const& pins = dependencies.pins;
+    perf::Variant const variant = perf::experimentVariant("layer-add", firmware);
     if (!context || context->state.customLayers.size() + 1
             >= pins.maximumNotebookLayers) {
         if (error)
@@ -1240,7 +1245,10 @@ static bool addNotebookLayer(
         return false;
     }
 
-    firmware.widgetSave(context->widget);
+    {
+        perf::PhaseScope phase("widget-save-pre");
+        firmware.widgetSave(context->widget);
+    }
     QString backupPath;
     if (!cnt::page_io::backupNotebookPath(
             context->state.notebookPath,
@@ -1251,6 +1259,7 @@ static bool addNotebookLayer(
         return false;
     }
 
+    perf::PhaseScope enginePhase("engine");
     cnt::layers_state::LayoutStorage layout(firmware);
     if (!cnt::layers_state::loadLayoutForPart(
             firmware, context->part, &layout, error))
@@ -1308,16 +1317,28 @@ static bool addNotebookLayer(
     }
 
     trace("layers: package save begin after native add");
-    firmware.packageSave(context->package.get());
+    {
+        perf::PhaseScope phase("package-save");
+        firmware.packageSave(context->package.get());
+    }
     trace("layers: package save complete after native add");
-    firmware.widgetSave(context->widget);
+    {
+        perf::PhaseScope phase("widget-save-post");
+        firmware.widgetSave(context->widget);
+    }
     trace("layers: widget save complete after native add");
     cnt::layers_state::traceSerializedLayerProbe(
         *dependencies.coverCache,
         context->state,
         record.id,
         "after-add-save");
-    firmware.widgetRefresh(context->widget);
+    // A new layer is empty, so the canvas is unchanged; selection only
+    // changes tool routing (as in activateNotebookLayer). Stock kill switch.
+    if (variant != perf::None) {
+        perf::PhaseScope phase("refresh");
+        firmware.widgetRefresh(context->widget);
+    }
+    cnt::page_io::notebookCommitted(context->state.notebookPath, backupPath);
     trace("layers: native layer added and selected");
     return true;
 }
@@ -1329,8 +1350,10 @@ static bool activateNotebookLayer(
     QString* error) {
     FirmwareApi& firmware = *dependencies.firmware;
     Pins const& pins = dependencies.pins;
+    perf::Variant const variant = perf::experimentVariant("layer-activate", firmware);
     if (!context)
         return false;
+    perf::PhaseScope enginePhase("engine");
     bool known = id
         == cnt::layers_state::nativeDocumentLayerId(firmware);
     for (int i = 0; !known && i < context->state.customLayers.size(); ++i)
@@ -1366,7 +1389,11 @@ static bool activateNotebookLayer(
     // only on isolated export/thumbnail renderers; mutating the live
     // RenderPad vector from this menu callback races its render lifecycle.
     // The active ToolDispatcher still routes all future strokes natively.
-    firmware.widgetRefresh(context->widget);
+    // Selection needs no canvas repaint; retain refresh as a stock kill switch.
+    if (variant != perf::None) {
+        perf::PhaseScope phase("refresh");
+        firmware.widgetRefresh(context->widget);
+    }
     trace("layers: active layer changed");
     return true;
 }
@@ -1397,7 +1424,10 @@ static bool deleteActiveNotebookLayer(
         return false;
     }
 
-    firmware.widgetSave(context->widget);
+    {
+        perf::PhaseScope phase("widget-save-pre");
+        firmware.widgetSave(context->widget);
+    }
     QString backupPath;
     if (!cnt::page_io::backupNotebookPath(
             context->state.notebookPath,
@@ -1408,6 +1438,7 @@ static bool deleteActiveNotebookLayer(
         return false;
     }
 
+    perf::PhaseScope enginePhase("engine");
     cnt::layers_state::LayoutStorage layout(firmware);
     if (!cnt::layers_state::loadLayoutForPart(
             firmware, context->part, &layout, error))
@@ -1458,18 +1489,33 @@ static bool deleteActiveNotebookLayer(
         return false;
     }
     trace("layers: package save begin after native delete");
-    firmware.packageSave(context->package.get());
+    {
+        perf::PhaseScope phase("package-save");
+        firmware.packageSave(context->package.get());
+    }
     trace("layers: package save complete after native delete");
-    firmware.widgetSave(context->widget);
+    {
+        perf::PhaseScope phase("widget-save-post");
+        firmware.widgetSave(context->widget);
+    }
     trace("layers: widget save complete after native delete");
     cnt::layers_state::traceSerializedLayerProbe(
         *dependencies.coverCache,
         context->state,
         deletedId,
         "after-delete-save");
-    QFile::remove(previewPath);
-    dependencies.runtime->previewCardCache.remove(previewPath);
-    firmware.widgetRefresh(context->widget);
+    {
+        perf::PhaseScope phase("preview-remove");
+        QFile::remove(previewPath);
+        dependencies.runtime->previewCardCache.remove(previewPath);
+    }
+    // Deleting removes visible ink and always follows a modal confirmation;
+    // the full refresh also clears that dialog's ghosting, so it stays.
+    {
+        perf::PhaseScope phase("refresh");
+        firmware.widgetRefresh(context->widget);
+    }
+    cnt::page_io::notebookCommitted(context->state.notebookPath, backupPath);
     trace("layers: active native layer deleted");
     return true;
 }
@@ -1481,13 +1527,17 @@ static bool refreshLayerPreviews(
     if (!context)
         return false;
     FirmwareApi& firmware = *dependencies.firmware;
-    firmware.widgetSave(context->widget);
+    {
+        perf::PhaseScope phase("widget-save-pre");
+        firmware.widgetSave(context->widget);
+    }
 
     QVector<QString> ids;
     ids.append(cnt::layers_state::nativeDocumentLayerId(firmware));
     for (int i = 0; i < context->state.customLayers.size(); ++i)
         ids.append(context->state.customLayers.at(i).id);
 
+    perf::PhaseScope previewPhase("preview");
     int generated = 0;
     QString firstError;
     for (int i = 0; i < ids.size(); ++i) {
@@ -1499,6 +1549,7 @@ static bool refreshLayerPreviews(
             firstError = itemError;
         }
     }
+    perf::note("preview-count", generated);
     if (generated != ids.size()) {
         if (error) {
             *error = QLatin1String("Generated ") + QString::number(generated)
@@ -1518,13 +1569,24 @@ static bool performLayerOperationImpl(
         layers::LayerOperation operation,
         QString const& id,
         QString* error) {
+    perf::EditScope edit(operation == layers::AddLayerOperation
+        ? "layer-add"
+        : operation == layers::DeleteActiveLayerOperation
+            ? "layer-delete"
+            : operation == layers::RefreshLayerPreviewsOperation
+                ? "layer-refresh-previews" : "layer-activate",
+        context ? static_cast<QObject*>(context->widget) : nullptr);
+    bool succeeded = false;
     if (operation == layers::AddLayerOperation)
-        return addNotebookLayer(dependencies, context, error);
-    if (operation == layers::DeleteActiveLayerOperation)
-        return deleteActiveNotebookLayer(dependencies, context, error);
-    if (operation == layers::RefreshLayerPreviewsOperation)
-        return refreshLayerPreviews(dependencies, context, error);
-    return activateNotebookLayer(dependencies, context, id, error);
+        succeeded = addNotebookLayer(dependencies, context, error);
+    else if (operation == layers::DeleteActiveLayerOperation)
+        succeeded = deleteActiveNotebookLayer(dependencies, context, error);
+    else if (operation == layers::RefreshLayerPreviewsOperation)
+        succeeded = refreshLayerPreviews(dependencies, context, error);
+    else
+        succeeded = activateNotebookLayer(dependencies, context, id, error);
+    edit.finish(succeeded);
+    return succeeded;
 }
 
 static QString layerPopupRowLabelImpl(

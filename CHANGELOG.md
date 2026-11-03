@@ -2,6 +2,52 @@
 
 All notable changes to KoboNotebookPlus will be documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- Support Kobo firmware `4.38.23852` alongside `4.38.23697`. In 23852 only
+  `libnickel.so.1.0.0` moved: every libnickel function the plugin calls or
+  hooks is instruction-for-instruction identical, only at new addresses.
+  `libiink.so`, `libiinkuiref.so.1.0.0` and `iink` are byte-identical, and
+  `libiinknote.so` changes only an embedded QSS resource. At init the plugin
+  picks a libnickel address profile only when all 31 pins match exactly.
+- `scripts/verify-layer-abi.py` selects its libnickel expectations by image
+  SHA-256 and checks that the C++ profile column matches the library.
+
+### Changed
+
+- Page moves ~5.6x faster, duplicate ~2.2x, layer selection ~100x; they no
+  longer force a full-screen e-ink refresh. Measured median synchronous /
+  settled-paint times: moves **788 / 796 → 140 / 193 ms**, duplicate
+  **1033 / 1117 → 465 / 787 ms**, layer selection **748 / 757 → 7 / 17 ms**
+  (same boot, interleaved A/B, n=8–10 per variant; all 95% bootstrap CIs for
+  timing differences exclude zero).
+- Adding a layer no longer forces a full-screen refresh (the new layer is
+  empty). Layer delete and cover changes keep theirs.
+- Safety backups are reused when the notebook is unchanged since the plugin's
+  previous operation of the same kind, detected from a digest of the archive's
+  central directory (entry names, CRC-32s and sizes; 0.5 ms). A new backup
+  costs ~90 ms on a 5 MB notebook (copy plus flash sync). Each backup folder
+  now keeps only the 10 newest backups per notebook (identified by a tag of
+  its path in the backup name; older untagged backups are never pruned). The
+  free-space check still runs when a backup is reused.
+- First notebook open after boot ~39% faster (tap to settled screen, median
+  of 3 cold boots: **1876 → 1147 ms**). After boot, while idle, the plugin
+  reads the notebook engine libraries ahead, loads Nickel's notebook plugin
+  itself, and pre-decodes the backgrounds of the two most recently opened
+  notebooks with Kobo's own loader. Kill switch: `prewarm=0` in
+  `perf-experiment.txt`.
+- Opt-in notebook-open diagnostics: `settle=1` now also times notebook open,
+  and `profile-open=1` records a 1 ms wall-clock stack profile.
+
+### Verification
+
+- Deployed over SSH to a Kobo Elipsa 2E on `4.38.23852`: the 23852 profile
+  was verified at boot, every feature hook installed, and the Layers popup,
+  eraser size row, notebook menu items, and the native notebook-sleep settings
+  rows all rendered and responded.
+
 ## [0.0.3-alpha] - 2026-07-17
 
 ### Added

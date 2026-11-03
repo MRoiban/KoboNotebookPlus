@@ -46,3 +46,5 @@ __pycache__/
 .env.*
 *.pem
 *.key
+
+/bench-results/

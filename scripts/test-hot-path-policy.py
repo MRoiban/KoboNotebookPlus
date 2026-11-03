@@ -281,7 +281,7 @@ class HotPathPolicyTests(unittest.TestCase):
             theme.index("queueActiveEraserReplay("),
         )
 
-    def test_failsafe_is_disarmed_synchronously_after_successful_init(
+    def test_failsafe_is_restored_immediately_after_successful_init(
         self,
     ) -> None:
         entry = text("plugin_entry.cc")
@@ -296,9 +296,15 @@ class HotPathPolicyTests(unittest.TestCase):
         )
         self.assertRegex(descriptor, r"\n\s*0,\n};")
 
+        # Upstream NickelHook (the pinned submodule) passes failsafe_delay to
+        # nh_failsafe_destroy, which restores the library on a detached thread
+        # after sleeping that many seconds; with 0 the rename happens at once.
         nickelhook = (
             ROOT / "third_party" / "NickelHook" / "nh.c"
         ).read_text(encoding="utf-8")
+        self.assertIn(
+            "nh_failsafe_destroy(fs, nh->info->failsafe_delay);", nickelhook
+        )
         destroy_definition = nickelhook[
             nickelhook.rindex(
                 "void nh_failsafe_destroy(nh_failsafe_t *fs, int delay)"
@@ -309,10 +315,18 @@ class HotPathPolicyTests(unittest.TestCase):
             "void nh_failsafe_destroy(nh_failsafe_t *fs, int delay)",
         )
         self.assertLess(
-            destroy.index("if (delay <= 0)"),
+            destroy.index("fs->delay = delay;"),
             destroy.index("pthread_create("),
         )
-        self.assertIn("_nh_failsafe_destroy(fs);", destroy)
+        self.assertIn("PTHREAD_CREATE_DETACHED", destroy)
+        restore = function_body(
+            nickelhook,
+            "static void *_nh_failsafe_destroy(void *_fs)",
+        )
+        self.assertLess(
+            restore.index("sleep(fs->delay);"),
+            restore.index("rename(fs->tmp, fs->orig)"),
+        )
 
     def test_home_tiles_skip_obvious_non_notebooks_and_hit_logging(self) -> None:
         cache = text("cover_cache.cc")
@@ -335,6 +349,118 @@ class HotPathPolicyTests(unittest.TestCase):
             "grid augmentation threw; stock card preserved",
             grid,
         )
+
+    def test_notebook_edit_sync_record_is_always_on(self) -> None:
+        source = text("perf_trace.cc")
+        finish = function_body(source, "void EditScope::finish(")
+        record = finish.index('trace(QLatin1String("perf: notebook-edit op=")')
+        self.assertLess(record, finish.index("if (pluginState().paintObserver)"))
+        self.assertNotIn("experiment_", finish[:record])
+        self.assertIn('QLatin1String(" variant=") + QLatin1String(variant_)', finish)
+        self.assertEqual(finish.count('"perf: notebook-edit op="'), 1)
+        constructor = function_body(source, "EditScope::EditScope(")
+        self.assertLess(constructor.index("published_ = true;"),
+                        constructor.index("experiment_ = readExperiment();"))
+        actions = text("page_actions.cc")
+        for signature in ("void runForWidget(", "void runMoveToForController("):
+            self.assertIn("perf::EditScope edit(", function_body(actions, signature))
+        layers = text("layers_preview.cc")
+        self.assertIn("perf::EditScope edit(",
+                      function_body(layers, "static bool performLayerOperationImpl("))
+
+    def test_page_saves_and_backup_checks_remain_in_the_operation(self) -> None:
+        actions = text("page_actions.cc")
+        for signature in (
+            "void runForWidget(",
+            "void runMoveToForController(",
+        ):
+            caller = function_body(actions, signature)
+            self.assertNotIn("firmware.widgetSave(", caller)
+            self.assertIn("pages::reorderCurrentPage(", caller)
+
+        move_to = function_body(actions, "void runMoveToForController(")
+        self.assertLess(
+            move_to.index("export_range::choosePage("),
+            move_to.index("pages::reorderCurrentPage("),
+        )
+        pages = text("pages.cc")
+        for signature in (
+            "bool reorderCurrentPage(",
+            "bool duplicateCurrentPage(",
+        ):
+            operation = function_body(pages, signature)
+            self.assertEqual(operation.count("firmware.widgetSave(widget)"),
+                             3 if "duplicateCurrentPage" in signature else 2)
+            self.assertLess(
+                operation.index("firmware.widgetSave(widget)"),
+                operation.index("loadPageContext("),
+            )
+            self.assertLess(
+                operation.index("loadPageContext("),
+                operation.index("openNotebookHasPluginCover("),
+            )
+            self.assertLess(
+                operation.index("openNotebookHasPluginCover("),
+                operation.index("page_io::backupNotebookPath("),
+            )
+            self.assertIn('perf::PhaseScope phase("widget-save-pre")', operation)
+            self.assertIn('perf::PhaseScope phase("widget-save-post")', operation)
+
+    def test_page_cover_check_only_reuses_fresh_determinate_verdicts(self) -> None:
+        cache = text("cover_cache.cc")
+        check = function_body(cache, "bool openNotebookHasPluginCover(")
+        self.assertIn('perf::PhaseScope phase("cover-check")', check)
+        self.assertLess(check.index("if (!zip.open"), check.index("constFind("))
+        self.assertLess(
+            check.index("QDir::cleanPath(notebookPathValue)"),
+            check.index("QFileInfo const current(notebookPath)"),
+        )
+        hit = check[:check.index("QString coverType;")]
+        self.assertIn("current.isFile() && current.size() > 0", hit)
+        self.assertLess(hit.index("QMutexLocker"), hit.index("constFind("))
+        self.assertIn("found.value().size == current.size()", hit)
+        self.assertIn("found.value().modifiedMs", hit)
+        self.assertIn("== current.lastModified().toMSecsSinceEpoch()", hit)
+        self.assertIn("*hasCover = found.value().hasCover;\n            return true;", hit)
+        self.assertIn("*hasCover = scanNotebookCoverType(", check)
+        self.assertIn("return determinate;", check)
+
+        # A cached false verdict must mean a completed negative scan, never an
+        # unreadable archive. Keep the cache population's safety gate intact.
+        cached = function_body(cache, "bool cachedNotebookCoverType(")
+        gate = cached.index("if (determinate && stable)")
+        insertion = cached.index("state.scanCache.insert(")
+        self.assertLess(gate, insertion)
+        self.assertIn("QMutexLocker", cached[gate:insertion])
+
+        # The page-operation miss path may cache only a determinate scan of a
+        # file whose size and mtime did not change while it was read.
+        miss = check[check.index("*hasCover = scanNotebookCoverType("):]
+        page_gate = miss.index("if (determinate && current.isFile() && after.isFile()")
+        page_insertion = miss.index("state.scanCache.insert(")
+        self.assertLess(page_gate, page_insertion)
+        self.assertIn("after.size() == current.size()", miss[page_gate:page_insertion])
+        self.assertIn(
+            "after.lastModified() == current.lastModified()",
+            miss[page_gate:page_insertion],
+        )
+        self.assertIn("QMutexLocker", miss[page_gate:page_insertion])
+        self.assertEqual(cache.count("state.scanCache.insert("), 2)
+
+        # A verdict survives a commit only when page zero provably did not
+        # change, and is then re-keyed to the post-commit size and mtime.
+        keep = function_body(
+            cache, "void invalidateNotebookPreviewKeepingCoverVerdict(")
+        self.assertIn("state.renderedCache.remove(key);", keep)
+        self.assertIn("found.value().size = current.size();", keep)
+        pages = text("pages.cc")
+        reorder = function_body(pages, "bool reorderCurrentPage(")
+        self.assertIn("if (context.index != 0 && target != 0) {", reorder)
+        self.assertLess(
+            reorder.index("if (context.index != 0 && target != 0) {"),
+            reorder.index("invalidateNotebookPreviewKeepingCoverVerdict("),
+        )
+        self.assertIn("invalidateNotebookScanEntry(", reorder)
 
     def test_cover_composition_reuses_clean_cache_and_success_logs_are_bounded(
         self,

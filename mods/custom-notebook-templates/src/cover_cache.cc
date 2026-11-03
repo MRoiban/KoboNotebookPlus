@@ -1,6 +1,7 @@
 #include "cover_cache.h"
 
 #include "fs_util.h"
+#include "perf_trace.h"
 #include "settings.h"
 
 #include <QByteArray>
@@ -366,9 +367,10 @@ int countNotebookPageEntries(
 }
 
 bool openNotebookHasPluginCover(
-        State const& state,
+        State& state,
         QString const& notebookPathValue,
         bool* hasCover) {
+    perf::PhaseScope phase("cover-check");
     State::ZipApi const& zip = state.zip;
     if (!zip.open
             || !zip.getNumEntries
@@ -382,11 +384,46 @@ bool openNotebookHasPluginCover(
     }
 
     QString const notebookPath = QDir::cleanPath(notebookPathValue);
+    // Callers save the widget first: validate against the current on-disk
+    // notebook, not the metadata captured when its library tile was scanned.
+    QFileInfo const current(notebookPath);
+    if (current.isFile() && current.size() > 0) {
+        QMutexLocker locker(&state.cacheMutex);
+        QHash<QString, CoverScanEntry>::const_iterator const found =
+            state.scanCache.constFind(notebookPath);
+        if (found != state.scanCache.constEnd()
+                && found.value().size == current.size()
+                && found.value().modifiedMs
+                    == current.lastModified().toMSecsSinceEpoch()) {
+            // Only determinate, stable scans enter scanCache, including
+            // negative verdicts. An absent cover is still a successful check.
+            *hasCover = found.value().hasCover;
+            return true;
+        }
+    }
+
     QString coverType;
     bool determinate = false;
     ScanTiming timing;
     *hasCover = scanNotebookCoverType(
         zip, notebookPath, &coverType, &determinate, &timing);
+
+    // Cache the verdict under the same rule as the library grid: only a
+    // determinate scan of a file that did not change while it was read.
+    QFileInfo const after(notebookPath);
+    if (determinate && current.isFile() && after.isFile()
+            && after.size() == current.size()
+            && after.lastModified() == current.lastModified()) {
+        QMutexLocker locker(&state.cacheMutex);
+        if (state.scanCache.size() >= kMaximumScanCacheEntries)
+            state.scanCache.clear();
+        CoverScanEntry entry;
+        entry.modifiedMs = after.lastModified().toMSecsSinceEpoch();
+        entry.size = after.size();
+        entry.type = *hasCover ? coverType : QString();
+        entry.hasCover = *hasCover;
+        state.scanCache.insert(notebookPath, entry);
+    }
     return determinate;
 }
 
@@ -533,6 +570,26 @@ void invalidateNotebookScanEntry(
     QMutexLocker locker(&state.cacheMutex);
     state.scanCache.remove(key);
     state.renderedCache.remove(key);
+}
+
+void invalidateNotebookPreviewKeepingCoverVerdict(
+        State& state,
+        QString const& notebookPath) {
+    QString const key = QDir::cleanPath(notebookPath);
+    QFile::remove(renderedPreviewFilePath(key));
+    QFileInfo const current(key);
+    QMutexLocker locker(&state.cacheMutex);
+    state.renderedCache.remove(key);
+    QHash<QString, CoverScanEntry>::iterator const found =
+        state.scanCache.find(key);
+    if (found == state.scanCache.end())
+        return;
+    if (!current.isFile() || current.size() <= 0) {
+        state.scanCache.erase(found);
+        return;
+    }
+    found.value().size = current.size();
+    found.value().modifiedMs = current.lastModified().toMSecsSinceEpoch();
 }
 
 namespace {

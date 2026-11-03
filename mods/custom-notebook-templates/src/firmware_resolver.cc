@@ -4,6 +4,7 @@
 #include "abi_types.h"
 #include "firmware_api.h"
 #include "firmware_pins.h"
+#include "nickel_pins.h"
 #include "plugin_runtime.h"
 #include "plugin_state.h"
 #include "settings.h"
@@ -65,6 +66,28 @@ bool resolveFirmwareApis(void* iinknoteHandle) {
         return false;
     }
 
+    // Optional narrow UI sync: failure must never disable the stock API.
+    bool const positionResolved = resolvePinned(iinknoteHandle,
+        kWidgetPositionUpdatedSymbol, kWidgetPositionUpdatedVma,
+        &firmwareApi().widgetPositionUpdated);
+    if (!positionResolved) {
+        firmwareApi().widgetPositionUpdated = nullptr;
+        trace("perf: positionUpdated pin unavailable; stock path retained for pages");
+    }
+
+    // Optional open pre-warm; failure only disables the pre-warm.
+    if (!(resolvePinned(iinknoteHandle, kBackgroundWidgetCtorSymbol,
+                kBackgroundWidgetCtorVma, &firmwareApi().backgroundWidgetCtor)
+            && resolvePinned(iinknoteHandle, kBackgroundWidgetDeleteSymbol,
+                kBackgroundWidgetDeleteVma, &firmwareApi().backgroundWidgetDelete)
+            && resolvePinned(iinknoteHandle, kBackgroundWidgetSetTypeSymbol,
+                kBackgroundWidgetSetTypeVma, &firmwareApi().backgroundWidgetSetType))) {
+        firmwareApi().backgroundWidgetCtor = nullptr;
+        firmwareApi().backgroundWidgetDelete = nullptr;
+        firmwareApi().backgroundWidgetSetType = nullptr;
+        trace("prewarm: background widget pins unavailable; background pre-warm disabled");
+    }
+
     bool const noteSymbols =
         resolvePinned(iinknoteHandle, kCreateIInkMenuItemSymbol,
             kCreateIInkMenuItemVma, &firmwareApi().createIInkMenuItem)
@@ -85,7 +108,7 @@ bool resolveFirmwareApis(void* iinknoteHandle) {
         && resolvePinned(iinknoteHandle, kBackgroundTypeSymbol,
             kBackgroundTypeVma, &firmwareApi().backgroundType)
         && resolvePinned(iinknoteHandle, kContentGetIdSymbol,
-            kContentGetIdVma, &firmwareApi().contentGetId);
+            cnt::nickelVma(cnt::NickelPin::ContentGetId), &firmwareApi().contentGetId);
 
     bool const iinkSymbols =
         resolvePinned(iinkHandle, kEditorGetPartSymbol,
@@ -332,23 +355,23 @@ bool resolveFirmwareApis(void* iinknoteHandle) {
 
     bool const nativeLayerMenuSymbols = nickelHandle
         && resolvePinned(nickelHandle, kNickelTouchMenuConstructorSymbol,
-            kNickelTouchMenuConstructorVma, &firmwareApi().nickelTouchMenuConstructor)
+            cnt::nickelVma(cnt::NickelPin::NickelTouchMenuConstructor), &firmwareApi().nickelTouchMenuConstructor)
         && resolvePinned(nickelHandle, kNickelTouchMenuSetAlignmentSymbol,
-            kNickelTouchMenuSetAlignmentVma, &firmwareApi().nickelTouchMenuSetAlignment)
+            cnt::nickelVma(cnt::NickelPin::NickelTouchMenuSetAlignment), &firmwareApi().nickelTouchMenuSetAlignment)
         && resolvePinned(
             nickelHandle,
             kTouchMenuSetCustomPopupPositionOffsetSymbol,
-            kTouchMenuSetCustomPopupPositionOffsetVma,
+            cnt::nickelVma(cnt::NickelPin::TouchMenuSetCustomPopupPositionOffset),
             &firmwareApi().touchMenuSetCustomPopupPositionOffset)
         && resolvePinned(
             nickelHandle,
             kAbstractNickelMenuControllerPopupFromWidgetSymbol,
-            kAbstractNickelMenuControllerPopupFromWidgetVma,
+            cnt::nickelVma(cnt::NickelPin::AbstractNickelMenuControllerPopupFromWidget),
             &firmwareApi().abstractNickelMenuControllerPopupFromWidget)
         && resolvePinned(
             nickelHandle,
             kNickelTouchMenuPopupPositionSymbol,
-            kNickelTouchMenuPopupPositionVma,
+            cnt::nickelVma(cnt::NickelPin::NickelTouchMenuPopupPosition),
             &firmwareApi().nickelTouchMenuPopupPosition);
 
     // Selectable layer rows use the exact native tool-row surface, but never
@@ -370,12 +393,12 @@ bool resolveFirmwareApis(void* iinknoteHandle) {
         && resolvePinned(
             nickelHandle,
             kAbstractMenuControllerGrabTapGestureSymbol,
-            kAbstractMenuControllerGrabTapGestureVma,
+            cnt::nickelVma(cnt::NickelPin::AbstractMenuControllerGrabTapGesture),
             &firmwareApi().abstractMenuControllerGrabTapGesture)
         && resolvePinned(
             nickelHandle,
             kAbstractMenuControllerTapGestureSymbol,
-            kAbstractMenuControllerTapGestureVma,
+            cnt::nickelVma(cnt::NickelPin::AbstractMenuControllerTapGesture),
             &firmwareApi().abstractMenuControllerTapGesture);
 
     layerState().hooksReady = noteSymbols && iinkSymbols && layerSymbols

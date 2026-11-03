@@ -3,7 +3,9 @@
 
 from __future__ import annotations
 
+import contextlib
 import importlib.util
+import io
 import json
 import os
 import pathlib
@@ -230,6 +232,29 @@ class BinaryParityTests(unittest.TestCase):
         self.assertEqual(parsed[("T", "exported")], 1)
         self.assertEqual(parsed[("U", "imported@GLIBC_2.4")], 1)
         self.assertEqual(parsed[("w", "optional_import")], 1)
+
+    def test_approved_names_match_versioned_or_bare_nm_output(self) -> None:
+        counter = VERIFIER.collections.Counter
+        reference = counter({("U", "memcpy@GLIBC_2.4"): 1})
+        approved = counter({("U", "clock_gettime"): 1, ("U", "sigaction@GLIBC_2.4"): 1})
+        versioned = counter({
+            ("U", "memcpy@GLIBC_2.4"): 1,
+            ("U", "clock_gettime@GLIBC_2.17"): 1,
+            ("U", "sigaction@GLIBC_2.4"): 1,
+        })
+        bare = counter({("U", "memcpy"): 1, ("U", "clock_gettime"): 1, ("U", "sigaction"): 1})
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            self.assertTrue(VERIFIER.report_symbol_difference("v", reference, versioned, approved))
+            self.assertTrue(VERIFIER.report_symbol_difference(
+                "b", counter({("U", "memcpy"): 1}), bare, approved))
+            wrong_version = counter(versioned)
+            del wrong_version[("U", "sigaction@GLIBC_2.4")]
+            wrong_version[("U", "sigaction@GLIBC_2.38")] = 1
+            self.assertFalse(VERIFIER.report_symbol_difference("w", reference, wrong_version, approved))
+            drifted = counter(versioned)
+            del drifted[("U", "memcpy@GLIBC_2.4")]
+            drifted[("U", "memcpy@GLIBC_2.38")] = 1
+            self.assertFalse(VERIFIER.report_symbol_difference("d", reference, drifted, approved))
 
     def test_non_arm_input_is_rejected(self) -> None:
         data = bytearray(self.reference.read_bytes())

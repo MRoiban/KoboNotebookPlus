@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import pathlib
+import re
 import struct
 import subprocess
 import sys
@@ -311,6 +312,10 @@ PINNED_INSTRUCTIONS = {
 }
 
 EXPECTED_IINKNOTE = {
+    "_ZN17IInkNotePadWidget15positionUpdatedEv": 0x57FCC,
+    "_ZN16BackgroundWidgetC1EP7QWidget": 0x41BEC,
+    "_ZN16BackgroundWidgetD0Ev": 0x41BD0,
+    "_ZN16BackgroundWidget17setBackgroundTypeERK7QString": 0x41CB0,
     "_ZN24IInkExportMenuController14exportNotebookEb": 0x4868C,
     "_ZN24IInkExportMenuController8loadViewEv": 0x4879C,
     "_ZN19IInkNotePadExporterC1Ev": 0x51390,
@@ -335,6 +340,10 @@ EXPECTED_IINKNOTE = {
 }
 
 EXPECTED_IINKNOTE_SIZES = {
+    "_ZN17IInkNotePadWidget15positionUpdatedEv": 0x20,
+    "_ZN16BackgroundWidgetC1EP7QWidget": 0x78,
+    "_ZN16BackgroundWidgetD0Ev": 0x14,
+    "_ZN16BackgroundWidget17setBackgroundTypeERK7QString": 0x50C,
     "_ZTV19IInkNotePadExporter": 0x3C,
 }
 
@@ -419,6 +428,12 @@ PINNED_IINKUIREF_INSTRUCTIONS = {
 # virtual setPart call. These prove the wrapper runs after the live editor,
 # selected part, backend, and concrete tool are coherent.
 PINNED_IINKNOTE_INSTRUCTIONS = {
+    0x57FCC: bytes.fromhex("0549002390b40422044c00af"),
+    # Open pre-warm: BackgroundWidget's constructor stores the device code
+    # name at +0x24 (add.w r0, r4, #36 before Device::codeName), the field the
+    # plugin records and replays; IInkNotePadWidget allocates 0x28 bytes.
+    0x41C2E: bytes.fromhex("04f12400"),
+    0x60AA6: bytes.fromhex("2820"),
     # Export-menu loadView adds the stock full-notebook row through this call.
     # Its return address is the exact caller pin used to insert Export range
     # immediately after that row rather than into another IInk menu.
@@ -907,12 +922,196 @@ def verify_iinkuiref_image_painter_vtable(path: pathlib.Path) -> list[str]:
     return problems
 
 
-def verify_nickel_instruction_bytes(path: pathlib.Path) -> list[str]:
+# Firmware 4.38.23852 libnickel. Every function below was compared with its
+# 4.38.23697 counterpart after normalizing PC-relative displacements and
+# literal pools: all are instruction-for-instruction identical (sizes too).
+# The only code change in any of them is a qDebug() QMessageLogContext line
+# number inside removeCommonBookData (632 -> 639). Only addresses moved.
+EXPECTED_NICKEL_23852 = {
+    "_ZN12GestureMixin16touchEventHasPenEPK11QTouchEvent": 0xB01F28,
+    "_ZN13StylusManager14sharedInstanceEv": 0x7CC424,
+    "_ZNK13StylusManager23isCurrentToolTaskButtonEv": 0x7CBAE0,
+    "_ZN22AbstractMenuController15addWidgetActionEP5QMenuP7QWidgetP7QObjectPKcbbb": 0xB427A0,
+    "_ZN22AbstractMenuController14grabTapGestureEP15GestureReceiver": 0xB428CC,
+    "_ZN22AbstractMenuController10tapGestureEP15GestureReceiverP10TapGesture": 0xB4292C,
+    "_ZN15NickelTouchMenuC1EP7QWidget18DecorationPosition": 0xEDD790,
+    "_ZN15NickelTouchMenu12setAlignmentE6QFlagsIN2Qt13AlignmentFlagEE": 0xEDDA70,
+    "_ZN9TouchMenu28setCustomPopupPositionOffsetERK6QPoint": 0x111F848,
+    "_ZNK28AbstractNickelMenuController15popupFromWidgetEv": 0xEBC004,
+    "_ZN15NickelTouchMenu13popupPositionEP7QWidget": 0xEDE250,
+    "_ZNK7Content5getIdEv": 0x958D64,
+    "_ZN15FeatureSettings18excludeSyncFoldersEv": 0xA09DB0,
+    "_ZN13VolumeManager20removeCommonBookDataERK6DeviceR6Volumeb": 0xA7455C,
+    "_ZN22N3PowerWorkflowManager13showSleepViewEv": 0xF45B78,
+    "_ZN22N3PowerWorkflowManager16showPowerOffViewEv": 0xF45A34,
+    "_ZN19PowerViewController13onCoverLoadedERK6QImage": 0xF49594,
+    "_ZN19PowerViewController11updateCoverEv": 0xF4A090,
+    "_ZN19PowerViewController19updateReadingStatusEv": 0xF49778,
+    "_ZN25FullScreenDragonPowerView19setInfoPanelVisibleEb": 0xF410F4,
+    "_ZN19N3SettingsPowerViewC1EP7QWidget": 0x104A8DC,
+    "_ZN23SettingItemWithCheckBoxC1EP7QWidget": 0x106AE5C,
+    "_ZN23SettingItemWithDropDownC1EP7QWidget": 0x106AFD4,
+    "_ZN23SettingItemWithCheckBox7setTextERK7QString": 0x106A9D8,
+    "_ZN23SettingItemWithCheckBox10setCheckedEb": 0x106A9F8,
+    "_ZN15SettingItemBase8setLabelERK7QString": 0x106A8F8,
+    "_ZNK23SettingItemWithDropDown8dropDownEv": 0x106AA30,
+    "_ZN24MultiSelectTouchDropDown7addItemERK7QStringRK8QVariantRK7QLocaleb": 0x10E8B30,
+    "_ZN13TouchDropDown15setCurrentIndexEi": 0x111D9D0,
+}
+
+EXPECTED_NICKEL_SHA256_23852 = (
+    "0e8e8ac3414a620d3386e60afcf4ccbf4ad3b8fdec8aeb5b553b01697966ec52"
+)
+
+EXPECTED_NICKEL_JUMP_SLOTS_23852 = {
+    "_ZN13VolumeManager20removeCommonBookDataERK6DeviceR6Volumeb": 0x16BD35C,
+    "_ZN15FeatureSettings18excludeSyncFoldersEv": 0x16C813C,
+    "_ZN22N3PowerWorkflowManager16showPowerOffViewEv": 0x16B9890,
+    "_ZN19N3SettingsPowerViewC1EP7QWidget": 0x16BBE68,
+    "_ZN19PowerViewController13onCoverLoadedERK6QImage": 0x16BEB34,
+    "_ZN19PowerViewController11updateCoverEv": 0x16C9AC0,
+    "_ZN22N3PowerWorkflowManager13showSleepViewEv": 0x16C25CC,
+    "_ZN19PowerViewController19updateReadingStatusEv": 0x16C8478,
+    "_ZN25FullScreenDragonPowerView19setInfoPanelVisibleEb": 0x16CA724,
+}
+
+# The same instruction sequences as PINNED_NICKEL_INSTRUCTIONS (see the
+# rationale there), at the same offset inside the same functions. Bytes
+# differ only where a BL/BLX/B.W displacement encodes the moved PLT target.
+PINNED_NICKEL_INSTRUCTIONS_23852 = {
+    0xF4AA7C: bytes.fromhex("204661f74cc9"),  # PowerViewController::loadView+0x110
+    0xF4A410: bytes.fromhex(
+        "dff828250021dff8283510205af802203964fa635af80330b9647b64"
+    ),  # updateCover+0x380
+    0xF4AF26: bytes.fromhex(
+        "c8688968c4074bbf401002eb600014580a4644bf801862585968bd4690bc1047"
+    ),  # QSlotObject<onCoverLoaded>::impl+0x36
+    # Local qt_static_metacall tail-branch to onCoverLoaded@plt (0x688dc8).
+    0xF4A02A: bytes.fromhex("5968bd46b0bc3ef7ca9e"),
+    0x104BA58: bytes.fromhex(
+        "5cf6b8cf2146304632f614cd78680368"
+    ),  # Ui_N3SettingsPowerView::retranslateUi+0x208
+    0x104BA8E: bytes.fromhex(
+        "5cf69ecf214630464bf622cd78680368"
+    ),  # Ui_N3SettingsPowerView::retranslateUi+0x23e
+    0xA09DB0: bytes.fromhex(
+        "2de9f04306462a488db08846122100af784407f110045bf47eec"
+    ),
+    0x89F418: bytes.fromhex(
+        "07f6daebdff8380a21467844c6f54ee9fd6a012207f13c04c7f8b0000092"
+        "002320462a46414602f678ea"
+    ),  # SyncFileSystemCommand::findFilesToParse+0xc8
+    0x89F866: bytes.fromhex(
+        "1621786ac5f52ceffd6a07f14c08c7f8b0000023adf800904046ba6a2946"
+        "d2f540ec07f18c06012230464146daf52ae8"
+    ),  # findFilesToParse+0x516
+    0xA7455C: bytes.fromhex("2de9f04f99b002af15463b61f8607961"),
+    0xA74638: bytes.fromhex("3b69002b40f0c880"),
+    0xA747D8: bytes.fromhex("9847dff8d0150123002220467944f4f756e680462046"),
+    0xA7482C: bytes.fromhex(
+        "494640462ff428ee4946204625f4dee820460af4e6ed10b14846fdf7cee6"
+    ),
+    0xA74E20: bytes.fromhex("4b464046224631460ff4e4e901222146"),  # removeBook+0x24
+    0xEBC004: bytes.fromhex(
+        "836980b400af33b15b6823b1c069bd465df8047b70471846bd465df8047b7047"
+    ),
+    0xEBCA8C: bytes.fromhex(
+        "4846d8f750ce2a68804bd9f80010526c7b44d1f8d0409a4254d1aa6912b15268"
+        "02b1ea6949464046a047414648460022d2f79acf"
+    ),  # AbstractNickelMenuController::show+0x164
+    0xEDE250: bytes.fromhex(
+        "2de9f04f9fb002af07f140030c461d46fb610b68804628469346"
+    ),
+    0xB428CC: bytes.fromhex(
+        "2de9f0410646124c00af0d467c44e1b1104a6ff0010310492846a258615867f7"
+    ),
+    0xB42974: bytes.fromhex("d8f8103013b15b68002b45d1"),
+    0xB429A4: bytes.fromhex("d8f8103019461bb1596809b1d8f81410"),
+    0xB429DE: bytes.fromhex(
+        "294650463df702e02146484652466df73ee24946204646f7f8e20028b6d000213af7d8e3"
+    ),
+}
+
+# libnickel is the only plugin-relevant image whose layout differs between
+# the audited firmwares (libiink, libiinkuiref, and iink are byte-identical;
+# libiinknote differs only inside one embedded QSS resource). Select the
+# profile by the exact image hash. The firmware string must match the column
+# order of kProfileFirmware in src/nickel_pins.cc.
+NICKEL_PROFILES = {
+    EXPECTED_NICKEL_SHA256: {
+        "firmware": "4.38.23697",
+        "symbols": EXPECTED_NICKEL,
+        "sizes": EXPECTED_NICKEL_SIZES,
+        "jump_slots": EXPECTED_NICKEL_JUMP_SLOTS,
+        "instructions": PINNED_NICKEL_INSTRUCTIONS,
+    },
+    EXPECTED_NICKEL_SHA256_23852: {
+        "firmware": "4.38.23852",
+        "symbols": EXPECTED_NICKEL_23852,
+        "sizes": EXPECTED_NICKEL_SIZES,
+        "jump_slots": EXPECTED_NICKEL_JUMP_SLOTS_23852,
+        "instructions": PINNED_NICKEL_INSTRUCTIONS_23852,
+    },
+}
+
+NICKEL_PINS_SOURCE = (
+    pathlib.Path(__file__).resolve().parents[1]
+    / "mods" / "custom-notebook-templates" / "src" / "nickel_pins.cc"
+)
+
+
+def nickel_source_pins() -> tuple[list[str], dict[str, list[int]]]:
+    """Parse kProfileFirmware and kPins rows from src/nickel_pins.cc."""
+    source = NICKEL_PINS_SOURCE.read_text(encoding="utf-8")
+    firmware_block = re.search(
+        r"kProfileFirmware\[kProfileCount\] = \{(.*?)\};", source, re.S)
+    pins_block = re.search(r"PinSpec const kPins\[\] = \{(.*?)\n\};", source, re.S)
+    if not firmware_block or not pins_block:
+        raise ValueError(f"cannot parse {NICKEL_PINS_SOURCE}")
+    firmwares = re.findall(r'"([^"]+)"', firmware_block.group(1))
+    rows: dict[str, list[int]] = {}
+    for symbol, values in re.findall(
+            r'\{\s*"(_Z\w+)",\s*\{([^}]*)\}\s*\}', pins_block.group(1)):
+        rows[symbol] = [int(value, 16) for value in values.split(",")]
+    return firmwares, rows
+
+
+def verify_nickel_source_pins(
+        firmware: str, found_nickel: dict[str, int]) -> list[str]:
+    """The C++ profile column must equal the audited library's real VMAs."""
+    try:
+        firmwares, rows = nickel_source_pins()
+    except (OSError, ValueError) as exc:
+        return [str(exc)]
+    if firmware not in firmwares:
+        return [f"nickel_pins.cc has no {firmware} profile column"]
+    column = firmwares.index(firmware)
+    problems: list[str] = []
+    if not rows:
+        problems.append("nickel_pins.cc contains no pins")
+    for symbol, values in rows.items():
+        if len(values) != len(firmwares):
+            problems.append(f"nickel_pins.cc row width mismatch for {symbol}")
+            continue
+        actual = found_nickel.get(symbol)
+        if actual is None:
+            problems.append(f"nickel_pins.cc pin missing from libnickel: {symbol}")
+        elif actual != values[column]:
+            problems.append(
+                f"nickel_pins.cc {firmware} VMA mismatch {symbol}: "
+                f"source 0x{values[column]:x}, library 0x{actual:x}"
+            )
+    return problems
+
+
+def verify_nickel_instruction_bytes(
+        path: pathlib.Path,
+        pins: dict[int, bytes] = PINNED_NICKEL_INSTRUCTIONS) -> list[str]:
     """Verify native menu gesture registration in the pinned Nickel image."""
     data = path.read_bytes()
     segments = load_segments(path)
     problems: list[str] = []
-    for vma, expected in PINNED_NICKEL_INSTRUCTIONS.items():
+    for vma, expected in pins.items():
         try:
             actual = read_bytes(data, segments, vma, len(expected))
         except ValueError as exc:
@@ -973,11 +1172,15 @@ def main() -> int:
     found_iinkuiref = symbols(args.iinkuiref)
     failures: list[str] = []
     actual_nickel_sha256 = hashlib.sha256(args.nickel.read_bytes()).hexdigest()
-    if actual_nickel_sha256 != EXPECTED_NICKEL_SHA256:
+    nickel_profile = NICKEL_PROFILES.get(actual_nickel_sha256)
+    if nickel_profile is None:
         failures.append(
-            "libnickel SHA-256 mismatch: "
-            f"{actual_nickel_sha256}, expected {EXPECTED_NICKEL_SHA256}"
+            "libnickel SHA-256 matches no audited profile: "
+            f"{actual_nickel_sha256}, expected one of "
+            + ", ".join(sorted(NICKEL_PROFILES))
         )
+        # Report every mismatch against the original audited profile.
+        nickel_profile = NICKEL_PROFILES[EXPECTED_NICKEL_SHA256]
     for name, expected in EXPECTED.items():
         actual = found.get(name)
         if actual is None:
@@ -1026,7 +1229,7 @@ def main() -> int:
                 f"libiinknote exporter vtable relocation 0x{offset:x}: "
                 f"{actual}, expected {expected}"
             )
-    for name, expected in EXPECTED_NICKEL.items():
+    for name, expected in nickel_profile["symbols"].items():
         actual = found_nickel.get(name)
         if actual is None:
             failures.append(f"missing {name}")
@@ -1034,7 +1237,7 @@ def main() -> int:
             failures.append(
                 f"VMA mismatch {name}: 0x{actual:x}, expected 0x{expected:x}"
             )
-    for name, expected in EXPECTED_NICKEL_SIZES.items():
+    for name, expected in nickel_profile["sizes"].items():
         actual = found_nickel_sizes.get(name)
         if actual is None:
             failures.append(f"missing libnickel size for {name}")
@@ -1042,7 +1245,7 @@ def main() -> int:
             failures.append(
                 f"libnickel size mismatch {name}: {actual}, expected {expected}"
             )
-    for name, expected in EXPECTED_NICKEL_JUMP_SLOTS.items():
+    for name, expected in nickel_profile["jump_slots"].items():
         actual = found_nickel_jump_slots.get(name)
         if actual is None:
             failures.append(f"missing libnickel R_ARM_JUMP_SLOT for {name}")
@@ -1063,7 +1266,10 @@ def main() -> int:
     failures.extend(verify_vtable_slots(args.library))
     failures.extend(verify_instruction_bytes(args.library))
     failures.extend(verify_iinknote_instruction_bytes(args.iinknote))
-    failures.extend(verify_nickel_instruction_bytes(args.nickel))
+    failures.extend(verify_nickel_instruction_bytes(
+        args.nickel, nickel_profile["instructions"]))
+    failures.extend(verify_nickel_source_pins(
+        nickel_profile["firmware"], found_nickel))
     failures.extend(verify_iinkuiref_instruction_bytes(args.iinkuiref))
     failures.extend(verify_iinkuiref_image_painter_vtable(args.iinkuiref))
 
@@ -1076,12 +1282,13 @@ def main() -> int:
     slot_count = sum(len(slots) for slots in VTABLE_SLOTS.values())
     print(
         "Layer ABI verified: "
-        f"{len(EXPECTED) + len(EXPECTED_IINKNOTE) + len(EXPECTED_NICKEL) + len(EXPECTED_IINKUIREF)} "
+        f"libnickel {nickel_profile['firmware']}: "
+        f"{len(EXPECTED) + len(EXPECTED_IINKNOTE) + len(nickel_profile['symbols']) + len(EXPECTED_IINKUIREF)} "
         f"symbols, {len(VTABLE_SIZES) + len(EXPECTED_IINKNOTE_SIZES)} vtable sizes, and {slot_count} "
         f"vtable slots plus "
-        f"{len(PINNED_INSTRUCTIONS) + len(PINNED_IINKNOTE_INSTRUCTIONS) + len(PINNED_NICKEL_INSTRUCTIONS) + len(PINNED_IINKUIREF_INSTRUCTIONS)} "
+        f"{len(PINNED_INSTRUCTIONS) + len(PINNED_IINKNOTE_INSTRUCTIONS) + len(nickel_profile['instructions']) + len(PINNED_IINKUIREF_INSTRUCTIONS)} "
         f"instruction pins, "
-        f"{len(EXPECTED_IINKNOTE_JUMP_SLOTS) + len(EXPECTED_NICKEL_JUMP_SLOTS)} jump slots, "
+        f"{len(EXPECTED_IINKNOTE_JUMP_SLOTS) + len(nickel_profile['jump_slots'])} jump slots, "
         f"{len(EXPECTED_IINKNOTE_EXPORTER_VTABLE_RELOCATIONS)} exporter vtable relocation, and "
         f"{len(EXPECTED_IINKUIREF_IMAGE_PAINTER_VTABLE_RELOCATIONS)} "
         "ImagePainter vtable relocations "
