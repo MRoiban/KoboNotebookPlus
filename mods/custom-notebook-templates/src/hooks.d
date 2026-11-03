@@ -16,10 +16,14 @@ src/hooks.o: src/hooks.cc src/abi_types.h \
  src/layers_menu.h src/layers_preview.h src/layers.h src/layers_service.h \
  src/layers_state.h src/notebook_hook_services.h src/notebook_gestures.h \
  src/notebook_menu.h src/page_actions.h src/notebook_sleep.h \
- src/notebook_widget.h src/plugin_runtime.h src/layers_eraser.h \
- src/plugin_state.h src/settings.h src/visibility.h \
- /tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QTimer \
+ src/notebook_widget.h src/open_profiler.h src/prewarm.h \
  /tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QElapsedTimer \
+ /tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QStringList \
+ src/plugin_runtime.h src/layers_eraser.h src/perf_trace.h \
+ src/plugin_state.h src/page_io.h \
+ /tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QByteArray \
+ src/settings.h src/visibility.h \
+ /tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QTimer \
  /tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtWidgets/QMenu \
  /tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtWidgets/qmenu.h \
  /tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtGui/QPixmap \
@@ -85,19 +89,31 @@ src/notebook_sleep.h:
 
 src/notebook_widget.h:
 
+src/open_profiler.h:
+
+src/prewarm.h:
+
+/tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QElapsedTimer:
+
+/tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QStringList:
+
 src/plugin_runtime.h:
 
 src/layers_eraser.h:
 
+src/perf_trace.h:
+
 src/plugin_state.h:
+
+src/page_io.h:
+
+/tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QByteArray:
 
 src/settings.h:
 
 src/visibility.h:
 
 /tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QTimer:
-
-/tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QElapsedTimer:
 
 /tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtWidgets/QMenu:
 

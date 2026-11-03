@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Analyze Kobo notebook-open and passive-gesture trace records.
+"""Analyze Kobo notebook-open, notebook-edit and passive-gesture trace records.
 
 The parser is intentionally independent from the plugin so it can validate
 both a mounted device's current/previous logs and copied recovery snapshots.
@@ -14,6 +14,8 @@ from dataclasses import dataclass, field
 import json
 from pathlib import Path
 import re
+import math
+import random
 import statistics
 import sys
 from typing import Iterable, Sequence
@@ -48,7 +50,7 @@ GESTURE_KINDS = ("undo", "redo")
 
 
 class MalformedPerformanceRecord(ValueError):
-    """A notebook-open trace marker was present but its payload was invalid."""
+    """A performance trace marker was present but its payload was invalid."""
 
 
 @dataclass(frozen=True)
@@ -181,6 +183,8 @@ class MetricSummary:
 @dataclass
 class Analysis:
     logs: list[LogSummary] = field(default_factory=list)
+    notebook_edits: list["NotebookEditSample"] = field(default_factory=list)
+    malformed_edits: list[MalformedRecord] = field(default_factory=list)
     notebook_opens: list[NotebookOpenSample] = field(default_factory=list)
     malformed_performance: list[MalformedRecord] = field(
         default_factory=list
@@ -247,6 +251,7 @@ class Analysis:
             for kind in GESTURE_KINDS
         }
         return {
+            "notebook_edit": edit_report(self),
             "logs": [log.to_dict() for log in self.logs],
             "startup": {
                 "detected_sessions": sum(
@@ -382,6 +387,142 @@ def parse_notebook_open(line: str) -> NotebookOpenSample | None:
     )
 
 
+EDIT_PREFIX = "perf: notebook-edit"
+NAME = re.compile(r"[a-z0-9-]+")
+DURATION = re.compile(r"[0-9]+(?:\.[0-9]+)?")
+
+
+@dataclass(frozen=True)
+class NotebookEditSample:
+    op: str
+    result: str
+    total: float
+    phases: dict[str, float]
+    phase_counts: dict[str, int]
+    counters: dict[str, int]
+    variant: str = "stock"
+
+
+def parse_notebook_edit(line: str) -> NotebookEditSample | None:
+    marker = line.find(EDIT_PREFIX)
+    if marker < 0:
+        return None
+    payload = line[marker + len(EDIT_PREFIX):]
+    if payload and not payload[0].isspace():
+        raise MalformedPerformanceRecord("invalid notebook-edit marker")
+    fields = {}
+    phases = {}
+    counts = {}
+    counters = {}
+    for token in payload.split():
+        if token.count("=") != 1:
+            raise MalformedPerformanceRecord(f"invalid edit field: {token}")
+        key, value = token.split("=")
+        if not NAME.fullmatch(key) or not value:
+            raise MalformedPerformanceRecord(f"invalid edit field: {token}")
+        if key.endswith("-ms"):
+            if not DURATION.fullmatch(value) or not math.isfinite(float(value)):
+                raise MalformedPerformanceRecord(f"{key} is not a finite non-negative duration")
+            if key != "total-ms":
+                phase = key[:-3]
+                if not NAME.fullmatch(phase):
+                    raise MalformedPerformanceRecord(f"invalid phase: {key}")
+                phases[phase] = phases.get(phase, 0.0) + float(value)
+                if not math.isfinite(phases[phase]):
+                    raise MalformedPerformanceRecord(f"{key} sum is not finite")
+                counts[phase] = counts.get(phase, 0) + 1
+                continue
+        elif key == "variant":
+            if not NAME.fullmatch(value):
+                raise MalformedPerformanceRecord("invalid variant")
+        elif key not in ("op", "result"):
+            if not re.fullmatch(r"[0-9]+", value):
+                raise MalformedPerformanceRecord(f"{key} is not a non-negative integer")
+            counters[key] = int(value)
+        if key in fields:
+            raise MalformedPerformanceRecord(f"duplicate field: {key}")
+        fields[key] = value
+    for key in ("op", "result", "total-ms"):
+        if key not in fields:
+            raise MalformedPerformanceRecord(f"missing field: {key}")
+    if not NAME.fullmatch(fields["op"]) or fields["result"] not in ("ok", "failed"):
+        raise MalformedPerformanceRecord("invalid op or result (expected ok|failed)")
+    return NotebookEditSample(fields["op"], fields["result"],
+                              float(fields["total-ms"]), phases, counts, counters,
+                              fields.get("variant", "stock"))
+
+
+def edit_stats(values):
+    return {"n": len(values), "median": float(statistics.median(values)),
+            "p10": percentile(values, .1), "p90": percentile(values, .9),
+            "min": min(values), "max": max(values)}
+
+
+def edit_groups(analysis):
+    groups = {}
+    for sample in analysis.notebook_edits:
+        if sample.result == "ok":
+            key = sample.op if sample.variant == "stock" else f"{sample.op}@{sample.variant}"
+            groups.setdefault(key, []).append(sample)
+    return groups
+
+
+def edit_report(analysis):
+    groups = {}
+    for op, samples in sorted(edit_groups(analysis).items()):
+        total = edit_stats([s.total for s in samples])
+        phases = {}
+        for phase in dict.fromkeys(p for s in samples for p in s.phases):
+            present = [s for s in samples if phase in s.phases]
+            stats = edit_stats([s.phases[phase] for s in present])
+            stats["occurrences"] = sum(s.phase_counts[phase] for s in present)
+            stats["share_median_total_pct"] = (100 * stats["median"] / total["median"]
+                                                  if total["median"] else None)
+            phases[phase] = stats
+        groups[op] = {"op": samples[0].op, "variant": samples[0].variant, "result": "ok", "n": len(samples), "total_ms": total,
+                      "phases_ms": phases}
+    return {"groups": groups, "failed": sum(s.result == "failed" for s in analysis.notebook_edits),
+            "malformed": len(analysis.malformed_edits),
+            "malformed_records": [r.to_dict() for r in analysis.malformed_edits]}
+
+
+def compare_edits(baseline, candidate, resamples=2000):
+    """Independent bootstrap, candidate minus baseline; fixed seed, percentile CI."""
+    before, after = edit_groups(baseline), edit_groups(candidate)
+    rng = random.Random(0)
+    report = {}
+    for op in sorted(before.keys() | after.keys()):
+        a = [s.total for s in before.get(op, [])]
+        b = [s.total for s in after.get(op, [])]
+        if not a or not b:
+            report[op] = {"status": "missing baseline" if not a else "missing candidate"}
+            continue
+        am, bm = statistics.median(a), statistics.median(b)
+        differences = [statistics.median(rng.choices(b, k=len(b))) -
+                       statistics.median(rng.choices(a, k=len(a))) for _ in range(resamples)]
+        lo, hi = percentile(differences, .025), percentile(differences, .975)
+        report[op] = {"baseline_n": len(a), "candidate_n": len(b),
+                      "before_ms": am, "after_ms": bm, "difference_ms": bm-am,
+                      "delta_pct": 100*(bm-am)/am if am else None,
+                      "ci95_ms": [lo, hi], "significant": lo > 0 or hi < 0}
+    return report
+
+
+def resolve_logs(paths):
+    result = []
+    for path in paths:
+        if path.is_dir():
+            found = sorted(path.rglob("plugin-status*.txt"))
+            if not found:
+                found = sorted(path.rglob("trace.txt"))
+            if not found:
+                raise OSError(f"no trace files in {path}")
+            result.extend(found)
+        else:
+            result.append(path)
+    return result
+
+
 def analyze_sources(
     sources: Iterable[tuple[str, Iterable[str]]],
 ) -> Analysis:
@@ -409,6 +550,14 @@ def analyze_sources(
             else:
                 if sample is not None:
                     analysis.notebook_opens.append(sample)
+
+            try:
+                edit = parse_notebook_edit(line)
+            except MalformedPerformanceRecord as error:
+                analysis.malformed_edits.append(MalformedRecord(location, str(error)))
+            else:
+                if edit is not None:
+                    analysis.notebook_edits.append(edit)
 
             began = GESTURE_BEGIN.search(line)
             if began:
@@ -447,7 +596,7 @@ def analyze_sources(
 
 def analyze_logs(paths: Sequence[Path]) -> Analysis:
     sources: list[tuple[str, list[str]]] = []
-    for path in paths:
+    for path in resolve_logs(paths):
         sources.append(
             (
                 str(path),
@@ -563,6 +712,18 @@ def format_text(analysis: Analysis) -> str:
             f"p95={summary.p95:.1f} "
             f"max={summary.maximum}"
         )
+    report = edit_report(analysis)
+    lines.append(f"notebook-edit failed={report['failed']} malformed={report['malformed']}")
+    for op, group in report["groups"].items():
+        lines.append(f"notebook-edit op={op} result=ok n={group['n']}")
+        for name, stats in [("total", group["total_ms"]), *group["phases_ms"].items()]:
+            line = f"  {name}-ms " + " ".join(f"{k}={stats[k]:.2f}" for k in
+                                                   ("n", "median", "p10", "p90", "min", "max"))
+            if name != "total":
+                line += f" occurrences={stats['occurrences']} share-median-total-pct={stats['share_median_total_pct']}"
+            lines.append(line)
+    for record in analysis.malformed_edits:
+        lines.append(f"malformed-edit {record.location.path}:{record.location.line}: {record.reason}")
     return "\n".join(lines)
 
 
@@ -573,7 +734,7 @@ def validation_failures(
     require_gestures: int = 0,
     fail_on_unmatched: bool = False,
 ) -> list[str]:
-    failures: list[str] = []
+    failures: list[str] = [f"malformed notebook-edit records: {len(analysis.malformed_edits)}"] if analysis.malformed_edits else []
     if analysis.notebook_open_count < require_samples:
         failures.append(
             "notebook-open samples "
@@ -604,7 +765,8 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Summarize Kobo notebook performance and gesture logs."
     )
-    parser.add_argument("logs", nargs="+", type=Path)
+    parser.add_argument("logs", nargs="*", type=Path)
+    parser.add_argument("--compare", nargs=2, type=Path, metavar=("BASELINE", "CANDIDATE"))
     parser.add_argument(
         "--json",
         action="store_true",
@@ -638,6 +800,27 @@ def build_argument_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_argument_parser()
     arguments = parser.parse_args(argv)
+    if arguments.compare:
+        if arguments.logs:
+            parser.error("--compare cannot be combined with positional logs")
+        try:
+            baseline, candidate = (analyze_logs([p]) for p in arguments.compare)
+            if baseline.malformed_edits or candidate.malformed_edits:
+                malformed = baseline.malformed_edits + candidate.malformed_edits
+                raise ValueError("malformed notebook-edit records: " + "; ".join(
+                    f"{r.location.path}:{r.location.line}: {r.reason}" for r in malformed))
+            comparison = compare_edits(baseline, candidate)
+        except (OSError, ValueError) as error:
+            print(f"error: {error}", file=sys.stderr)
+            return 2
+        if arguments.json_output:
+            print(json.dumps({"comparison": comparison, "resamples": 2000, "seed": 0}, indent=2))
+        else:
+            for op, row in comparison.items():
+                print(f"op={op} " + " ".join(f"{k}={v}" for k, v in row.items()))
+        return 0
+    if not arguments.logs:
+        parser.error("provide logs or --compare BASELINE CANDIDATE")
     try:
         analysis = analyze_logs(arguments.logs)
     except OSError as error:

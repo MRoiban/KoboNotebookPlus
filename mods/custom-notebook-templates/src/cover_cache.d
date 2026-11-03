@@ -9,12 +9,15 @@ src/cover_cache.o: src/cover_cache.cc src/cover_cache.h src/abi_types.h \
  /tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QMap \
  /tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QHash \
  /tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QMutex \
- src/fs_util.h src/settings.h \
+ src/fs_util.h src/perf_trace.h \
+ /tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QElapsedTimer \
+ /tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QObject \
+ /tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QPointer \
+ src/settings.h \
  /tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QByteArray \
  /tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QCryptographicHash \
  /tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QDateTime \
  /tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QDir \
- /tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QElapsedTimer \
  /tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QFile \
  /tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QFileInfo \
  /tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QJsonDocument \
@@ -51,6 +54,14 @@ src/templates.h:
 
 src/fs_util.h:
 
+src/perf_trace.h:
+
+/tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QElapsedTimer:
+
+/tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QObject:
+
+/tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QPointer:
+
 src/settings.h:
 
 /tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QByteArray:
@@ -60,8 +71,6 @@ src/settings.h:
 /tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QDateTime:
 
 /tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QDir:
-
-/tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QElapsedTimer:
 
 /tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QFile:
 

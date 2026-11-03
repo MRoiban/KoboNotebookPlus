@@ -286,7 +286,7 @@ class RepositoryGlobalsBudgetTests(unittest.TestCase):
         self.assertEqual(promoted.count("mutex"), 0)
         # Versioned artifact-cache tags, gesture settle constants, export-name
         # bounds, and notebook-open labels are immutable POD/string data only.
-        self.assertEqual(promoted.count("immutable"), 127)
+        self.assertEqual(promoted.count("immutable"), 119)
         self.assertEqual(
             {
                 (declaration.path.name, declaration.name)
@@ -328,6 +328,8 @@ class RepositoryGlobalsBudgetTests(unittest.TestCase):
                 ("cover_cache.cc", "kMaximumScanCacheEntries"),
                 ("cover_cache.cc", "kMaximumImageCacheBytes"),
                 ("cover_cache.cc", "kMaximumPersistedPreviews"),
+                ("nickel_pins.cc", "kProfileFirmware"),
+                ("nickel_pins.cc", "kPins"),
                 ("notebook_sleep.cc", "kPinnedPageStatePath"),
                 ("notebook_sleep.cc", "kPinnedPageImagePath"),
                 ("passive_input_router.cc", "kActionSettleDelayMs"),
@@ -382,7 +384,6 @@ class RepositoryGlobalsBudgetTests(unittest.TestCase):
                 ("plugin_entry.cc", "kBackgroundOptionsSymbol"),
                 ("plugin_entry.cc", "kBackgroundOptionsVma"),
                 ("plugin_entry.cc", "kAddWidgetActionSymbol"),
-                ("plugin_entry.cc", "kAddWidgetActionVma"),
                 ("plugin_entry.cc", "kSetToolThemeSymbol"),
                 ("plugin_entry.cc", "kSetToolThemeVma"),
                 ("plugin_entry.cc", "kRenderVolumeSymbol"),
@@ -400,27 +401,18 @@ class RepositoryGlobalsBudgetTests(unittest.TestCase):
                 ("plugin_entry.cc", "kIInkNotePadExporterVtableSymbol"),
                 ("plugin_entry.cc", "kIInkNotePadExporterVtableVma"),
                 ("plugin_entry.cc", "kSetDialogTitleSymbol"),
-                ("plugin_entry.cc", "kSetDialogTitleVma"),
                 ("plugin_entry.cc", "kParserImageParsedSymbol"),
-                ("plugin_entry.cc", "kParserImageParsedVma"),
                 ("plugin_entry.cc", "kContentGetIdSymbol"),
-                ("plugin_entry.cc", "kContentGetIdVma"),
                 ("plugin_entry.cc", "kContentGetImageIdSymbol"),
-                ("plugin_entry.cc", "kContentGetImageIdVma"),
                 ("plugin_entry.cc", "kPixmapSetImageSymbol"),
-                ("plugin_entry.cc", "kPixmapSetImageVma"),
                 ("plugin_entry.cc", "kVolumeLoadCoverSymbol"),
-                ("plugin_entry.cc", "kVolumeLoadCoverVma"),
                 ("export_naming.cc", "kMaximumFileNameBytes"),
                 ("export_range.cc", "kPickerChoiceCount"),
                 ("export_range.cc", "kNativeMenuBytes"),
                 ("export_range.cc", "kControllerViewOffset"),
                 ("visibility_hooks.cc", "kExcludeSyncFoldersSymbol"),
-                ("visibility_hooks.cc", "kExcludeSyncFoldersVma"),
                 ("visibility_hooks.cc", "kContentGetIdSymbol"),
-                ("visibility_hooks.cc", "kContentGetIdVma"),
                 ("visibility_hooks.cc", "kRemoveCommonBookDataSymbol"),
-                ("visibility_hooks.cc", "kRemoveCommonBookDataVma"),
             },
         )
 
@@ -445,7 +437,7 @@ class RepositoryGlobalsBudgetTests(unittest.TestCase):
             result.stdout,
         )
         self.assertIn(
-            "promoted-TU immutable namespace objects: 127",
+            "promoted-TU immutable namespace objects: 119",
             result.stdout,
         )
         self.assertIn("Globals budget verified", result.stdout)

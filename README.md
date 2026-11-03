@@ -55,7 +55,7 @@ Click any preview to view it at full size.
 > [!CAUTION]
 > This plugin calls private Kobo and MyScript C++ APIs **by firmware
 > address**. It is tested only on a Kobo Elipsa 2E (`condor`) running
-> firmware `4.38.23697`. A mismatched build can crash Nickel, corrupt
+> firmware `4.38.23697` or `4.38.23852`. A mismatched build can crash Nickel, corrupt
 > notebooks, cause data loss, or force a factory reset. Back up your Kobo
 > database, settings, and notebooks first, and test only with disposable
 > notebooks. See [Recovery](#recovery) before installing anything.
@@ -95,7 +95,7 @@ Kobo extension.
 | Item | Supported target |
 | --- | --- |
 | Device | Kobo Elipsa 2E (`condor`) |
-| Firmware | `4.38.23697` |
+| Firmware | `4.38.23697`, `4.38.23852` |
 | Qt | 5.2.1 |
 | Compiler | NickelTC GCC 4.9.4, ARM hard-float |
 
@@ -103,6 +103,14 @@ Every private symbol, vtable slot, instruction sequence, and hook relocation
 used by the current build is pinned by the verification scripts in
 `scripts/`. Supporting a different firmware requires a fresh binary audit —
 changing only the version check is unsafe.
+
+Between 23697 and 23852 only `libnickel.so.1.0.0` changed layout, so the
+plugin carries one libnickel address profile per firmware
+(`src/nickel_pins.cc`). At startup it uses a profile only when all 31 pinned
+libnickel symbols resolve to that profile's exact addresses; otherwise every
+libnickel-dependent feature stays disabled. The `KoboRoot.tgz` release package
+still embeds the 23697 stock `libiinknote.so`, so install on 23852 by copying
+the plugin library over SSH instead.
 
 ## Release package and source
 
@@ -241,7 +249,14 @@ Nickel excludes before plugins load. Existing `.kobo/custom/` installations
 are migrated automatically. Layer metadata and preview caches live in its
 `layers/` directory; native ink stays inside the `.nebo` document. Backups
 created by cover, page, and layer operations use the `.nebo.backup` extension
-so Nickel does not import them as duplicate notebooks. The pinned sleep-page
+so Nickel does not import them as duplicate notebooks. Each operation is
+backed up first, except when the notebook's content is unchanged since the
+plugin's own last successful operation of the same kind: then the backup taken
+before that operation is reused. Any ink or other change in between makes a
+fresh backup, so a reused backup can only lose plugin structure edits (page
+moves, duplicates, added layers), never handwriting. Each backup folder keeps
+the 10 newest backups per notebook file name; older ones are deleted when a
+new backup of that notebook is written. The pinned sleep-page
 cache lives separately in `notebook-sleep/` and is never scanned as a paper
 template.
 

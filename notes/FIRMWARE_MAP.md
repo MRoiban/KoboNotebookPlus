@@ -12,6 +12,38 @@ Root filesystem path:
 Architecture and bitness:
 ```
 
+## Firmware 4.38.23852
+
+```text
+Device firmware version: 4.38.23852 (from /mnt/onboard/.kobo/version)
+Source of libraries: pulled from the device over SSH on 2026-11-02
+libnickel.so.1.0.0  0e8e8ac3414a620d3386e60afcf4ccbf4ad3b8fdec8aeb5b553b01697966ec52  (23697: 577235f3...)
+libiinknote.so      1fba163ca8de76d471ba5c58a4d95c523cc15a73d7eca83ba30c282d000f2ad3  (23697: f80a7de7...)
+libiink.so          0dc02118b9b763450c228da1e632dadbcce5cfd2acb41a3ca76a2472aed71ac6  (identical to 23697)
+libiinkuiref.so.1.0.0 693aa804c31e3d783314ea2a61282730b0ada6f0b48029a3bc955ea78acd409a (identical to 23697)
+iink                98bb2032f47f75bd1c3796f3cda2f016edc43a57435007035d6b5b8657dd7bb1  (identical to 23697)
+```
+
+Delta against 23697, as it affects the plugin:
+
+- `libiinknote.so`: same size, the same 1638 exported symbols at the same
+  addresses and sizes. The bytes differ only in the build-ID note and in
+  `.rodata` 0x8a192..0x8b55b, which is a re-packed embedded QSS resource. No
+  code changed.
+- `libnickel.so.1.0.0`: +201/-94 exports, and almost every function moved. All
+  31 functions the plugin resolves or hooks (plus the 3 extra symbols and the 8
+  enclosing functions pinned by `verify-layer-abi.py`) were disassembled from
+  both images. After normalizing PC-relative displacements and skipping literal
+  pools by recursive descent, they are instruction-for-instruction identical
+  with identical sizes. The only immediate that changed is a `qDebug()`
+  `QMessageLogContext` line number in `VolumeManager::removeCommonBookData`
+  (632 -> 639). The local `PowerViewController` metacall tail-branch moved
+  +0x6fe0, to 0xf4a02a.
+- Object sizes still hold, because the code that encodes them is unchanged.
+  `NickelTouchMenu` 0x90 and the tool row 0x58 come from libiinknote's
+  `loadView`. `SettingItem` 0x7c comes from libnickel's
+  `N3SettingsPowerView` constructor, which is identical in both firmwares.
+
 ## Firmware 4.38.23697
 
 ```text

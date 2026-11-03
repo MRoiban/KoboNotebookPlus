@@ -11,7 +11,10 @@ src/layers_state.o: src/layers_state.cc src/layers_state.h src/layers.h \
  /tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QPointer \
  src/cover_cache.h src/templates.h \
  /tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QMap \
- src/firmware_api.h src/notebook_widget.h src/settings.h \
+ src/firmware_api.h src/notebook_widget.h src/perf_trace.h \
+ /tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QElapsedTimer \
+ /tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QObject \
+ src/settings.h \
  /tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QByteArray \
  /tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QCryptographicHash \
  /tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QDateTime \
@@ -58,6 +61,12 @@ src/templates.h:
 src/firmware_api.h:
 
 src/notebook_widget.h:
+
+src/perf_trace.h:
+
+/tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QElapsedTimer:
+
+/tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QObject:
 
 src/settings.h:
 

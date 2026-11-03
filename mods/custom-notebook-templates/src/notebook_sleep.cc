@@ -4,6 +4,7 @@
 #include "firmware_api.h"
 #include "firmware_resolver.h"
 #include "layers_preview.h"
+#include "nickel_pins.h"
 #include "notebook_widget.h"
 #include "notebooksleeprefreshreceiver.h"
 #include "notebooksleepsettingsreceiver.h"
@@ -49,24 +50,6 @@
 #include <new>
 
 namespace {
-
-enum FirmwarePin : uintptr_t {
-    ShowSleepViewVma = 0xf3eb98,
-    ShowPowerOffViewVma = 0xf3ea54,
-    OnCoverLoadedVma = 0xf425b4,
-    UpdateCoverVma = 0xf430b0,
-    UpdateReadingStatusVma = 0xf42798,
-    SetInfoPanelVisibleVma = 0xf3a114,
-    SettingsPowerViewConstructorVma = 0x10455dc,
-    CheckBoxConstructorVma = 0x1065824,
-    DropDownConstructorVma = 0x106599c,
-    CheckBoxSetTextVma = 0x10653a0,
-    CheckBoxSetCheckedVma = 0x10653c0,
-    ItemSetLabelVma = 0x10652c0,
-    DropDownVma = 0x10653f8,
-    DropDownAddItemVma = 0x10de390,
-    DropDownSetCurrentIndexVma = 0x1113230,
-};
 
 enum LayoutPin {
     SettingItemObjectBytes = 0x7c,
@@ -1202,37 +1185,37 @@ bool installHooks(RuntimeState& state) {
         installPinnedHook(
             handle,
             "_ZN22N3PowerWorkflowManager13showSleepViewEv",
-            ShowSleepViewVma,
+            cnt::nickelVma(cnt::NickelPin::PowerWorkflowShowSleepView),
             _cnt_show_sleep_view_hook,
             &state.api.showSleepViewOriginal)
         && installPinnedHook(
             handle,
             "_ZN22N3PowerWorkflowManager16showPowerOffViewEv",
-            ShowPowerOffViewVma,
+            cnt::nickelVma(cnt::NickelPin::PowerWorkflowShowPowerOffView),
             _cnt_show_power_off_view_hook,
             &state.api.showPowerOffViewOriginal)
         && installPinnedHook(
             handle,
             "_ZN19PowerViewController13onCoverLoadedERK6QImage",
-            OnCoverLoadedVma,
+            cnt::nickelVma(cnt::NickelPin::PowerViewOnCoverLoaded),
             _cnt_power_cover_loaded_hook,
             &state.api.onCoverLoadedOriginal)
         && installPinnedHook(
             handle,
             "_ZN19PowerViewController11updateCoverEv",
-            UpdateCoverVma,
+            cnt::nickelVma(cnt::NickelPin::PowerViewUpdateCover),
             _cnt_power_update_cover_hook,
             &state.api.updateCoverOriginal)
         && installPinnedHook(
             handle,
             "_ZN19PowerViewController19updateReadingStatusEv",
-            UpdateReadingStatusVma,
+            cnt::nickelVma(cnt::NickelPin::PowerViewUpdateReadingStatus),
             _cnt_power_update_reading_status_hook,
             &state.api.updateReadingStatusOriginal)
         && installPinnedHook(
             handle,
             "_ZN25FullScreenDragonPowerView19setInfoPanelVisibleEb",
-            SetInfoPanelVisibleVma,
+            cnt::nickelVma(cnt::NickelPin::DragonPowerViewSetInfoPanelVisible),
             _cnt_power_set_info_panel_visible_hook,
             &state.api.setInfoPanelVisibleOriginal);
     state.coreHooksReady = core;
@@ -1243,29 +1226,29 @@ bool installHooks(RuntimeState& state) {
 
     bool const nativeSettingsApis =
         resolvePinned(handle, "_ZN23SettingItemWithCheckBoxC1EP7QWidget",
-            CheckBoxConstructorVma, &state.api.checkBoxConstructor)
+            cnt::nickelVma(cnt::NickelPin::CheckBoxConstructor), &state.api.checkBoxConstructor)
         && resolvePinned(handle, "_ZN23SettingItemWithDropDownC1EP7QWidget",
-            DropDownConstructorVma, &state.api.dropDownConstructor)
+            cnt::nickelVma(cnt::NickelPin::DropDownConstructor), &state.api.dropDownConstructor)
         && resolvePinned(handle, "_ZN23SettingItemWithCheckBox7setTextERK7QString",
-            CheckBoxSetTextVma, &state.api.checkBoxSetText)
+            cnt::nickelVma(cnt::NickelPin::CheckBoxSetText), &state.api.checkBoxSetText)
         && resolvePinned(handle, "_ZN23SettingItemWithCheckBox10setCheckedEb",
-            CheckBoxSetCheckedVma, &state.api.checkBoxSetChecked)
+            cnt::nickelVma(cnt::NickelPin::CheckBoxSetChecked), &state.api.checkBoxSetChecked)
         && resolvePinned(handle, "_ZN15SettingItemBase8setLabelERK7QString",
-            ItemSetLabelVma, &state.api.itemSetLabel)
+            cnt::nickelVma(cnt::NickelPin::ItemSetLabel), &state.api.itemSetLabel)
         && resolvePinned(handle, "_ZNK23SettingItemWithDropDown8dropDownEv",
-            DropDownVma, &state.api.dropDown)
+            cnt::nickelVma(cnt::NickelPin::DropDownDropDown), &state.api.dropDown)
         && resolvePinned(
             handle,
             "_ZN24MultiSelectTouchDropDown7addItemERK7QStringRK8QVariantRK7QLocaleb",
-            DropDownAddItemVma,
+            cnt::nickelVma(cnt::NickelPin::DropDownAddItem),
             &state.api.dropDownAddItem)
         && resolvePinned(handle, "_ZN13TouchDropDown15setCurrentIndexEi",
-            DropDownSetCurrentIndexVma, &state.api.dropDownSetCurrentIndex);
+            cnt::nickelVma(cnt::NickelPin::DropDownSetCurrentIndex), &state.api.dropDownSetCurrentIndex);
     if (core && nativeSettingsApis
             && installPinnedHook(
                 handle,
                 "_ZN19N3SettingsPowerViewC1EP7QWidget",
-                SettingsPowerViewConstructorVma,
+                cnt::nickelVma(cnt::NickelPin::SettingsPowerViewConstructor),
                 _cnt_settings_power_view_constructor_hook,
                 &state.api.settingsPowerViewConstructorOriginal)) {
         state.settingsHookReady = true;

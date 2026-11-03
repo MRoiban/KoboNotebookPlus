@@ -4,6 +4,7 @@
 #include "firmware_api.h"
 #include "notebook_widget.h"
 #include "page_io.h"
+#include "perf_trace.h"
 #include "settings.h"
 
 #include <QString>
@@ -72,6 +73,7 @@ bool loadPageContext(
         int maximumPageCount,
         PageContext* context,
         QString* error) {
+    perf::PhaseScope phase("context");
     if (!widget || !context) {
         *error = QLatin1String("Page operation failed: notebook is not ready.");
         return false;
@@ -117,6 +119,7 @@ bool loadPageContext(
     context->document = document;
     context->index = index;
     context->count = count;
+    perf::note("page-count", count);
     return true;
 }
 
@@ -129,7 +132,11 @@ bool reorderCurrentPage(
         char const* backupRoot,
         QString* error) {
     try {
-        firmware.widgetSave(widget);
+        perf::Variant const variant = perf::experimentVariant("move", firmware);
+        {
+            perf::PhaseScope phase("widget-save-pre");
+            firmware.widgetSave(widget);
+        }
         PageContext context;
         if (!loadPageContext(
                 firmware, widget, maximumPageCount, &context, error)) {
@@ -165,9 +172,13 @@ bool reorderCurrentPage(
             return false;
         }
 
+        perf::PhaseScope enginePhase("engine");
         firmware.documentMovePage(
             context.document.get(), context.index, target);
-        firmware.packageSave(context.package.get());
+        {
+            perf::PhaseScope phase("package-save");
+            firmware.packageSave(context.package.get());
+        }
         if (firmware.packagePartCount(context.package.get()) != context.count
                 || firmware.packageIndexOfPart(
                     context.package.get(), context.part) != target) {
@@ -176,9 +187,13 @@ bool reorderCurrentPage(
             int const actual = firmware.packageIndexOfPart(
                 context.package.get(), context.part);
             if (actual >= 0 && actual < context.count) {
+                perf::PhaseScope rollbackPhase("engine-rollback");
                 firmware.documentMovePage(
                     context.document.get(), actual, context.index);
-                firmware.packageSave(context.package.get());
+                {
+                    perf::PhaseScope phase("package-save");
+                    firmware.packageSave(context.package.get());
+                }
             }
             *error = QLatin1String(
                 "Page reorder could not be verified. The original notebook "
@@ -186,11 +201,33 @@ bool reorderCurrentPage(
             return false;
         }
 
-        firmware.widgetSave(widget);
-        cover_cache::invalidateNotebookScanEntry(
-            coverCache, firmware.widgetFilePath(widget));
-        firmware.editorSetPart(context.editor, context.part);
-        firmware.widgetRefresh(widget);
+        {
+            perf::PhaseScope phase("widget-save-post");
+            firmware.widgetSave(widget);
+        }
+        if (context.index != 0 && target != 0) {
+            // Page zero, the only page the cover verdict reads, did not move.
+            cover_cache::invalidateNotebookPreviewKeepingCoverVerdict(
+                coverCache, firmware.widgetFilePath(widget));
+        } else {
+            cover_cache::invalidateNotebookScanEntry(
+                coverCache, firmware.widgetFilePath(widget));
+        }
+        if (variant == perf::Position) {
+            // The current part is unchanged; only its index/chrome moved.
+            perf::PhaseScope phase("ui-sync");
+            firmware.widgetPositionUpdated(widget);
+        } else {
+            {
+                perf::PhaseScope phase("set-part");
+                firmware.editorSetPart(context.editor, context.part);
+            }
+            {
+                perf::PhaseScope phase("refresh");
+                firmware.widgetRefresh(widget);
+            }
+        }
+        page_io::notebookCommitted(firmware.widgetFilePath(widget), backupPath);
         trace("pages: current page reordered");
         return true;
     } catch (std::exception const&) {
@@ -216,7 +253,11 @@ bool duplicateCurrentPage(
     int oldCount = 0;
     bool cloneAttached = false;
     try {
-        firmware.widgetSave(widget);
+        perf::Variant const variant = perf::experimentVariant("dup", firmware);
+        {
+            perf::PhaseScope phase("widget-save-pre");
+            firmware.widgetSave(widget);
+        }
         PageContext context;
         if (!loadPageContext(
                 firmware, widget, maximumPageCount, &context, error)) {
@@ -250,6 +291,7 @@ bool duplicateCurrentPage(
             return false;
         }
 
+        perf::PhaseScope enginePhase("engine");
         package = context.package;
         oldCount = context.count;
         clone = firmware.packageClonePart(package.get(), context.part);
@@ -272,7 +314,10 @@ bool duplicateCurrentPage(
         }
         if (target != oldCount)
             firmware.documentMovePage(document.get(), oldCount, target);
-        firmware.packageSave(package.get());
+        {
+            perf::PhaseScope phase("package-save");
+            firmware.packageSave(package.get());
+        }
 
         if (firmware.packagePartCount(package.get()) != oldCount + 1
                 || firmware.packageIndexOfPart(package.get(), clone) != target) {
@@ -282,18 +327,52 @@ bool duplicateCurrentPage(
             throw std::runtime_error("clone commit validation failed");
         }
 
-        firmware.widgetSave(widget);
-        cover_cache::invalidateNotebookScanEntry(
+        if (variant == perf::Stock) {
+            perf::PhaseScope phase("widget-save-post");
+            firmware.widgetSave(widget);
+        }
+        // The clone is inserted at index + 1 >= 1, so page zero is untouched.
+        cover_cache::invalidateNotebookPreviewKeepingCoverVerdict(
             coverCache, firmware.widgetFilePath(widget));
-        firmware.editorSetPart(context.editor, clone);
-        firmware.widgetRefresh(widget);
+        if (variant == perf::Stock) {
+            {
+                perf::PhaseScope phase("set-part");
+                firmware.editorSetPart(context.editor, clone);
+            }
+            {
+                perf::PhaseScope phase("refresh");
+                firmware.widgetRefresh(widget);
+            }
+        } else {
+            // Preserve the genuine part-change callbacks and normal viewport
+            // invalidation, then sync the navigation chrome without repaint.
+            {
+                perf::PhaseScope phase("set-part");
+                firmware.editorSetPart(context.editor, clone);
+            }
+            {
+                perf::PhaseScope phase("ui-sync");
+                firmware.widgetPositionUpdated(widget);
+            }
+            // Unlike stock's pre-selection save, persist the selected clone's
+            // index. Package save + commit validation still precede selection.
+            {
+                perf::PhaseScope phase("widget-save-post");
+                firmware.widgetSave(widget);
+            }
+        }
+        page_io::notebookCommitted(firmware.widgetFilePath(widget), backupPath);
         trace("pages: current page duplicated");
         return true;
     } catch (...) {
         if (package && clone && cloneAttached) {
             try {
+                perf::PhaseScope rollbackPhase("engine-rollback");
                 firmware.packageRemovePart(package.get(), clone);
-                firmware.packageSave(package.get());
+                {
+                    perf::PhaseScope phase("package-save");
+                    firmware.packageSave(package.get());
+                }
                 if (firmware.packagePartCount(package.get()) == oldCount) {
                     trace("pages: failed duplicate rolled back");
                 } else {

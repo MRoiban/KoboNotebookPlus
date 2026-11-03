@@ -7,11 +7,23 @@
 #include "layers.h"
 #include "notebook_gestures.h"
 #include "notebook_sleep.h"
+#include "open_profiler.h"
+#include "page_io.h"
+#include "prewarm.h"
 #include "settings.h"
+#include "perf_trace.h"
+
+#include <memory>
 #include "templates.h"
 #include "visibility.h"
 
 #include <QTimer>
+
+namespace cnt {
+namespace perf {
+class EditScope;
+}
+}
 
 struct PageRuntimeState {
     bool hooksReady = false;
@@ -36,8 +48,18 @@ struct HookRuntimeState {
 // writable vtable clones may remain reachable through Nickel shutdown.
 struct PluginState {
     FirmwareApi firmware = {};
+    // Index of the audited libnickel profile (see nickel_pins.h); -1 until
+    // detectNickelProfile() proves an exact match, which keeps every
+    // libnickel pin failing closed.
+    int nickelProfile = -1;
+    // The notebook edit currently being timed (perf_trace.h), if any.
+    cnt::perf::EditScope* activeEdit = nullptr;
+    std::unique_ptr<cnt::perf::PaintObserver> paintObserver;
     cnt::templates::TemplateRuntimeState templates;
     cnt::cover_cache::State covers;
+    cnt::page_io::RuntimeState backups;
+    cnt::open_profiler::RuntimeState openProfiler;
+    cnt::prewarm::RuntimeState prewarm;
     PageRuntimeState pages;
     cnt::export_range::RuntimeState exportRange;
     cnt::layers::RuntimeState layers;

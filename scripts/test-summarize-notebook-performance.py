@@ -218,5 +218,97 @@ class PerformanceAnalyzerTests(unittest.TestCase):
         self.assertIn("redo-gesture-ms p50=4.0 p95=4.0 max=4", text)
 
 
+
+def edit_record(total=100, op="page-move-later", result="ok", extra=""):
+    return f"perf: notebook-edit op={op} result={result} total-ms={total} {extra}".strip()
+
+
+class EditAnalyzerTests(unittest.TestCase):
+    def analysis(self, lines):
+        return ANALYZER.analyze_sources([("fixture", lines)])
+
+    def test_repeat_phases_sum_per_record_and_keep_counts_order(self):
+        sample = ANALYZER.parse_notebook_edit(edit_record(extra=
+            "save-ms=10 engine-ms=1 save-ms=20 page-count=12"))
+        self.assertEqual(list(sample.phases), ["save", "engine"])
+        self.assertEqual(sample.phases["save"], 30)
+        self.assertEqual(sample.phase_counts["save"], 2)
+        self.assertEqual(sample.counters, {"page-count": 12})
+        report = self.analysis([edit_record(extra="save-ms=10 save-ms=20"),
+                                edit_record(200, extra="save-ms=50"),
+                                edit_record(999, result="failed")]).to_dict()["notebook_edit"]
+        group = report["groups"]["page-move-later"]
+        self.assertEqual(group["total_ms"], {"n": 2, "median": 150., "p10": 100.,
+                                            "p90": 200., "min": 100., "max": 200.})
+        phase = group["phases_ms"]["save"]
+        self.assertEqual(phase["median"], 40)
+        self.assertEqual(phase["occurrences"], 3)
+        self.assertAlmostEqual(phase["share_median_total_pct"], 100*40/150)
+        self.assertEqual(report["failed"], 1)
+
+    def test_variants_and_settle_are_separate_groups(self):
+        lines = [edit_record(), edit_record(extra='variant=stock'),
+                 edit_record(20, extra='variant=position'),
+                 edit_record(50, op='page-move-later-settle',
+                             extra='variant=position paint-ms=30.5 paints=2 capped=0')]
+        analysis = self.analysis(lines)
+        groups = ANALYZER.edit_report(analysis)['groups']
+        self.assertEqual(groups['page-move-later']['n'], 2)
+        self.assertEqual(groups['page-move-later@position']['n'], 1)
+        settle = groups['page-move-later-settle@position']
+        self.assertEqual(settle['variant'], 'position')
+        self.assertEqual(settle['phases_ms']['paint']['median'], 30.5)
+        for extra in ('variant=Bad', 'variant=x@y', 'variant=', 'variant=stock variant=position'):
+            with self.subTest(extra=extra), self.assertRaises(ANALYZER.MalformedPerformanceRecord):
+                ANALYZER.parse_notebook_edit(edit_record(extra=extra))
+
+    def test_strict_malformed_edits(self):
+        invalid = ["", "op=x", "op=X result=ok total-ms=1", "op=x result=no total-ms=1",
+                   "op=x result=ok total-ms=nan", "op=x result=ok total-ms=-1",
+                   "op=x result=ok total-ms=1 total-ms=2", "op=x op=y result=ok total-ms=1",
+                   "op=x result=ok total-ms=1 save-ms=inf", "op=x result=ok total-ms=1 page-count=1.2",
+                   "op=x result=ok total-ms=1 garbage", "op=x result=ok total-ms=1 a=1 a=2"]
+        for payload in invalid:
+            with self.subTest(payload=payload), self.assertRaises(ANALYZER.MalformedPerformanceRecord):
+                ANALYZER.parse_notebook_edit("perf: notebook-edit " + payload)
+        analysis = self.analysis(["perf: notebook-edit op=x"])
+        self.assertEqual(analysis.malformed_edits[0].location.line, 1)
+        self.assertIn("missing field", ANALYZER.format_text(analysis))
+        self.assertTrue(ANALYZER.validation_failures(analysis))
+        self.assertIsNone(ANALYZER.parse_notebook_edit("unrelated"))
+
+    def test_optional_phases_and_zero_total(self):
+        group = self.analysis([edit_record(0, extra="save-ms=0"), edit_record(0)]).to_dict()["notebook_edit"]["groups"]["page-move-later"]
+        self.assertIsNone(group["phases_ms"]["save"]["share_median_total_pct"])
+        self.assertEqual(group["phases_ms"]["save"]["n"], 1)
+
+    def test_bootstrap_fixed_seed_significance_and_missing(self):
+        before = self.analysis([edit_record(100)]*5)
+        after = self.analysis([edit_record(80)]*5)
+        comparison = ANALYZER.compare_edits(before, after)
+        self.assertEqual(comparison, ANALYZER.compare_edits(before, after))
+        row = comparison["page-move-later"]
+        self.assertEqual(row["ci95_ms"], [-20., -20.])
+        self.assertEqual(row["delta_pct"], -20)
+        self.assertTrue(row["significant"])
+        self.assertFalse(ANALYZER.compare_edits(before, before)["page-move-later"]["significant"])
+        self.assertEqual(ANALYZER.compare_edits(before, self.analysis([]))["page-move-later"]["status"], "missing candidate")
+
+    def test_compare_cli_files_and_directories(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "baseline").mkdir()
+            (root / "baseline" / "plugin-status.previous.txt").write_text(edit_record(100))
+            candidate = root / "trace.txt"
+            candidate.write_text(edit_record(50))
+            result = subprocess.run([sys.executable, str(SCRIPT), "--json", "--compare",
+                                     str(root / "baseline"), str(candidate)], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(json.loads(result.stdout)["comparison"]["page-move-later"]["after_ms"], 50)
+            candidate.write_text("perf: notebook-edit op=x")
+            result = subprocess.run([sys.executable, str(SCRIPT), str(candidate)], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("missing field", result.stdout)
+
 if __name__ == "__main__":
     unittest.main()

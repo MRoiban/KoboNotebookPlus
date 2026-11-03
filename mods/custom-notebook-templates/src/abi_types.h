@@ -211,8 +211,12 @@ typedef void (*IInkNotePadExporterExportVolume)(
 typedef void (*WidgetSave)(void* widget);
 typedef QString (*WidgetFilePath)(void const* widget);
 typedef void (*WidgetRefresh)(void* widget);
+typedef void (*WidgetPositionUpdated)(void* widget);
 typedef void (*ShowErrorPopup)(void* widget, QString const& message);
 typedef QString (*BackgroundType)(void* backgroundWidget);
+typedef void (*BackgroundWidgetCtor)(void* self, QWidget* parent);
+typedef void (*BackgroundWidgetDelete)(void* self);
+typedef void (*BackgroundWidgetSetType)(void* self, QString const& type);
 typedef void (*ParserImageParsed)(
     void* parser,
     void const* volume,

@@ -5,6 +5,7 @@
 #include "firmware_api.h"
 #include "notebook_widget.h"
 #include "pages.h"
+#include "perf_trace.h"
 #include "settings.h"
 
 #include <QObject>
@@ -84,10 +85,12 @@ void runMoveToForController(
         return;
 
     PageOperationActiveGuard const activeGuard(widgetObject);
+    perf::EditScope edit("page-move-to", widgetObject);
     FirmwareApi& firmware = *dependencies.firmware;
     QString error;
     try {
-        firmware.widgetSave(widgetObject);
+        // Read the live context only to populate the picker. Reorder saves and
+        // reloads it after the dialog, whose nested event loop may allow ink.
         pages::PageContext context;
         if (!pages::loadPageContext(
                 firmware,
@@ -112,15 +115,19 @@ void runMoveToForController(
                 ? firmware.abstractNickelMenuControllerPopupFromWidget(controller)
                 : nullptr;
         int selectedPage = 0;
-        bool const selected = export_range::choosePage(
-            firmware,
-            controller,
-            anchor,
-            QLatin1String("Move to"),
-            1,
-            context.count,
-            &selectedPage,
-            &error);
+        bool selected = false;
+        {
+            perf::PhaseScope phase("destination-picker");
+            selected = export_range::choosePage(
+                firmware,
+                controller,
+                anchor,
+                QLatin1String("Move to"),
+                1,
+                context.count,
+                &selectedPage,
+                &error);
+        }
         if (!selected) {
             if (!error.isEmpty())
                 showOperationError(firmware, widgetObject, error);
@@ -143,6 +150,8 @@ void runMoveToForController(
                 dependencies.backupRoot,
                 &error)) {
             showOperationError(firmware, widgetObject, error);
+        } else {
+            edit.finish(true);
         }
     } catch (std::exception const&) {
         showOperationError(
@@ -164,6 +173,11 @@ void runForWidget(
         PageOperation operation,
         int maximumNotebookPages,
         char const* backupRoot) {
+    perf::EditScope edit(operation == DuplicatePageOperation
+        ? "page-duplicate"
+        : operation == MovePageEarlierOperation
+            ? "page-move-earlier" : "page-move-later",
+        static_cast<QObject*>(widget));
     QString error;
     try {
         bool succeeded = false;
@@ -176,7 +190,8 @@ void runForWidget(
                 backupRoot,
                 &error);
         } else {
-            firmware.widgetSave(widget);
+            // Resolve the destination from the live package; reorder saves
+            // before reading the context used for validation and backup.
             pages::PageContext context;
             if (!pages::loadPageContext(
                     firmware,
@@ -212,6 +227,8 @@ void runForWidget(
 
         if (!succeeded)
             showOperationError(firmware, widget, error);
+        else
+            edit.finish(true);
     } catch (std::exception const&) {
         showOperationError(
             firmware,

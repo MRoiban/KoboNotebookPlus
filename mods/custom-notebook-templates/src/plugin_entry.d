@@ -12,14 +12,19 @@ src/plugin_entry.o: src/plugin_entry.cc src/abi_types.h \
  src/covers.h src/eraser_menu.h \
  /tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QPointer \
  src/export_range.h src/firmware_api.h src/firmware_resolver.h \
- ../../third_party/NickelHook/NickelHook.h src/notebook_gestures.h \
- src/notebook_sleep.h src/plugin_runtime.h src/layers_eraser.h \
- src/layers.h src/layers_service.h src/plugin_state.h src/settings.h \
- src/visibility.h \
+ ../../third_party/NickelHook/NickelHook.h src/nickel_pins.h \
+ src/notebook_gestures.h src/notebook_sleep.h src/plugin_runtime.h \
+ src/layers_eraser.h src/layers.h src/layers_service.h src/perf_trace.h \
+ /tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QElapsedTimer \
+ /tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QObject \
+ src/plugin_state.h src/open_profiler.h src/page_io.h \
+ /tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QByteArray \
+ src/prewarm.h \
+ /tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QStringList \
+ src/settings.h src/visibility.h \
  /tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QTimer \
  src/visibility_hooks.h \
- /tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QCoreApplication \
- /tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QObject
+ /tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QCoreApplication
 
 src/abi_types.h:
 
@@ -59,6 +64,8 @@ src/firmware_resolver.h:
 
 ../../third_party/NickelHook/NickelHook.h:
 
+src/nickel_pins.h:
+
 src/notebook_gestures.h:
 
 src/notebook_sleep.h:
@@ -71,7 +78,23 @@ src/layers.h:
 
 src/layers_service.h:
 
+src/perf_trace.h:
+
+/tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QElapsedTimer:
+
+/tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QObject:
+
 src/plugin_state.h:
+
+src/open_profiler.h:
+
+src/page_io.h:
+
+/tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QByteArray:
+
+src/prewarm.h:
+
+/tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QStringList:
 
 src/settings.h:
 
@@ -82,5 +105,3 @@ src/visibility.h:
 src/visibility_hooks.h:
 
 /tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QCoreApplication:
-
-/tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QObject:

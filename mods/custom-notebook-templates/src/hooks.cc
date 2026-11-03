@@ -13,8 +13,11 @@
 #include "notebook_menu.h"
 #include "notebook_sleep.h"
 #include "notebook_widget.h"
+#include "open_profiler.h"
+#include "prewarm.h"
 #include "page_actions.h"
 #include "plugin_runtime.h"
+#include "perf_trace.h"
 #include "plugin_state.h"
 
 #include <QElapsedTimer>
@@ -63,12 +66,20 @@ struct NotebookOpenPerformance {
     qint64 layerContextMs = 0;
     qint64 layerRouteMs = 0;
     QString layerResult = QLatin1String("disabled");
+    bool settleArmed = false;
 
     NotebookOpenPerformance() {
         total.start();
     }
 
     ~NotebookOpenPerformance() {
+        if (settleArmed && pluginState().paintObserver) {
+            if (enabled)
+                pluginState().paintObserver->complete(
+                    QLatin1String("notebook-open"), "stock");
+            else
+                pluginState().paintObserver->cancel();
+        }
         if (!enabled)
             return;
         try {
@@ -261,6 +272,26 @@ void _cnt_render_volume_hook(void* widget, void const* volume) {
                 reinterpret_cast<QWidget*>(widget));
         }
 
+        // Opt-in diagnostics (perf-experiment.txt); nothing is armed otherwise.
+        bool profiling = false;
+        if (outermost) {
+            cnt::perf::Experiment const experiment = cnt::perf::currentExperiment();
+            if (experiment.settle && widget) {
+                try {
+                    if (!pluginState().paintObserver)
+                        pluginState().paintObserver.reset(new cnt::perf::PaintObserver);
+                    pluginState().paintObserver->begin(
+                        reinterpret_cast<QObject*>(widget), performance.total);
+                    performance.settleArmed = true;
+                } catch (...) {
+                }
+            }
+            if (experiment.profileOpen)
+                profiling = cnt::open_profiler::begin();
+        }
+
+        if (outermost)
+            cnt::perf::stamp("render-volume-begin");
         QElapsedTimer stockTimer;
         stockTimer.start();
         // Stock renderVolume synchronously constructs the editor/backend/tool
@@ -270,6 +301,12 @@ void _cnt_render_volume_hook(void* widget, void const* volume) {
         // three identities are coherent.
         firmwareApi().renderVolumeOriginal(widget, volume);
         performance.stockMs = stockTimer.elapsed();
+        if (profiling) {
+            cnt::open_profiler::end("render-volume");
+            // Second window: from here until the paint observer settles.
+            if (performance.settleArmed)
+                cnt::open_profiler::begin();
+        }
     }
     if (!outermost)
         return;
@@ -280,6 +317,10 @@ void _cnt_render_volume_hook(void* widget, void const* volume) {
     if (!cnt::notebook_widget::isNotebookWidget(object))
         return;
     performance.enabled = true;
+    try {
+        cnt::prewarm::recordOpenedNotebook(widget);
+    } catch (...) {
+    }
 
     QElapsedTimer phase;
     phase.start();

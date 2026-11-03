@@ -9,7 +9,7 @@ src/visibility_hooks.o: src/visibility_hooks.cc src/visibility_hooks.h \
  src/firmware_api.h \
  /tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QMap \
  src/firmware_resolver.h ../../third_party/NickelHook/NickelHook.h \
- src/plugin_runtime.h src/layers_eraser.h src/layers.h \
+ src/nickel_pins.h src/plugin_runtime.h src/layers_eraser.h src/layers.h \
  /tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QHash \
  /tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QMutex \
  /tc/arm-nickel-linux-gnueabihf/arm-nickel-linux-gnueabihf/sysroot/usr/include/QtCore/QPointer \
@@ -38,6 +38,8 @@ src/firmware_api.h:
 src/firmware_resolver.h:
 
 ../../third_party/NickelHook/NickelHook.h:
+
+src/nickel_pins.h:
 
 src/plugin_runtime.h:
 

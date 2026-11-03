@@ -6,6 +6,7 @@
 #include "notebook_widget.h"
 #include "page_io.h"
 #include "pages.h"
+#include "perf_trace.h"
 #include "settings.h"
 
 #include <QObject>
@@ -54,6 +55,7 @@ bool applyNotebookCover(
         QString const& type,
         char const* backupRoot,
         QString* error) {
+    perf::PhaseScope contextPhase("context");
     void* const editor = notebook_widget::notePadEditor(widget);
     void* const editorControl = notebook_widget::notePadEditorControl(widget);
     if (!editor || !editorControl) {
@@ -61,7 +63,10 @@ bool applyNotebookCover(
         return false;
     }
 
-    firmware.widgetSave(widget);
+    {
+        perf::PhaseScope phase("widget-save-pre");
+        firmware.widgetSave(widget);
+    }
     SharedPart const originalPart = firmware.editorGetPart(editor);
     if (!originalPart) {
         *error = QLatin1String("Cover not changed: current page was not found.");
@@ -80,16 +85,24 @@ bool applyNotebookCover(
         return false;
     }
 
+    perf::note("page-count", oldCount);
     SharedPart const firstPart = firmware.packageGetPart(package.get(), 0);
     if (!firstPart) {
         *error = QLatin1String("Cover not changed: first page was not found.");
         return false;
     }
 
-    firmware.editorSetPart(editor, firstPart);
+    perf::PhaseScope enginePhase("engine");
+    {
+        perf::PhaseScope phase("set-part");
+        firmware.editorSetPart(editor, firstPart);
+    }
     void* const backgroundWidget = notebook_widget::notePadBackgroundWidget(widget);
     if (!backgroundWidget) {
-        firmware.editorSetPart(editor, originalPart);
+        {
+            perf::PhaseScope phase("set-part");
+            firmware.editorSetPart(editor, originalPart);
+        }
         *error = QLatin1String("Cover not changed: page background is not ready.");
         return false;
     }
@@ -101,24 +114,40 @@ bool applyNotebookCover(
     QString backupPath;
     if (!backupNotebook(
             firmware, widget, backupRoot, &backupPath, error)) {
-        firmware.editorSetPart(editor, originalPart);
+        {
+            perf::PhaseScope phase("set-part");
+            firmware.editorSetPart(editor, originalPart);
+        }
         return false;
     }
 
     if (alreadyHasCover) {
         firmware.setBackgroundTypeOriginal(widget, type);
-        firmware.widgetSave(widget);
-        firmware.packageSave(package.get());
-        firmware.widgetRefresh(widget);
+        {
+            perf::PhaseScope phase("widget-save-post");
+            firmware.widgetSave(widget);
+        }
+        {
+            perf::PhaseScope phase("package-save");
+            firmware.packageSave(package.get());
+        }
+        {
+            perf::PhaseScope phase("refresh");
+            firmware.widgetRefresh(widget);
+        }
         cover_cache::invalidateNotebookScanEntry(
             coverCache, firmware.widgetFilePath(widget));
+        page_io::notebookCommitted(firmware.widgetFilePath(widget), backupPath);
         trace("covers: existing cover background changed");
         return true;
     }
 
     ScopedIInkString rawContent(firmware, "Raw Content");
     if (!rawContent.value.impl) {
-        firmware.editorSetPart(editor, originalPart);
+        {
+            perf::PhaseScope phase("set-part");
+            firmware.editorSetPart(editor, originalPart);
+        }
         *error = QLatin1String("Cover not changed: page type could not be created.");
         return false;
     }
@@ -126,15 +155,27 @@ bool applyNotebookCover(
     SharedPart const coverPart = firmware.packageCreatePart(
         package.get(), rawContent.value);
     if (!coverPart || firmware.packagePartCount(package.get()) != oldCount + 1) {
-        firmware.editorSetPart(editor, originalPart);
+        {
+            perf::PhaseScope phase("set-part");
+            firmware.editorSetPart(editor, originalPart);
+        }
         *error = QLatin1String("Cover not changed: a new page could not be created.");
         return false;
     }
 
-    firmware.editorSetPart(editor, coverPart);
+    {
+        perf::PhaseScope phase("set-part");
+        firmware.editorSetPart(editor, coverPart);
+    }
     firmware.setBackgroundTypeOriginal(widget, type);
-    firmware.widgetSave(widget);
-    firmware.packageSave(package.get());
+    {
+        perf::PhaseScope phase("widget-save-post");
+        firmware.widgetSave(widget);
+    }
+    {
+        perf::PhaseScope phase("package-save");
+        firmware.packageSave(package.get());
+    }
     // The archive is mutated from here on; drop any cached verdict even if a
     // later validation step fails.
     cover_cache::invalidateNotebookScanEntry(
@@ -153,7 +194,10 @@ bool applyNotebookCover(
     }
 
     firmware.documentMovePage(document.get(), appendedIndex, 0);
-    firmware.packageSave(package.get());
+    {
+        perf::PhaseScope phase("package-save");
+        firmware.packageSave(package.get());
+    }
     if (firmware.packageIndexOfPart(package.get(), coverPart) != 0
             || firmware.packagePartCount(package.get()) != oldCount + 1) {
         *error = QLatin1String(
@@ -163,10 +207,17 @@ bool applyNotebookCover(
         return false;
     }
 
-    firmware.editorSetPart(editor, coverPart);
-    firmware.widgetRefresh(widget);
+    {
+        perf::PhaseScope phase("set-part");
+        firmware.editorSetPart(editor, coverPart);
+    }
+    {
+        perf::PhaseScope phase("refresh");
+        firmware.widgetRefresh(widget);
+    }
     cover_cache::invalidateNotebookScanEntry(
         coverCache, firmware.widgetFilePath(widget));
+    page_io::notebookCommitted(firmware.widgetFilePath(widget), backupPath);
     trace("covers: new writable cover inserted as page zero");
     return true;
 }
@@ -235,7 +286,10 @@ void beginPicker(
         return;
     }
 
-    firmware.editorSetPart(editor, firstPart);
+    {
+        perf::PhaseScope phase("set-part");
+        firmware.editorSetPart(editor, firstPart);
+    }
     std::shared_ptr<CoverPickerState> const state(
         new CoverPickerState(firmware, coverCache, backupRoot));
     state->widgetObject = widgetObject;
@@ -262,6 +316,7 @@ void beginPicker(
 
         if (selected.startsWith(QLatin1String("Custom_Cover_"))
                 && selected != state->originalFirstBackground) {
+            perf::EditScope edit("cover-change", static_cast<QObject*>(state->widget));
             state->timer->stop();
             object->setProperty("_cnt_cover_picker_active", false);
             coverCache.titlePending = false;
@@ -269,11 +324,18 @@ void beginPicker(
             // Nickel has applied the picker result to page zero. Restore that
             // page first, then let the backed-up insertion routine decide
             // whether to update an existing cover or create a new one.
-            firmware.setBackgroundTypeOriginal(
-                state->widget, state->originalFirstBackground);
-            firmware.widgetSave(state->widget);
+            {
+                perf::PhaseScope phase("engine-restore");
+                firmware.setBackgroundTypeOriginal(
+                    state->widget, state->originalFirstBackground);
+            }
+            {
+                perf::PhaseScope phase("widget-save-caller-pre");
+                firmware.widgetSave(state->widget);
+            }
 
             QString error;
+            bool succeeded = false;
             if (!applyNotebookCover(
                     firmware,
                     coverCache,
@@ -281,13 +343,22 @@ void beginPicker(
                     selected,
                     state->backupRoot,
                     &error)) {
-                firmware.editorSetPart(state->editor, state->originalPart);
-                firmware.widgetRefresh(state->widget);
+                {
+                    perf::PhaseScope phase("set-part");
+                    firmware.editorSetPart(state->editor, state->originalPart);
+                }
+                {
+                    perf::PhaseScope phase("refresh");
+                    firmware.widgetRefresh(state->widget);
+                }
                 trace("covers: cover operation failed safely");
                 if (firmware.showErrorPopup)
                     firmware.showErrorPopup(state->widget, error);
+            } else {
+                succeeded = true;
             }
             state->timer->deleteLater();
+            edit.finish(succeeded);
             return;
         }
 
@@ -297,8 +368,14 @@ void beginPicker(
             state->timer->stop();
             object->setProperty("_cnt_cover_picker_active", false);
             coverCache.titlePending = false;
-            firmware.editorSetPart(state->editor, state->originalPart);
-            firmware.widgetRefresh(state->widget);
+            {
+                perf::PhaseScope phase("set-part");
+                firmware.editorSetPart(state->editor, state->originalPart);
+            }
+            {
+                perf::PhaseScope phase("refresh");
+                firmware.widgetRefresh(state->widget);
+            }
             state->timer->deleteLater();
             trace("covers: picker cancelled or unchanged");
         }

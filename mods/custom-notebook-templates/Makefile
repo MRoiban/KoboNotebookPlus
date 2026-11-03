@@ -5,13 +5,13 @@ include $(NICKELHOOK)/NickelHook.mk
 endif
 
 override LIBRARY  := libcustomnotebooktemplates.so
-override SOURCES  += src/firmware_resolver.cc src/fs_util.cc src/settings.cc \
-	src/templates.cc src/covers.cc src/cover_cache.cc src/cover_editor.cc src/page_io.cc \
+override SOURCES  += src/firmware_resolver.cc src/nickel_pins.cc src/perf_trace.cc src/fs_util.cc src/settings.cc \
+	src/templates.cc src/covers.cc src/cover_cache.cc src/cover_editor.cc src/backup_policy.cc src/page_io.cc \
 	src/notebook_widget.cc src/notebook_hook_services.cc src/notebook_menu.cc src/pages.cc \
 	src/page_actions.cc src/export_naming.cc src/export_range.cc \
 	src/passive_input.cc src/passive_input_router.cc \
 	src/three_finger_swipe.cc src/notebook_gestures.cc \
-	src/notebook_sleep.cc src/visibility.cc src/eraser_menu.cc src/layers_state.cc \
+	src/notebook_sleep.cc src/open_profiler.cc src/prewarm.cc src/visibility.cc src/eraser_menu.cc src/layers_state.cc \
 	src/layers_service.cc src/layers_preview.cc src/layers_eraser.cc src/layers_menu.cc \
 	src/plugin_runtime.cc src/plugin_entry.cc src/hooks.cc src/visibility_hooks.cc
 override MOCS     += src/covermenureceiver.h src/exportrangereceiver.h \
@@ -41,9 +41,12 @@ install koboroot: exporters
 check:
 	python3 ../../scripts/test-three-finger-swipe.py
 	python3 ../../scripts/test-export-naming.py
+	python3 ../../scripts/test-backup-policy.py
 	python3 ../../scripts/test-export-contracts.py
 	python3 ../../scripts/test-hot-path-policy.py
+	python3 ../../scripts/test-perf-experiments.py
 	python3 ../../scripts/test-summarize-notebook-performance.py
+	python3 ../../scripts/test-bench-notebook-edits.py
 	python3 ../../scripts/test-seed-generated-asset-cache.py
 	python3 ../../scripts/test-collect-device-stability.py
 	python3 ../../scripts/test-make-iink-exporters.py

@@ -29,23 +29,27 @@ static char const kMenuSelectBackgroundSymbol[] = "_ZN18IInkMenuController16sele
 static char const kSetBackgroundTypeSymbol[] = "_ZN17IInkNotePadWidget17setBackgroundTypeERK7QString";
 static char const kWidgetSaveSymbol[] = "_ZN17IInkNotePadWidget4saveEv";
 static char const kWidgetFilePathSymbol[] = "_ZNK17IInkNotePadWidget8filePathEv";
+static char const kWidgetPositionUpdatedSymbol[] = "_ZN17IInkNotePadWidget15positionUpdatedEv";
+static uintptr_t const kWidgetPositionUpdatedVma = 0x57fcc;
 static char const kWidgetRefreshSymbol[] = "_ZN17IInkNotePadWidget7refreshEv";
 static char const kShowErrorPopupSymbol[] = "_ZN17IInkNotePadWidget14showErrorPopupERK7QString";
 static char const kBackgroundTypeSymbol[] = "_ZN16BackgroundWidget14backgroundTypeEv";
 static char const kContentGetIdSymbol[] = "_ZNK7Content5getIdEv";
+// Optional open pre-warm: Kobo's own background loader on a hidden widget.
+// sizeof(BackgroundWidget) is 0x28 (IInkNotePadWidget allocates it with
+// operator new(0x28)); its constructor stores the device code name at +0x24.
+static char const kBackgroundWidgetCtorSymbol[] = "_ZN16BackgroundWidgetC1EP7QWidget";
+static char const kBackgroundWidgetDeleteSymbol[] = "_ZN16BackgroundWidgetD0Ev";
+static char const kBackgroundWidgetSetTypeSymbol[] =
+    "_ZN16BackgroundWidget17setBackgroundTypeERK7QString";
+static uintptr_t const kBackgroundWidgetCtorVma = 0x41bec;
+static uintptr_t const kBackgroundWidgetDeleteVma = 0x41bd0;
+static uintptr_t const kBackgroundWidgetSetTypeVma = 0x41cb0;
 
 static uintptr_t const kCreateIInkMenuItemVma = 0x46bc4;
 static uintptr_t const kToolMenuTapGestureVma = 0x75a4c;
-static uintptr_t const kNickelTouchMenuConstructorVma = 0xed6788;
-static uintptr_t const kNickelTouchMenuSetAlignmentVma = 0xed6a68;
-static uintptr_t const kTouchMenuSetCustomPopupPositionOffsetVma = 0x11150a8;
-static uintptr_t const kAbstractNickelMenuControllerPopupFromWidgetVma =
-    0xeb4f94;
-static uintptr_t const kNickelTouchMenuPopupPositionVma = 0xed7248;
 static uintptr_t const kIInkToolMenuWidgetConstructorVma = 0x761ac;
 static uintptr_t const kIInkToolMenuWidgetSetSelectedVma = 0x76580;
-static uintptr_t const kAbstractMenuControllerGrabTapGestureVma = 0xb3cfac;
-static uintptr_t const kAbstractMenuControllerTapGestureVma = 0xb3d00c;
 static uintptr_t const kMenuSelectBackgroundVma = 0x49438;
 static uintptr_t const kSetBackgroundTypeVma = 0x5b9fc;
 static uintptr_t const kWidgetSaveVma = 0x5f780;
@@ -53,7 +57,6 @@ static uintptr_t const kWidgetFilePathVma = 0x58da8;
 static uintptr_t const kWidgetRefreshVma = 0x57fec;
 static uintptr_t const kShowErrorPopupVma = 0x58b64;
 static uintptr_t const kBackgroundTypeVma = 0x41c64;
-static uintptr_t const kContentGetIdVma = 0x953d84;
 
 static char const kEditorGetPartSymbol[] = "_ZN8myscript4iink10EditorImpl7getPartEv";
 static char const kEditorGetEngineSymbol[] = "_ZN8myscript4iink10EditorImpl9getEngineEv";

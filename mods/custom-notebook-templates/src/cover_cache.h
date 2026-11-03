@@ -91,7 +91,7 @@ int notebookArchiveContainsPageId(
     QString const& partId);
 int countNotebookPageEntries(State const& state, QString const& notebookPath);
 bool openNotebookHasPluginCover(
-    State const& state,
+    State& state,
     QString const& notebookPath,
     bool* hasCover);
 bool cachedNotebookCoverType(
@@ -100,6 +100,13 @@ bool cachedNotebookCoverType(
     QString* coverType,
     double pathResolveMs);
 void invalidateNotebookScanEntry(State& state, QString const& notebookPath);
+// Same as invalidateNotebookScanEntry(), for a committed edit that provably
+// left page zero (the only page the cover verdict reads) untouched: the
+// rendered preview is dropped, but a cached cover verdict is carried over and
+// re-keyed to the notebook's current size and mtime.
+void invalidateNotebookPreviewKeepingCoverVerdict(
+    State& state,
+    QString const& notebookPath);
 QImage composeCoverWithRenderedInk(
     State& state,
     QString const& type,
