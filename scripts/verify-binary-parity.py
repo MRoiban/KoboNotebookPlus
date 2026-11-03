@@ -332,6 +332,51 @@ def load_expected_symbol_delta(
     )
 
 
+def _symbol_base(name: str) -> str:
+    return name.split("@", 1)[0]
+
+
+def _symbol_version(name: str) -> str | None:
+    return name.split("@", 1)[1].lstrip("@") if "@" in name else None
+
+
+def align_expected(expected: SymbolCounts, observed: SymbolCounts) -> SymbolCounts:
+    """Map approved symbols onto observed ones.
+
+    Newer binutils print ``name@VERSION`` for versioned dynamic symbols while
+    older ones (NickelTC) print the bare name. An approved entry matches an
+    observed symbol of the same kind and base name when either side carries no
+    version or both versions agree; exact matches are preferred. Symbols
+    present in both binaries are still compared exactly by the caller, so a
+    version change between reference and candidate is never hidden.
+    """
+    remaining = collections.Counter(observed)
+    aligned: SymbolCounts = collections.Counter()
+    for (kind, name), count in sorted(expected.items()):
+        for _ in range(count):
+            match = None
+            if remaining[(kind, name)] > 0:
+                match = (kind, name)
+            else:
+                for observed_kind, observed_name in sorted(remaining):
+                    if (remaining[(observed_kind, observed_name)] <= 0
+                            or observed_kind != kind
+                            or _symbol_base(observed_name) != _symbol_base(name)):
+                        continue
+                    approved_version = _symbol_version(name)
+                    observed_version = _symbol_version(observed_name)
+                    if (approved_version is None or observed_version is None
+                            or approved_version == observed_version):
+                        match = (observed_kind, observed_name)
+                        break
+            if match is None:
+                aligned[(kind, name)] += 1
+            else:
+                remaining[match] -= 1
+                aligned[match] += 1
+    return aligned
+
+
 def report_symbol_difference(
     title: str,
     reference: SymbolCounts,
@@ -347,6 +392,8 @@ def report_symbol_difference(
     )
     reference_only = reference - candidate
     candidate_only = candidate - reference
+    expected_candidate = align_expected(expected_candidate, candidate_only)
+    expected_reference = align_expected(expected_reference, reference_only)
     if (reference_only == expected_reference
             and candidate_only == expected_candidate):
         suffix = ""
